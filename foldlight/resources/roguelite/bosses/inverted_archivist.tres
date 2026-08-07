@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FoldlightRogueBossDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_boss_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"inverted_archivist"
+title = "倒悬书记"
+description = "书写旋转墨墙，在不断改道的城页上追索玩家。"
+accent = Color(0.54, 0.46, 0.72, 1)
+tags = Array[StringName]([&"controller", &"partitions"])
+base_health = 880.0
+phase_thresholds = PackedFloat32Array(0.7, 0.38)
+arena_rule = &"ink_partitions"
+return_window_fraction = 0.12
+return_window_seconds = 1.25
+target_duration = 185.0
+pattern_ids = Array[StringName]([&"ledger_petals", &"ink_partition", &"margin_cut"])

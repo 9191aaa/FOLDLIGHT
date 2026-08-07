@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"perfect_release"
+title = "无痕放页"
+description = "需要净折；满载释放的返光伤害提高 35% 并返还少量冷却。"
+accent = Color(1, 0.72, 0.88, 1)
+tags = Array[StringName]([&"capstone", &"release"])
+family = 1
+rarity = 2
+max_stacks = 1
+prerequisites = Array[StringName]([&"clean_crease"])
+stat_modifiers = {"full_release_damage_multiplier": 1.35, "full_release_cooldown_refund": 0.25}

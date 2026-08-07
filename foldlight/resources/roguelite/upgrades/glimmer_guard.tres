@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"glimmer_guard"
+title = "微光护存"
+description = "每进入新区域，按持有微光获得最多两层临时护盾。"
+accent = Color(0.98, 0.76, 0.34, 1)
+tags = Array[StringName]([&"shield", &"glimmer"])
+family = 3
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"region_shield_per_ten_glimmer": 1}
+

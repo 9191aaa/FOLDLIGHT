@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"dawn_vow"
+title = "天光誓"
+description = "生命上限增加一瓣\n再获得一次致命折痕留白"
+family = 2
+rarity = 3
+max_stacks = 1
+tags = Array[StringName]([&"health", &"mercy"])

@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"reef_ram"
+title = "礁角冲舟"
+description = "先画出冲锋轨迹再直线突进，用一步闪避即可理解和反制。"
+accent = Color(1, 0.58, 0.27, 1)
+tags = Array[StringName]([&"ordinary", &"charger", &"paper"])
+role = 2
+threat_cost = 3
+minimum_region = 1
+max_simultaneous = 2
+base_health = 9.0
+move_speed = 158.0
+attack_interval = 2.8
+stationary = false
+quota_group = &"ordinary"
+

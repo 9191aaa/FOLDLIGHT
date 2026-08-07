@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="FoldlightRogueActiveItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_active_item_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"paper_burst"
+title = "纸潮迸灯"
+description = "引爆 520 范围纸潮：重创近敌，并把最多十二枚普通敌弹改写成追踪返光。"
+accent = Color(1, 0.68, 0.28, 1)
+tags = Array[StringName]([&"starter", &"defense"])
+cooldown = 12.0
+effect_id = &"radial_push"
+power = 5.0
+duration = 0.45

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"chain_bloom"
+title = "连　蕊"
+description = "返光击杀时分裂出两枚余光\n小敌群会像花一样连续绽开"
+family = 1
+rarity = 3
+max_stacks = 1
+tags = Array[StringName]([&"chain", &"kill"])

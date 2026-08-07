@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"wide_crease"
+title = "阔　折"
+description = "折域半径 +18%\n更早碰到弹幕，也更容易贪满"
+family = 0
+rarity = 1
+max_stacks = 2
+tags = Array[StringName]([&"radius", &"capture"])

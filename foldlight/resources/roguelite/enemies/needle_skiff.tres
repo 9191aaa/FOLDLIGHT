@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"needle_skiff"
+title = "针叶艇"
+description = "保持中距离并发射清晰的三连线，为走位提供温和压力。"
+accent = Color(0.42, 0.76, 0.96, 1)
+tags = Array[StringName]([&"ordinary", &"shooter", &"paper"])
+role = 1
+threat_cost = 2
+minimum_region = 1
+max_simultaneous = 4
+base_health = 6.0
+move_speed = 108.0
+attack_interval = 2.1
+stationary = false
+quota_group = &"ordinary"
+

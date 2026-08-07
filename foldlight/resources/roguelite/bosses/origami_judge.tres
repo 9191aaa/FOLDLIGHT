@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FoldlightRogueBossDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_boss_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"origami_judge"
+title = "折纸裁判"
+description = "以移动纸框裁定安全范围，终局逐步收紧可走空间。"
+accent = Color(0.83, 0.58, 0.30, 1)
+tags = Array[StringName]([&"final", &"safe_frame"])
+base_health = 1750.0
+phase_thresholds = PackedFloat32Array(0.72, 0.4)
+arena_rule = &"moving_safe_frame"
+return_window_fraction = 0.1
+return_window_seconds = 1.35
+target_duration = 285.0
+pattern_ids = Array[StringName]([&"judgement_petals", &"unreflectable_cut", &"shrinking_frame"])

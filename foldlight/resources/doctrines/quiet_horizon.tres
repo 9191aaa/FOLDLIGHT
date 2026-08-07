@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"quiet_horizon"
+title = "静　界"
+description = "折域半径再扩大 12%\n维持折域时少消耗 10% 折息"
+family = 0
+rarity = 3
+max_stacks = 1
+tags = Array[StringName]([&"fold_radius", &"focus"])

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"razor_wake"
+title = "裁纸尾迹"
+description = "冲刺路径留下一道短暂伤害线。"
+accent = Color(1, 0.48, 0.38, 1)
+tags = Array[StringName]([&"offense", &"trail"])
+family = 2
+rarity = 1
+max_stacks = 3
+stat_modifiers = {"dash_trail_damage": 1}
+

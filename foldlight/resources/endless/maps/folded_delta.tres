@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="FoldlightEndlessMapDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/endless/endless_map_definition.gd" id="1_map"]
+
+[resource]
+script = ExtResource("1_map")
+map_id = &"folded_delta"
+title = "折叠三角洲"
+authored_version = &"handcrafted_1_0"
+bounds = Rect2(0, 0, 6144, 4096)
+player_spawn = Vector2(3072, 3008)
+district_names = PackedStringArray("破礁西岸", "静潮花园", "日轮广场", "折光港", "沉钟档案馆", "回声南渠")
+district_rects = Array[Rect2]([Rect2(0, 720, 1920, 2410), Rect2(1550, 0, 3040, 1320), Rect2(1900, 1120, 2340, 1120), Rect2(1900, 2240, 2340, 980), Rect2(4240, 640, 1904, 2520), Rect2(1260, 3160, 3680, 936)])
+district_colors = PackedColorArray(0.055, 0.16, 0.17, 1, 0.075, 0.205, 0.18, 1, 0.17, 0.205, 0.16, 1, 0.075, 0.20, 0.205, 1, 0.145, 0.17, 0.145, 1, 0.065, 0.15, 0.19, 1)
+walls = Array[Rect2]([
+Rect2(420, 1020, 520, 120), Rect2(1040, 920, 150, 520), Rect2(420, 2060, 620, 130), Rect2(1180, 1840, 150, 560),
+Rect2(650, 2670, 720, 130), Rect2(1520, 2460, 130, 540), Rect2(1740, 420, 720, 125), Rect2(2650, 240, 140, 560),
+Rect2(3350, 280, 760, 125), Rect2(4380, 430, 135, 610), Rect2(2040, 1210, 540, 120), Rect2(3560, 1190, 540, 120),
+Rect2(2240, 1580, 140, 520), Rect2(3760, 1570, 140, 530), Rect2(2690, 1510, 760, 130), Rect2(2700, 2140, 750, 130),
+Rect2(2150, 2460, 540, 120), Rect2(3460, 2450, 550, 120), Rect2(2470, 2750, 130, 420), Rect2(3540, 2760, 130, 410),
+Rect2(4510, 1180, 700, 125), Rect2(5290, 1050, 130, 560), Rect2(4620, 2020, 610, 125), Rect2(5480, 1940, 130, 610),
+Rect2(4440, 2730, 760, 130), Rect2(1010, 3390, 820, 125), Rect2(2180, 3560, 680, 120), Rect2(3300, 3470, 720, 120)
+])
+capture_points = PackedVector2Array(3072, 1920, 1030, 1680, 5050, 1830)
+flag_positions = PackedVector2Array(1050, 2980, 5100, 820, 3090, 720, 5160, 3270)
+captain_spawn_positions = PackedVector2Array(1510, 1570, 3020, 1180, 4180, 1810, 4680, 2510, 3030, 3320, 1080, 3260)
+shooter_spawn_positions = PackedVector2Array(2050, 1780, 2460, 1370, 3070, 1290, 3690, 1390, 4110, 1770, 4140, 2310, 3690, 2640, 3070, 2450, 2470, 2510, 2030, 2250)
+melee_spawn_positions = PackedVector2Array(260, 920, 260, 1800, 300, 2900, 980, 570, 1940, 260, 3050, 140, 4250, 260, 5480, 620, 5860, 1450, 5840, 2500, 5700, 3460, 4550, 3860, 3250, 3900, 1900, 3870, 720, 3460, 420, 2470)
+rally_positions = PackedVector2Array(3072, 1920, 1030, 1680, 3090, 720, 5100, 820, 5050, 1830, 5160, 3270, 3030, 3320, 1050, 2980)

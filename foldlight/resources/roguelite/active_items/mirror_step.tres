@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueActiveItemDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_active_item_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"mirror_step"
+title = "镜步"
+description = "补满全部冲刺、获得一秒安全，并留下四秒吸引普通弹幕的纸影。"
+accent = Color(0.48, 0.78, 1, 1)
+tags = Array[StringName]([&"mobility", &"decoy"])
+cooldown = 14.0
+effect_id = &"dash_decoy"
+power = 1.2
+duration = 4.0

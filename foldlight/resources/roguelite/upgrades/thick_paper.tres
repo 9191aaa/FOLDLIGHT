@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"thick_paper"
+title = "厚纸心"
+description = "最大生命增加 1，并立即恢复 1。"
+accent = Color(0.46, 0.90, 0.72, 1)
+tags = Array[StringName]([&"health"])
+family = 3
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"max_health_add": 1, "instant_heal": 1}
+

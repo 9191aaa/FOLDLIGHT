@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c1m2"
+chapter = 1
+mission_number = 2
+chapter_title = "第一章 · 纸海残灯"
+title = "纸鸢航标"
+subtitle = "返光会自己找到该亮的地方"
+location = "横风断峡"
+synopsis = "三座航标失去方向。借横风收下整片弹幕，在航标附近松手。"
+expected_seconds = 480
+tide_duration = 65.0
+boss_budget_seconds = 90
+difficulty = 0.96
+scene_theme = &"kite_gorge"
+accent = Color(0.38, 0.78, 0.98, 1)
+tide_names = Array[String](["东风", "双标", "纸鸢", "折峡", "逆风", "天线"])
+tide_scene_tags = Array[String](["横风纸岸", "双灯航线", "纸鸢群落", "折峡回声", "逆风缺口", "天线归航"])
+tide_objective_labels = Array[String](["点亮第一座航标", "让两座航标同时发光", "用大返光穿过纸鸢群", "守住峡口中央灯", "逆风完成三次充能", "点亮终端航标"])
+objective_ids = Array[StringName]([&"beacon_charge", &"beacon_charge", &"return_quota", &"beacon_charge", &"mastery", &"beacon_charge"])
+objective_targets = Array[int]([36, 52, 48, 64, 3, 90])
+modifier_ids = Array[StringName]([&"crosswind_east", &"crosswind_west", &"lamp_rain", &"narrow_shore", &"crosswind_flip", &"return_echo"])
+enemy_rosters = Array[String](["drifter,fan", "fan,weaver", "fan,bloomer,carver", "weaver,carver", "ram,fan,carver", "carver,mirror,rewinder"])
+ritual_event_pairs = Array[String](["crosswind,lamp_rain", "crosswind,paper_seal", "echo_bloom,crosswind", "tide_seam,carved_lane", "red_line,crosswind", "return_echo,hundred_fold"])
+boss_id = &"kite_regent"
+boss_title = "断弦鸢王"
+boss_subtitle = "横风只改变路线，不改变你的选择"
+opening_title = "风把灯讯吹成了结"
+opening_body = "旧船队曾用纸鸢替远方标记航路。如今线断了，三座航标在互相指向错误的海。"
+ending_title = "航标译出第二个音节"
+ending_body = "风停的一瞬，岑听见自己的名字也藏在灯讯里。他没有解释，只让你继续向前。"
+base_glimmer_reward = 6

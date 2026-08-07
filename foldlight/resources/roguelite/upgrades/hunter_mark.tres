@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"hunter_mark"
+title = "收尾印"
+description = "对生命低于 30% 的敌人伤害提高 25%。"
+accent = Color(1, 0.56, 0.27, 1)
+tags = Array[StringName]([&"execute"])
+family = 0
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"execute_damage_multiplier": 1.25}
+

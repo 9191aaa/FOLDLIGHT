@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"last_lantern"
+title = "末灯"
+description = "本局首次致命伤改为保留 1 点生命。"
+accent = Color(1, 0.72, 0.32, 1)
+tags = Array[StringName]([&"revive"])
+family = 3
+rarity = 3
+max_stacks = 1
+stat_modifiers = {"fatal_guard_count": 1}
+

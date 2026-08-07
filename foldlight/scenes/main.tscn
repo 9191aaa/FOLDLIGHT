@@ -1,0 +1,57 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/components/tip_queue.gd" id="4_tip_queue"]
+[ext_resource type="Script" path="res://scripts/components/objective_tracker.gd" id="5_objective"]
+[ext_resource type="Script" path="res://scripts/components/challenge_director.gd" id="6_challenge"]
+[ext_resource type="Script" path="res://scripts/roguelite/run_controller.gd" id="7_rogue_controller"]
+[ext_resource type="Script" path="res://scripts/roguelite/route_generator.gd" id="8_route_generator"]
+[ext_resource type="Script" path="res://scripts/roguelite/run_state.gd" id="9_run_state"]
+[ext_resource type="PackedScene" path="res://scenes/roguelite/rogue_world.tscn" id="10_rogue_world"]
+[ext_resource type="Script" path="res://scripts/roguelite/rogue_session_controller.gd" id="11_rogue_session"]
+[ext_resource type="Script" path="res://scripts/roguelite/encounter_director.gd" id="12_encounter_director"]
+[ext_resource type="Script" path="res://scripts/roguelite/reward_director.gd" id="13_reward_director"]
+[ext_resource type="Script" path="res://scripts/roguelite/mechanic_introduction_tracker.gd" id="14_mechanic_tracker"]
+[ext_resource type="PackedScene" path="res://scenes/roguelite/ui/rogue_presentation.tscn" id="15_rogue_presentation"]
+[node name="Foldlight" type="Node2D"]
+script = ExtResource("1_game")
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+
+[node name="TipQueue" type="Node" parent="."]
+script = ExtResource("4_tip_queue")
+
+[node name="ObjectiveTracker" type="Node" parent="."]
+script = ExtResource("5_objective")
+
+[node name="ChallengeDirector" type="Node" parent="."]
+script = ExtResource("6_challenge")
+
+[node name="RogueRunController" type="Node" parent="."]
+script = ExtResource("7_rogue_controller")
+
+[node name="RouteGenerator" type="Node" parent="RogueRunController"]
+script = ExtResource("8_route_generator")
+
+[node name="RunState" type="Node" parent="RogueRunController"]
+script = ExtResource("9_run_state")
+
+[node name="RogueWorld" parent="." instance=ExtResource("10_rogue_world")]
+
+[node name="RogueSession" type="Node" parent="."]
+script = ExtResource("11_rogue_session")
+
+[node name="EncounterDirector" type="Node" parent="RogueSession"]
+script = ExtResource("12_encounter_director")
+
+[node name="RewardDirector" type="Node" parent="RogueSession"]
+script = ExtResource("13_reward_director")
+
+[node name="MechanicIntroductionTracker" type="Node" parent="RogueSession"]
+script = ExtResource("14_mechanic_tracker")
+
+[node name="HUD" parent="." instance=ExtResource("3_hud")]
+
+[node name="RoguePresentation" parent="." instance=ExtResource("15_rogue_presentation")]

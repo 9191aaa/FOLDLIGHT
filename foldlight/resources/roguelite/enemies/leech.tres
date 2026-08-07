@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"leech"
+title = "汲光蛭"
+description = "2.0 的汲光蛭：贴近时牵走折息，并射出带湿墨的三瓣散射。"
+accent = Color(0.90, 0.23, 0.55, 1)
+tags = Array[StringName]([&"ordinary", &"classic", &"shooter"])
+role = 1
+threat_cost = 4
+minimum_region = 2
+max_simultaneous = 3
+base_health = 10.0
+move_speed = 116.0
+attack_interval = 2.25
+stationary = false
+quota_group = &"ordinary"

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"full_moon"
+title = "满　月"
+description = "释放 12 枚以上时返还 22% 折息\n并获得 0.35 秒无伤"
+family = 1
+rarity = 2
+max_stacks = 1
+tags = Array[StringName]([&"full_release", &"focus"])

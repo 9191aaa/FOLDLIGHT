@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"ink_immunity"
+title = "拒墨层"
+description = "墨池与墨圈的减速强度降低 30%。"
+accent = Color(0.72, 0.44, 0.92, 1)
+tags = Array[StringName]([&"hazard", &"ink"])
+family = 3
+rarity = 0
+max_stacks = 2
+stat_modifiers = {"ink_slow_multiplier": 0.7}
+

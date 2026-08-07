@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"lantern_pocket"
+title = "灯　腹"
+description = "收纳上限 +4\n更长的返光队列，更高的风险"
+family = 0
+rarity = 1
+max_stacks = 2
+tags = Array[StringName]([&"capacity", &"return"])

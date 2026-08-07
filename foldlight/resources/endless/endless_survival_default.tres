@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightEndlessSurvivalConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/endless/endless_survival_config.gd" id="1_config"]
+
+[resource]
+script = ExtResource("1_config")
+mode_id = &"classic_2_0_endless"
+rules_version = &"endless_1_0"
+enemy_stage_times = PackedFloat32Array(45, 105, 180, 270, 375, 495)
+player_absorb_thresholds = PackedInt32Array(24, 60, 112, 184, 280, 400)
+base_spawn_interval = 6.5
+minimum_spawn_interval = 2.1
+base_wave_budget = 5
+maximum_wave_budget = 28
+health_growth_per_stage = 1.18
+projectile_growth_per_stage = 1.12
+capture_hold_seconds = 12.0
+objective_time_limit = 90.0
+objective_intermission = 4.0
+flag_health = 60.0
+classic_enemy_ids = Array[StringName]([&"drifter", &"fan", &"ram", &"bloomer", &"weaver", &"leech", &"mirror", &"rewinder"])
+shooter_enemy_ids = Array[StringName]([&"drifter", &"fan", &"bloomer", &"weaver", &"leech", &"mirror"])

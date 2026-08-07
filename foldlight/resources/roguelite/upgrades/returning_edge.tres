@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"returning_edge"
+title = "回锋"
+description = "所有折返与回旋投射物伤害提高 20%。"
+accent = Color(0.42, 0.94, 0.76, 1)
+tags = Array[StringName]([&"return", &"boomerang"])
+family = 0
+rarity = 1
+max_stacks = 3
+stat_modifiers = {"return_damage_multiplier": 1.2}
+

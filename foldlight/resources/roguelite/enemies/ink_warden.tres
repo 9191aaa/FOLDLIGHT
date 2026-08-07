@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"ink_warden"
+title = "墨界监守"
+description = "预告后留下短暂墨圈限制走位，每个房间同时最多一只。"
+accent = Color(0.78, 0.34, 0.95, 1)
+tags = Array[StringName]([&"mechanic", &"controller", &"zone"])
+role = 5
+threat_cost = 5
+minimum_region = 2
+max_simultaneous = 1
+base_health = 13.0
+move_speed = 88.0
+attack_interval = 5.6
+stationary = false
+quota_group = &"control"
+mechanic_rule = "紫色轮廓完成后，目标位置会留下短暂减速墨圈。"
+counterplay = "预告期间离开圆圈；墨圈会自行消失，不必停下输出。"

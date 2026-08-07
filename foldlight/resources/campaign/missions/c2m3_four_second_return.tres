@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c2m3"
+chapter = 2
+mission_number = 3
+chapter_title = "第二章 · 倒流旧航"
+title = "四秒倒流"
+subtitle = "旧路亮起时，立刻离轨"
+location = "倒流回廊"
+synopsis = "回痕兽会沿你四秒前的路径倒冲。用旧路线骗开追击，再把返光送往下一座接力航标。"
+expected_seconds = 600
+tide_duration = 85.0
+boss_budget_seconds = 90
+difficulty = 1.28
+scene_theme = &"rewind_corridor"
+accent = Color(0.72, 0.5, 0.98, 1)
+tide_names = Array[String](["旧路", "四秒", "接力", "双影", "八字", "井口"])
+tide_scene_tags = Array[String](["倒流旧路", "四秒回响", "航标接力", "双影追身", "八字回廊", "四秒井口"])
+tide_objective_labels = Array[String](["离开第一次旧路", "避开两次倒冲", "依次点亮三座航标", "让双影错开", "用八字路线骗过追击", "在井口完成返航配额"])
+objective_ids = Array[StringName]([&"survive", &"survive", &"beacon_charge", &"mastery", &"survive", &"return_quota"])
+objective_targets = Array[int]([1, 2, 72, 4, 1, 110])
+modifier_ids = Array[StringName]([&"rewind_surge", &"return_echo", &"beacon_chain", &"rewind_surge", &"narrow_shore", &"black_tide"])
+enemy_rosters = Array[String](["rewinder,fan", "rewinder,carver", "rewinder,thief,moth", "rewinder,mirror,bell", "rewinder,ram,carver", "rewinder,mirror,moth,bell"])
+ritual_event_pairs = Array[String](["rewind_trace,lamp_rain", "rewind_trace,return_echo", "courier,crosswind", "rewind_trace,bell_pull", "red_line,tide_seam", "hundred_fold,rewind_trace"])
+boss_id = &"four_second_well"
+boss_title = "四秒井"
+boss_subtitle = "井里追上来的，都是你刚走过的路"
+opening_title = "岑的回响铺成了一条航线"
+opening_body = "这里每隔四秒就会出现一次岑。无数个未能返航的瞬间叠在一起，终于变成可走的路。"
+ending_title = "旧路指向沉没的折光庭"
+ending_body = "岸上的庭只是后来重折的一份副本。真正的折光庭，连同岑的出航记录，一直沉在潮钟下面。"
+base_glimmer_reward = 9

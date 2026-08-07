@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FoldlightRogueBossDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_boss_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"reef_crown_battery"
+title = "礁冠炮城"
+description = "用带缺口的环形潮波切开战场，并召来礁群补充火力。"
+accent = Color(0.32, 0.84, 0.82, 1)
+tags = Array[StringName]([&"turret", &"lanes"])
+base_health = 470.0
+phase_thresholds = PackedFloat32Array(0.68, 0.34)
+arena_rule = &"reef_tide_pulse"
+return_window_fraction = 0.2
+return_window_seconds = 2.2
+return_damage_outside_stagger = 0.55
+target_duration = 90.0
+pattern_ids = Array[StringName]([&"petal_salvo", &"tide_fan", &"turret_crown", &"black_lane"])

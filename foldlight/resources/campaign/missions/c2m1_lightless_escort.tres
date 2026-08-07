@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c2m1"
+chapter = 2
+mission_number = 1
+chapter_title = "第二章 · 倒流旧航"
+title = "无灯护航"
+subtitle = "折域是盾，返光也是帆"
+location = "沉舟水道"
+synopsis = "一艘无灯纸舟沿旧航线自动前进。贴近它展开折域，用返光修补被墨潮咬开的船身。"
+expected_seconds = 480
+tide_duration = 65.0
+boss_budget_seconds = 90
+difficulty = 1.08
+scene_theme = &"sunken_channel"
+accent = Color(0.34, 0.82, 0.72, 1)
+tide_names = Array[String](["离岸", "护灯", "窄门", "追潮", "修帆", "泊位"])
+tide_scene_tags = Array[String](["沉舟离岸", "无灯护航", "纸岸窄门", "追潮水道", "返光修帆", "旧港泊位"])
+tide_objective_labels = Array[String](["护送纸舟离岸", "用折域挡下花瓣", "穿过收窄纸岸", "击退追潮群", "用返光修满船帆", "护送纸舟抵达泊位"])
+objective_ids = Array[StringName]([&"escort", &"escort", &"escort", &"return_quota", &"escort", &"escort"])
+objective_targets = Array[int]([55, 72, 80, 58, 96, 120])
+modifier_ids = Array[StringName]([&"escort_lane", &"lamp_rain", &"narrow_shore", &"pursuit_wake", &"return_echo", &"escort_lane"])
+enemy_rosters = Array[String](["drifter,fan,thief", "weaver,fan", "ram,carver", "thief,moth,fan", "bell,leech,moth", "ram,thief,rewinder"])
+ritual_event_pairs = Array[String](["lamp_rain,courier", "paper_seal,lamp_rain", "tide_seam,red_line", "courier,crosswind", "return_echo,bell_pull", "red_line,rewind_trace"])
+boss_id = &"night_convoy"
+boss_title = "夜航夺名舟"
+boss_subtitle = "别追子弹，追那封正在逃走的信"
+opening_title = "旧船队还在航行"
+opening_body = "它们没有人，也没有灯，只剩一条被反复执行的路线。你的折域能让纸舟记起自己曾被保护。"
+ending_title = "纸舟带回一枚折光庭徽记"
+ending_body = "徽记属于岑出发前的船队。可岑说，他从未真正离开过岸。"
+base_glimmer_reward = 7

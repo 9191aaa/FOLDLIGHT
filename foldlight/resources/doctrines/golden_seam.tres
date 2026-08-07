@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"golden_seam"
+title = "金　缝"
+description = "每连续收纳 8 枚，额外缝入一枚返光\n稳定收纳也能滚起雪球"
+family = 2
+rarity = 2
+max_stacks = 1
+tags = Array[StringName]([&"capture", &"bonus"])

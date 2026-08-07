@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"kinetic_paper"
+title = "动页"
+description = "需要纸隙流；冲刺结束后自动武器加速 1.2 秒。"
+accent = Color(0.42, 0.94, 1, 1)
+tags = Array[StringName]([&"capstone", &"offense"])
+family = 2
+rarity = 2
+max_stacks = 1
+prerequisites = Array[StringName]([&"slipstream"])
+stat_modifiers = {"dash_weapon_haste": 0.35, "dash_weapon_haste_duration": 1.2}

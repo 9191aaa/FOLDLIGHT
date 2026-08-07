@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"prism_echo"
+title = "棱镜余响"
+description = "命中后有 18% 概率复制一枚较弱弹体。"
+accent = Color(0.93, 0.48, 0.85, 1)
+tags = Array[StringName]([&"echo"])
+family = 0
+rarity = 1
+max_stacks = 3
+stat_modifiers = {"projectile_echo_chance": 0.18}
+

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FoldlightRogueWeaponDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_weapon_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"returning_gull"
+title = "回潮鸥"
+description = "沿移动方向飞出再折返，鼓励穿过敌群而不是守在原地。"
+accent = Color(0.42, 0.94, 0.79, 1)
+tags = Array[StringName]([&"boomerang", &"movement"])
+targeting = 2
+fire_interval = 0.82
+base_damage = 1.35
+projectile_speed = 740.0
+targeting_range = 980.0
+volley_count = 1
+pierce = 2
+projectile_style = &"returning_gull"
+

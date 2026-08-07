@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"ram"
+title = "冲角"
+description = "2.0 的冲角：金线锁定后沿直线贯穿，冲出后进入返光惩罚窗。"
+accent = Color(0.90, 0.23, 0.49, 1)
+tags = Array[StringName]([&"ordinary", &"classic", &"charger"])
+role = 2
+threat_cost = 3
+minimum_region = 1
+max_simultaneous = 3
+base_health = 8.0
+move_speed = 158.0
+attack_interval = 2.8
+stationary = false
+quota_group = &"ordinary"

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"rewinder"
+title = "回痕兽"
+description = "2.0 的回痕兽：记录最近四秒路线，预告后沿旧路高速倒流。"
+accent = Color(0.94, 0.35, 0.48, 1)
+tags = Array[StringName]([&"ordinary", &"classic", &"charger", &"rewind"])
+role = 2
+threat_cost = 5
+minimum_region = 2
+max_simultaneous = 2
+base_health = 12.0
+move_speed = 108.0
+attack_interval = 4.6
+stationary = false
+quota_group = &"ordinary"

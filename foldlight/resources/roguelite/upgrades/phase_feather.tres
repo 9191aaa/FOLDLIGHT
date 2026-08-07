@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"phase_feather"
+title = "相羽"
+description = "冲刺无敌时间增加 0.035 秒。"
+accent = Color(0.70, 0.64, 1, 1)
+tags = Array[StringName]([&"invulnerability"])
+family = 2
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"dash_invulnerability_add": 0.035}
+

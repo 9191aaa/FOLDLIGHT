@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c1m3"
+chapter = 1
+mission_number = 3
+chapter_title = "第一章 · 纸海残灯"
+title = "回声花庭"
+subtitle = "把旧日弹幕折成今天的花"
+location = "百瓣庭"
+synopsis = "四株回声花不断复唱旧灯讯。满蓄返光能洗净墨痕，也会让花庭为你供弹。"
+expected_seconds = 540
+tide_duration = 75.0
+boss_budget_seconds = 90
+difficulty = 1.04
+scene_theme = &"echo_garden"
+accent = Color(0.9, 0.38, 0.66, 1)
+tide_names = Array[String](["花根", "复唱", "墨蕊", "守灯", "百瓣", "庭心"])
+tide_scene_tags = Array[String](["回声花根", "慢潮复唱", "墨蕊蔓生", "庭心守灯", "百瓣归潮", "花庭夜心"])
+tide_objective_labels = Array[String](["净化第一株回声花", "接住并送回复唱弹幕", "连续净化两处墨蕊", "守住中央灯", "完成三轮十二枚返光", "洗净花庭核心"])
+objective_ids = Array[StringName]([&"cleanse", &"return_quota", &"cleanse", &"beacon_charge", &"mastery", &"cleanse"])
+objective_targets = Array[int]([2, 42, 3, 82, 3, 5])
+modifier_ids = Array[StringName]([&"echo_bloom", &"return_echo", &"ink_roots", &"narrow_shore", &"petal_rain", &"echo_bloom"])
+enemy_rosters = Array[String](["bloomer,fan", "moth,bloomer", "leech,weaver,bloomer", "bell,fan,leech", "moth,bell,mirror", "bloomer,moth,mirror,rewinder"])
+ritual_event_pairs = Array[String](["echo_bloom,lamp_rain", "return_echo,echo_bloom", "paper_seal,ink_roots", "tide_seam,bell_pull", "petal_rain,return_echo", "hundred_fold,echo_bloom"])
+boss_id = &"petal_mother"
+boss_title = "百瓣灯母"
+boss_subtitle = "剥开灯巢，让庭心短暂显露"
+opening_title = "花庭记得上一支船队"
+opening_body = "每一朵花都在重复同一段未完成的返航。收下它们时，整座庭院会从纸背面呼吸。"
+ending_title = "求救讯息开始连成句子"
+ending_body = "灯讯说的不是‘远离墨月’，而是‘请把我们折回岸上’。"
+base_glimmer_reward = 7

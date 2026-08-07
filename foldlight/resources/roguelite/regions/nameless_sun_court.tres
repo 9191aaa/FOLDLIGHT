@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="FoldlightRogueRegionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_region_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"nameless_sun_court"
+title = "无名日庭"
+description = "不断改写安全区的终海，完整检验走位、冲刺与返光构筑。"
+accent = Color(0.82, 0.58, 0.30, 1)
+tags = Array[StringName]([&"mixed", &"sun"])
+depth_count = 8
+base_threat_budget = 40
+encounter_ids = Array[StringName]([&"sun_court_verdict"])
+boss_ids = Array[StringName]([&"origami_judge"])
+backdrop_style = &"sun_court"

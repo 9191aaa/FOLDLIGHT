@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueActiveItemDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_active_item_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"ink_wash"
+title = "洗墨盏"
+description = "清除负面状态与场上墨圈，恢复两格生命、全部折息，并短时净化危险地形。"
+accent = Color(0.55, 0.90, 0.82, 1)
+tags = Array[StringName]([&"cleanse", &"heal"])
+cooldown = 20.0
+effect_id = &"cleanse_heal"
+power = 2.0
+duration = 4.0

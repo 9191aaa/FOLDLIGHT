@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"mirror_tax"
+title = "镜税"
+description = "返光伤害提高 18%，普通自动武器伤害降低 5%。"
+accent = Color(0.94, 0.40, 0.70, 1)
+tags = Array[StringName]([&"return", &"tradeoff"])
+family = 1
+rarity = 1
+max_stacks = 3
+stat_modifiers = {"return_damage_multiplier": 1.18, "weapon_damage_multiplier": 0.95}
+

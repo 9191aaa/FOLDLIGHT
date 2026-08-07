@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"luminous_pierce"
+title = "透页光"
+description = "自动弹体额外穿透一个目标。"
+accent = Color(1, 0.74, 0.34, 1)
+tags = Array[StringName]([&"pierce"])
+family = 0
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"projectile_pierce_add": 1}
+

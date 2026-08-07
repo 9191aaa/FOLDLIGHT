@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueActiveItemDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_active_item_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"tide_clock"
+title = "停潮钟"
+description = "让敌人与敌弹降至 35% 速度五秒，玩家与返光保持原速。"
+accent = Color(0.88, 0.55, 0.96, 1)
+tags = Array[StringName]([&"control", &"slow"])
+cooldown = 20.0
+effect_id = &"hostile_slow"
+power = 0.35
+duration = 5.0

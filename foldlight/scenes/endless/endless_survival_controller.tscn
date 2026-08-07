@@ -1,0 +1,23 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/endless/endless_survival_controller.gd" id="1_controller"]
+[ext_resource type="Script" path="res://scripts/endless/endless_handcrafted_map.gd" id="2_map_runtime"]
+[ext_resource type="Script" path="res://scripts/endless/endless_evolution_director.gd" id="3_evolution"]
+[ext_resource type="Script" path="res://scripts/endless/endless_objective_director.gd" id="4_objectives"]
+[ext_resource type="Resource" path="res://resources/endless/endless_survival_default.tres" id="5_config"]
+[ext_resource type="Resource" path="res://resources/endless/maps/folded_delta.tres" id="6_map"]
+
+[node name="EndlessSurvivalController" type="Node2D"]
+script = ExtResource("1_controller")
+config = ExtResource("5_config")
+map_definition = ExtResource("6_map")
+
+[node name="HandcraftedMap" type="Node2D" parent="."]
+script = ExtResource("2_map_runtime")
+map_definition = ExtResource("6_map")
+
+[node name="EvolutionDirector" type="Node" parent="."]
+script = ExtResource("3_evolution")
+
+[node name="ObjectiveDirector" type="Node" parent="."]
+script = ExtResource("4_objectives")

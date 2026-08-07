@@ -1,0 +1,69 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/bosses/rogue_boss_actor.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/roguelite/bosses/boss_phase_controller.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/roguelite/bosses/boss_arena_controller.gd" id="3"]
+[ext_resource type="Shader" path="res://assets/shaders/boss_aura.gdshader" id="4"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_boss"]
+radius = 52.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_aura"]
+shader = ExtResource("4")
+shader_parameter/accent = Color(0.35, 0.9, 0.85, 1)
+shader_parameter/intensity = 0.42
+
+[sub_resource type="Gradient" id="Gradient_particle"]
+offsets = PackedFloat32Array(0, 0.42, 1)
+colors = PackedColorArray(1, 1, 1, 0.95, 0.35, 0.95, 0.85, 0.72, 0.35, 0.95, 0.85, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_particle"]
+gradient = SubResource("Gradient_particle")
+width = 32
+height = 32
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_phase"]
+particle_flag_disable_z = true
+emission_shape = 1
+emission_sphere_radius = 18.0
+direction = Vector3(1, 0, 0)
+spread = 180.0
+initial_velocity_min = 95.0
+initial_velocity_max = 210.0
+gravity = Vector3(0, 0, 0)
+scale_min = 0.35
+scale_max = 0.75
+
+[node name="RogueBossActor" type="CharacterBody2D"]
+script = ExtResource("1")
+
+[node name="Aura" type="Polygon2D" parent="."]
+z_index = -1
+material = SubResource("ShaderMaterial_aura")
+polygon = PackedVector2Array(-125, -125, 125, -125, 125, 125, -125, 125)
+uv = PackedVector2Array(0, 0, 1, 0, 1, 1, 0, 1)
+color = Color(1, 1, 1, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_boss")
+
+[node name="PhaseController" type="Node" parent="."]
+script = ExtResource("2")
+
+[node name="ArenaController" type="Node2D" parent="."]
+script = ExtResource("3")
+
+[node name="PhaseParticles" type="GPUParticles2D" parent="."]
+emitting = false
+amount = 28
+lifetime = 0.72
+one_shot = true
+explosiveness = 1.0
+local_coords = false
+fixed_fps = 30
+visibility_rect = Rect2(-260, -260, 520, 520)
+process_material = SubResource("ParticleProcessMaterial_phase")
+texture = SubResource("GradientTexture2D_particle")

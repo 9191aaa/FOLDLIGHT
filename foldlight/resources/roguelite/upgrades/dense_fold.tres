@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"dense_fold"
+title = "密折场"
+description = "折域半径扩大 12%。"
+accent = Color(0.88, 0.42, 0.82, 1)
+tags = Array[StringName]([&"radius"])
+family = 1
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"fold_radius_multiplier": 1.12}
+

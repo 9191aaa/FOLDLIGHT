@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"prism_bulwark"
+title = "棱镜折卫"
+description = "用面向玩家的棱镜压低自动武器伤害；追踪返光会击碎棱镜。"
+accent = Color(0.42, 0.9, 1, 1)
+tags = Array[StringName]([&"mechanic", &"shield", &"return_counter"])
+role = 4
+threat_cost = 4
+minimum_region = 2
+max_simultaneous = 2
+base_health = 12.0
+move_speed = 96.0
+attack_interval = 3.0
+stationary = false
+quota_group = &"support"
+mechanic_rule = "面向你的蓝色棱镜会挡住大部分自动武器伤害。"
+counterplay = "松开折域；追踪返光会直接碎盾，并打开三秒受创窗口。"

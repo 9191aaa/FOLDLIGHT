@@ -1,0 +1,7 @@
+.godot/
+*.exe
+*.pck
+export/
+captures/
+*.log
+

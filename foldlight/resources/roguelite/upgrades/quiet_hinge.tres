@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"quiet_hinge"
+title = "静铰"
+description = "折域释放冷却缩短 10%。"
+accent = Color(0.92, 0.45, 0.72, 1)
+tags = Array[StringName]([&"cooldown"])
+family = 1
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"fold_cooldown_multiplier": 0.9}
+

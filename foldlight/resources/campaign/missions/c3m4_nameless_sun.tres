@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c3m4"
+chapter = 3
+mission_number = 4
+chapter_title = "第三章 · 无名天光"
+title = "无名日轮"
+subtitle = "不击杀黑夜，把所有名字送回岸上"
+location = "白昼折口"
+synopsis = "最后六层潮线汇集全部航术。无名日轮会记住你上一轮释放的数量，再把同样多的花瓣送回来。"
+expected_seconds = 840
+tide_duration = 110.0
+boss_budget_seconds = 180
+difficulty = 1.72
+scene_theme = &"nameless_sun"
+accent = Color(1, 0.72, 0.28, 1)
+tide_names = Array[String](["全名", "旧航", "三庭", "折日", "无名", "天光"])
+tide_scene_tags = Array[String](["万名归潮", "旧航全线", "三庭同灯", "日轮折口", "无名夜海", "第一束天光"])
+tide_objective_labels = Array[String](["稳定全部名字锚点", "护送旧船队穿过终线", "连续完成净化、追猎与充能", "让赤轮撞开日轮折口", "收下无名潮的整片弹幕", "为终幕准备一次二十四枚返光"])
+objective_ids = Array[StringName]([&"beacon_charge", &"escort", &"mastery", &"ram_relay", &"return_quota", &"mastery"])
+objective_targets = Array[int]([160, 180, 3, 4, 180, 24])
+modifier_ids = Array[StringName]([&"mirror_tide", &"escort_lane", &"final_mix", &"ram_surge", &"black_tide", &"nameless_dawn"])
+enemy_rosters = Array[String](["mirror,thief,moth", "ram,rewinder,bell", "leech,carver,thief,moth", "ram,mirror,bell", "rewinder,mirror,carver,moth", "ram,rewinder,mirror,thief,bell,carver"])
+ritual_event_pairs = Array[String](["return_echo,courier", "rewind_trace,red_line", "paper_seal,bell_pull", "ram_wave,hundred_fold", "black_tide,final_mix", "hundred_fold,nameless_dawn"])
+boss_id = &"nameless_sun"
+boss_title = "无名日轮 · 四相"
+boss_subtitle = "你上一轮送出的光，会成为它下一轮的潮"
+opening_title = "把所有名字带回岸上"
+opening_body = "日轮没有恶意。它只是把无法归类的记忆永远留在白昼之外。让它看见：每一枚花瓣都有来处。"
+ending_title = "FOLDLIGHT · 天光返航"
+ending_body = "你松开折域。整片夜潮化成返光，越过旧船队、沉庭和纸鸢，落回每一扇等待名字的窗。岑在第一束天光里只存在了四秒——这一次，足够说完再见。"
+base_glimmer_reward = 18
+chapter_finale = true
+campaign_finale = true

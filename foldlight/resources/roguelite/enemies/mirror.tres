@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"mirror"
+title = "逆折者"
+description = "2.0 的镜面折域：展开青环截获玩家返光，再把它们化成可重新收纳的花瓣。"
+accent = Color(0.30, 0.88, 0.86, 1)
+tags = Array[StringName]([&"ordinary", &"classic", &"shooter", &"return_interceptor"])
+role = 1
+threat_cost = 4
+minimum_region = 2
+max_simultaneous = 2
+base_health = 11.0
+move_speed = 108.0
+attack_interval = 1.75
+stationary = false
+quota_group = &"ordinary"

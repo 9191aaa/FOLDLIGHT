@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"bell_binder"
+title = "系铃使"
+description = "用两条金色系带强化附近敌人；切断系带来源即可解除全部增益。"
+accent = Color(1, 0.76, 0.27, 1)
+tags = Array[StringName]([&"mechanic", &"buffer", &"priority"])
+role = 4
+threat_cost = 4
+minimum_region = 2
+max_simultaneous = 2
+base_health = 11.0
+move_speed = 102.0
+attack_interval = 2.4
+stationary = false
+quota_group = &"support"
+mechanic_rule = "两条金色系带会让相连敌人移动和攻击更快。"
+counterplay = "优先击破系铃使；来源消失时，两条增益会同时解除。"

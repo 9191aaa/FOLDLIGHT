@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"steady_lantern"
+title = "长明折灯"
+description = "射速：射击间隔 ×0.82（每级，约快 22%）。"
+accent = Color(0.34, 0.86, 0.88, 1)
+tags = Array[StringName]([&"cadence"])
+family = 0
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"weapon_interval_multiplier": 0.82}

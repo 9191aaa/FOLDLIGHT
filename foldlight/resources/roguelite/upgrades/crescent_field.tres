@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"crescent_field"
+title = "新月折域"
+description = "展开折域时的移动减速减轻 15%。"
+accent = Color(0.74, 0.48, 1, 1)
+tags = Array[StringName]([&"mobility", &"fold"])
+family = 1
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"fold_move_speed_add": 0.15}
+

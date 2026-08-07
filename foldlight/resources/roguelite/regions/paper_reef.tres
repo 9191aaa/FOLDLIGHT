@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="FoldlightRogueRegionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_region_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"paper_reef"
+title = "纸礁浅海"
+description = "开阔航道与清晰炮线，学习利用礁墙切割火力。"
+accent = Color(0.28, 0.84, 0.83, 1)
+tags = Array[StringName]([&"open", &"reef"])
+depth_count = 7
+base_threat_budget = 24
+encounter_ids = Array[StringName]([&"reef_crossfire"])
+boss_ids = Array[StringName]([&"reef_crown_battery"])
+backdrop_style = &"paper_reef"

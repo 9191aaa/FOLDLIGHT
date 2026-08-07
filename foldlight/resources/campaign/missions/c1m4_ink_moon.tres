@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c1m4"
+chapter = 1
+mission_number = 4
+chapter_title = "第一章 · 纸海残灯"
+title = "墨月裂相"
+subtitle = "把整轮夜色折回来"
+location = "无灯风眼"
+synopsis = "墨月并非天体，而是无数未能返航的愿望。穿过六层夜潮，送回它的三种月相。"
+expected_seconds = 660
+tide_duration = 80.0
+boss_budget_seconds = 180
+difficulty = 1.12
+scene_theme = &"ink_moon"
+accent = Color(0.92, 0.3, 0.6, 1)
+tide_names = Array[String](["无灯", "墨针", "黑潮", "镜月", "倒影", "裂相"])
+tide_scene_tags = Array[String](["无灯风眼", "墨针星雨", "黑潮合岸", "镜月反折", "四秒倒影", "墨月裂相"])
+tide_objective_labels = Array[String](["在无灯潮中保持折息", "拔除三枚墨针", "完成返航配额", "打破逆折镜面", "离开四秒前的旧路", "为墨月积蓄终轮返光"])
+objective_ids = Array[StringName]([&"survive", &"cleanse", &"return_quota", &"mastery", &"survive", &"return_quota"])
+objective_targets = Array[int]([1, 3, 68, 6, 1, 96])
+modifier_ids = Array[StringName]([&"lights_out", &"seal_storm", &"narrow_shore", &"return_echo", &"rewind_surge", &"black_tide"])
+enemy_rosters = Array[String](["leech,fan", "weaver,carver", "ram,bell,leech", "mirror,moth", "rewinder,ram,carver", "mirror,rewinder,bell,moth"])
+ritual_event_pairs = Array[String](["lights_out,lamp_rain", "paper_seal,carved_lane", "tide_seam,bell_pull", "return_echo,echo_bloom", "rewind_trace,red_line", "hundred_fold,black_tide"])
+boss_id = &"ink_moon"
+boss_title = "墨月 · 三相"
+boss_subtitle = "弹幕散去时，就是新的月相"
+opening_title = "它不是月亮"
+opening_body = "墨月是所有未寄出的愿望在海上结成的影。折碎它，不是为了杀死夜色，而是让第一束天光重新拥有方向。"
+ending_title = "第一章 · 天光有了方向"
+ending_body = "墨月裂出一道细亮的缝。缝后不是太阳，而是一条仍在向更深海域延伸的旧航线。"
+base_glimmer_reward = 10
+chapter_finale = true

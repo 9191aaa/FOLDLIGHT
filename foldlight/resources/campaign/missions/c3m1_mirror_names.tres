@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c3m1"
+chapter = 3
+mission_number = 1
+chapter_title = "第三章 · 无名天光"
+title = "镜海重名"
+subtitle = "连续的返光会让名字重新稳定"
+location = "镜海锚地"
+synopsis = "四枚名字锚点漂在镜海。保持返光连锁，让港口居民被墨月抹掉的名字重新落回岸上。"
+expected_seconds = 540
+tide_duration = 75.0
+boss_budget_seconds = 90
+difficulty = 1.34
+scene_theme = &"mirror_sea"
+accent = Color(0.48, 0.88, 0.9, 1)
+tide_names = Array[String](["第一名", "镜锚", "连返", "双名", "港声", "重名"])
+tide_scene_tags = Array[String](["镜海初名", "名字锚点", "连返水线", "双名同潮", "港口回声", "镜海重名"])
+tide_objective_labels = Array[String](["稳定第一枚名字锚", "连续充能镜面航标", "保持五次返光击杀链", "让两枚名字同时发光", "截住逃逸的名字载体", "稳定四枚名字锚点"])
+objective_ids = Array[StringName]([&"beacon_charge", &"beacon_charge", &"mastery", &"beacon_charge", &"pursuit", &"beacon_charge"])
+objective_targets = Array[int]([48, 70, 5, 96, 2, 140])
+modifier_ids = Array[StringName]([&"return_echo", &"mirror_tide", &"pursuit_wake", &"crosswind_flip", &"courier_surge", &"mirror_tide"])
+enemy_rosters = Array[String](["mirror,moth", "mirror,bell,fan", "thief,moth,carver", "mirror,rewinder", "thief,ram,bell", "mirror,thief,moth,rewinder"])
+ritual_event_pairs = Array[String](["return_echo,echo_bloom", "bell_pull,crosswind", "courier,carved_lane", "rewind_trace,return_echo", "courier,red_line", "hundred_fold,return_echo"])
+boss_id = &"mirror_crown"
+boss_title = "回忆冠"
+boss_subtitle = "它会把你最近四秒的路线戴在头上"
+opening_title = "名字不是标签，是归岸的坐标"
+opening_body = "每稳定一枚锚点，远处港口就有人想起自己该如何被呼唤。"
+ending_title = "港口重新拥有声音"
+ending_body = "人们喊出彼此的名字。那些声音沿镜面一路追上你的纸灯，成为下一片返光。"
+base_glimmer_reward = 9

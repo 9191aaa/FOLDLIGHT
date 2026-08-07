@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c1m1"
+chapter = 1
+mission_number = 1
+chapter_title = "第一章 · 纸海残灯"
+title = "静水试灯"
+subtitle = "先学会把危险折成弹药"
+location = "残灯渡海"
+synopsis = "岑把最后一盏纸灯交给你。静水并不安静，但每一枚花瓣都能被送回去。"
+expected_seconds = 420
+tide_duration = 55.0
+boss_budget_seconds = 90
+difficulty = 0.88
+scene_theme = &"still_water"
+accent = Color(0.3, 0.88, 0.86, 1)
+tide_names = Array[String](["静水", "灯雨", "潮缝", "纸翼", "初轮", "返航"])
+tide_scene_tags = Array[String](["镜海微澜", "残灯落雨", "纸岸合缝", "微风纸翼", "赤轮初醒", "归潮航线"])
+tide_objective_labels = Array[String](["活下来，并完成第一次大返光", "返还 24 枚花瓣", "穿过潮缝，保持灯火", "连续返光击破纸翼", "完成两次满蓄释放", "把整片潮线送回去"])
+objective_ids = Array[StringName]([&"survive", &"return_quota", &"return_quota", &"mastery", &"mastery", &"return_quota"])
+objective_targets = Array[int]([1, 24, 32, 5, 2, 52])
+modifier_ids = Array[StringName]([&"calm", &"lamp_rain", &"tide_seam", &"light_crosswind", &"red_pulse", &"return_echo"])
+enemy_rosters = Array[String](["drifter", "drifter,fan", "fan,weaver", "fan,bloomer", "ram,leech", "mirror,rewinder,ram"])
+ritual_event_pairs = Array[String](["lamp_rain,tide_seam", "lamp_rain,crosswind", "tide_seam,paper_seal", "crosswind,echo_bloom", "red_line,ram_wave", "rewind_trace,hundred_fold"])
+boss_id = &"first_lantern"
+boss_title = "初灯潮使"
+boss_subtitle = "把第一次整轮返光留给它"
+opening_title = "纸海没有太阳了"
+opening_body = "墨月吞走沿岸的名字，只剩未寄出的灯火漂在潮里。你不用躲开它们——把它们收好，再送回去。"
+ending_title = "第一枚名字回来了"
+ending_body = "潮声吐出一个模糊的姓氏。纸海不是在攻击岸上，它是在用最后能记住的方式求救。"
+base_glimmer_reward = 5

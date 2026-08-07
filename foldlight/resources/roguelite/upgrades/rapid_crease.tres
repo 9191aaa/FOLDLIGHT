@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"rapid_crease"
+title = "重光弹芯"
+description = "火力：自动武器伤害 ×1.25（每级）。"
+accent = Color(0.35, 0.88, 0.88, 1)
+tags = Array[StringName]([&"damage"])
+family = 0
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"weapon_damage_multiplier": 1.25}

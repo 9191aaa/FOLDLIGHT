@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"steady_heart"
+title = "定心页"
+description = "受伤后的无敌时间增加 0.15 秒。"
+accent = Color(0.62, 0.90, 0.72, 1)
+tags = Array[StringName]([&"grace"])
+family = 3
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"damage_grace_add": 0.15}

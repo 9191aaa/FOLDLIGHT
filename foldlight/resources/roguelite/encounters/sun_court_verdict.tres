@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEncounterDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_encounter_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"sun_court_verdict"
+title = "日庭合议"
+description = "两种机制交错出现，但职责配额确保场面始终能一眼读懂。"
+accent = Color(1, 0.67, 0.26, 1)
+tags = Array[StringName]([&"sun_court", &"combined", &"sustained"])
+threat_budget = 44
+wave_count = 4
+minimum_enemy_count = 27
+target_duration = 96.0
+controller_quota = 1
+buffer_quota = 2
+turret_quota = 3
+minimum_fodder_ratio = 0.50
+enemy_ids = Array[StringName]([&"drifter", &"fan", &"weaver", &"ram", &"bloomer", &"leech", &"mirror", &"rewinder", &"paper_turret", &"bell_binder", &"ink_warden", &"prism_bulwark", &"brood_lantern", &"shear_scribe"])
+room_tags = Array[StringName]([&"court", &"rotating_lanes"])

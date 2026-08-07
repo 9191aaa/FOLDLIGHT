@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"wide_return"
+title = "潮边余量"
+description = "本局折域收纳上限增加 1。"
+accent = Color(0.93, 0.4, 0.66, 1)
+tags = Array[StringName]([&"capacity"])
+family = 1
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"capture_capacity": 1}
+

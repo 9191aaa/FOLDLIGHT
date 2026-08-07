@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"calm_current"
+title = "顺潮"
+description = "常规移动速度提高 8%。"
+accent = Color(0.38, 0.88, 0.88, 1)
+tags = Array[StringName]([&"movement"])
+family = 3
+rarity = 0
+max_stacks = 3
+stat_modifiers = {"move_speed_multiplier": 1.08}
+

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"clean_crease"
+title = "净折"
+description = "满载释放折域时清除一个负面状态。"
+accent = Color(0.48, 0.94, 0.84, 1)
+tags = Array[StringName]([&"cleanse"])
+family = 1
+rarity = 1
+max_stacks = 1
+stat_modifiers = {"cleanse_on_full_release": true}
+

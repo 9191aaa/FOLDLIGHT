@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"paper_turret"
+title = "折纸炮台"
+description = "固定瞄准一条长射线，齐射后打开核心进入受创窗口。"
+accent = Color(1, 0.37, 0.27, 1)
+tags = Array[StringName]([&"mechanic", &"turret", &"lane"])
+role = 3
+threat_cost = 4
+minimum_region = 1
+max_simultaneous = 2
+base_health = 14.0
+move_speed = 0.0
+attack_interval = 2.17
+stationary = true
+quota_group = &"turret"
+mechanic_rule = "红色长线锁定后，炮台沿该方向发射五枚可反射弹。"
+counterplay = "横向离开红线；齐射后蓝色核心暴露，集中攻击。"

@@ -1,0 +1,34 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/components/status_effects.gd" id="2_status"]
+[ext_resource type="PackedScene" path="res://scenes/components/dash_component.tscn" id="3_dash"]
+[ext_resource type="PackedScene" path="res://scenes/components/fold_component.tscn" id="4_fold"]
+[ext_resource type="PackedScene" path="res://scenes/components/weapon_mount.tscn" id="5_weapon"]
+[ext_resource type="PackedScene" path="res://scenes/components/active_item_slot.tscn" id="6_active"]
+[ext_resource type="PackedScene" path="res://scenes/components/feedback_budget.tscn" id="7_feedback"]
+
+[sub_resource type="CircleShape2D" id="CircleShape_player"]
+radius = 18.0
+
+[node name="Player" type="CharacterBody2D"]
+position = Vector2(960, 650)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("1_player")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape_player")
+
+[node name="StatusEffects" type="Node" parent="."]
+script = ExtResource("2_status")
+
+[node name="DashComponent" parent="." instance=ExtResource("3_dash")]
+
+[node name="FoldComponent" parent="." instance=ExtResource("4_fold")]
+
+[node name="WeaponMount" parent="." instance=ExtResource("5_weapon")]
+
+[node name="ActiveItemSlot" parent="." instance=ExtResource("6_active")]
+
+[node name="FeedbackBudget" parent="." instance=ExtResource("7_feedback")]

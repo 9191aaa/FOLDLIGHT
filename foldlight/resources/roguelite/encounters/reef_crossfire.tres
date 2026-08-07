@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEncounterDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_encounter_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"reef_crossfire"
+title = "礁间交火"
+description = "漂兵稳住节奏，冲舟迫使换位，单座炮台提示优先目标。"
+accent = Color(0.28, 0.84, 0.83, 1)
+tags = Array[StringName]([&"paper_reef", &"open", &"introduction"])
+threat_budget = 26
+wave_count = 3
+minimum_enemy_count = 18
+target_duration = 65.0
+controller_quota = 0
+buffer_quota = 0
+turret_quota = 2
+minimum_fodder_ratio = 0.52
+enemy_ids = Array[StringName]([&"drifter", &"fan", &"weaver", &"ram", &"bloomer", &"paper_turret", &"brood_lantern"])
+room_tags = Array[StringName]([&"open", &"turret_lane"])

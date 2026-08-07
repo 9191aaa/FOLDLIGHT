@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="FoldlightRogueRegionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_region_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"inverted_ink_city"
+title = "倒悬墨城"
+description = "墨池切断捷径，系潮者让敌群形成必须拆解的秩序。"
+accent = Color(0.49, 0.45, 0.68, 1)
+tags = Array[StringName]([&"channels", &"ink"])
+depth_count = 7
+base_threat_budget = 32
+encounter_ids = Array[StringName]([&"ink_city_order"])
+boss_ids = Array[StringName]([&"inverted_archivist"])
+backdrop_style = &"ink_city"

@@ -1,0 +1,19 @@
+keys,zh_CN,en
+ROGUE_MENU_NEW,开始迷航,Begin Voyage
+ROGUE_MENU_FIRST,开始序章,Begin Prologue
+ROGUE_MENU_CONTINUE,继续迷航,Continue Voyage
+ROGUE_MENU_PROLOGUE,序章 · 学会折灯,Prologue · Learn the Fold
+ROGUE_MENU_CLASSIC,经典战役 · 十二航,Classic Campaign · Twelve Voyages
+ROGUE_MENU_SETTINGS,设置,Settings
+ROGUE_MENU_QUIT,退出,Quit
+ROGUE_TITLE_EYEBROW,一只手的深海折返战,One-hand deep-sea returnfire
+ROGUE_TITLE_STRAP,把危险折进掌心，再让整片光返航。,Fold danger into your palm—then send all that light home.
+ROGUE_TITLE_INPUT,方向键 / WASD 选择   ·   空格 / A 确认,Arrows / WASD to select   ·   Space / A to confirm
+ROGUE_HUD_LANTERN,灯芯,Lantern
+ROGUE_HUD_ACTIONS,走位动作,Movement actions
+ROGUE_REWARD_EYEBROW,局内构筑 · 只在本次迷航生效,Run build · lasts for this voyage
+ROGUE_ROUTE_EYEBROW,折航图 · 你只能驶向相连的房间,Fold chart · only connected rooms are reachable
+ROGUE_RESULT_EYEBROW,本次航行记录,Voyage record
+ROGUE_RESULT_RETRY,再次迷航,Voyage again
+ROGUE_RESULT_TITLE,返回标题,Return to title
+ROGUE_NEW_MECHANIC,新威胁,New threat

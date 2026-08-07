@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c2m2"
+chapter = 2
+mission_number = 2
+chapter_title = "第二章 · 倒流旧航"
+title = "赤轮开闸"
+subtitle = "看清金线，让冲撞替你开门"
+location = "赤轮苇原"
+synopsis = "三道赤轮锁住旧航线。诱导冲角撞上轮闸，震波会为你炸出整圈可收纳花瓣。"
+expected_seconds = 540
+tide_duration = 75.0
+boss_budget_seconds = 90
+difficulty = 1.18
+scene_theme = &"red_wheel"
+accent = Color(0.98, 0.48, 0.26, 1)
+tide_names = Array[String](["金线", "撞岸", "一闸", "双轮", "反冲", "赤门"])
+tide_scene_tags = Array[String](["赤轮金线", "苇原撞岸", "第一轮闸", "双轮同鸣", "旧线反冲", "赤门全开"])
+tide_objective_labels = Array[String](["躲开锁定金线", "引冲角撞上纸岸", "点亮第一轮闸", "让两次撞击连续发生", "沿旧冲线反向折回", "点亮三座赤轮"])
+objective_ids = Array[StringName]([&"survive", &"ram_relay", &"ram_relay", &"mastery", &"ram_relay", &"ram_relay"])
+objective_targets = Array[int]([1, 2, 3, 2, 3, 5])
+modifier_ids = Array[StringName]([&"red_line", &"ram_surge", &"narrow_shore", &"red_pulse", &"return_echo", &"ram_surge"])
+enemy_rosters = Array[String](["ram,fan", "ram,carver", "ram,weaver,bell", "ram,ram,moth", "ram,rewinder,carver", "ram,bell,mirror,thief"])
+ritual_event_pairs = Array[String](["red_line,lamp_rain", "red_line,ram_wave", "paper_seal,red_line", "ram_wave,return_echo", "rewind_trace,red_line", "ram_wave,hundred_fold"])
+boss_id = &"red_wheel_king"
+boss_title = "赤轮王 · 司闸"
+boss_subtitle = "让它自己的冲线成为输出窗口"
+opening_title = "危险也可以是一把钥匙"
+opening_body = "冲角身上的金线与折光庭旧徽记完全相同。有人把守灯人的航术折成了武器。"
+ending_title = "赤轮背面刻着岑的笔迹"
+ending_body = "‘若我没能回来，就让后来者沿我的撞痕开门。’岑沉默了很久。"
+base_glimmer_reward = 8

@@ -1,0 +1,33 @@
+# Godot
+.godot/
+
+# Build outputs (含各版本导出 exe——用户自行 export 重建)
+build/
+
+# 大量资源（QA 截图/录制，本仓库不需要）
+captures/
+
+# 引擎导出模板（重新生成）
+export_templates/
+
+# 平台特性（不重要）
+feature_profiles/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器临时
+*.swp
+*.swo
+*~
+*.bak
+
+# 代码分析
+artifacts/release/
+foldlight/.godot/
+foldlight/build/
+foldlight/captures/
+foldlight/export_templates/
+foldlight/feature_profiles/

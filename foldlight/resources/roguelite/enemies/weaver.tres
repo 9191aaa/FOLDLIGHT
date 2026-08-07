@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"weaver"
+title = "织潮者"
+description = "2.0 的旋环织潮者：连续织出弯曲花瓣，并周期预告封钉。"
+accent = Color(0.54, 0.39, 0.78, 1)
+tags = Array[StringName]([&"ordinary", &"classic", &"shooter"])
+role = 1
+threat_cost = 3
+minimum_region = 1
+max_simultaneous = 3
+base_health = 6.0
+move_speed = 105.0
+attack_interval = 0.46
+stationary = false
+quota_group = &"ordinary"

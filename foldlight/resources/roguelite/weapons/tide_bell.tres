@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="FoldlightRogueWeaponDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_weapon_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"tide_bell"
+title = "潮钟"
+description = "缓慢钟声落在随机敌群中央，以清晰圆环造成范围伤害。"
+accent = Color(0.98, 0.70, 0.28, 1)
+tags = Array[StringName]([&"area", &"slow"])
+targeting = 4
+fire_interval = 1.75
+base_damage = 2.2
+projectile_speed = 430.0
+targeting_range = 1050.0
+volley_count = 1
+projectile_style = &"tide_bell"
+

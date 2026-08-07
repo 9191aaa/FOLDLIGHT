@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"sixfold_memory"
+title = "六折记忆"
+description = "折域容量增加 2，但折域半径缩小 5%。"
+accent = Color(0.88, 0.40, 0.72, 1)
+tags = Array[StringName]([&"capacity", &"tradeoff"])
+family = 1
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"capture_capacity": 2, "fold_radius_multiplier": 0.95}
+

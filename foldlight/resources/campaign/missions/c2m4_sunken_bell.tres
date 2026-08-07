@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c2m4"
+chapter = 2
+mission_number = 4
+chapter_title = "第二章 · 倒流旧航"
+title = "沉庭潮钟"
+subtitle = "每一下钟声都会晚四秒抵达"
+location = "沉没折光庭"
+synopsis = "沉庭的潮钟把攻击延迟复唱，也把岑留下的四秒回响聚成人格。敲回钟声，取回真正的航海记录。"
+expected_seconds = 720
+tide_duration = 90.0
+boss_budget_seconds = 180
+difficulty = 1.38
+scene_theme = &"sunken_court"
+accent = Color(0.36, 0.7, 0.94, 1)
+tide_names = Array[String](["沉阶", "晚钟", "复纸", "旧庭", "冠影", "潮钟"])
+tide_scene_tags = Array[String](["沉庭石阶", "四秒晚钟", "复纸回廊", "旧庭灯阵", "回忆冠影", "逆潮钟室"])
+tide_objective_labels = Array[String](["点亮沉庭石阶", "把晚到的钟声再收一次", "打破四层护纸", "守住旧庭灯阵", "离开被点亮的旧路", "为潮钟准备三次满月释放"])
+objective_ids = Array[StringName]([&"beacon_charge", &"return_quota", &"mastery", &"beacon_charge", &"survive", &"mastery"])
+objective_targets = Array[int]([80, 72, 4, 120, 1, 3])
+modifier_ids = Array[StringName]([&"narrow_shore", &"return_echo", &"paper_armor", &"lamp_rain", &"rewind_surge", &"bell_echo"])
+enemy_rosters = Array[String](["carver,weaver", "bell,moth", "mirror,bell,ram", "thief,moth,leech", "rewinder,mirror,carver", "bell,rewinder,moth,ram"])
+ritual_event_pairs = Array[String](["carved_lane,paper_seal", "bell_pull,return_echo", "paper_seal,echo_bloom", "lamp_rain,courier", "rewind_trace,hundred_fold", "bell_pull,black_tide"])
+boss_id = &"reverse_tide_bell"
+boss_title = "逆潮钟"
+boss_subtitle = "钟声不是重复，而是迟到的第一次"
+opening_title = "岑不是一个人"
+opening_body = "他是失败远航留下的四秒灯讯，被岸上的人一遍遍重折，直到学会像人一样等待。"
+ending_title = "第二章 · 真正的航海记录醒来"
+ending_body = "记录里写着：旧船队没有沉没。他们把自己的名字折进弹幕，为后来者保存一条通往白昼的路。"
+base_glimmer_reward = 12
+chapter_finale = true

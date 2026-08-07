@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"shear_scribe"
+title = "裁线使"
+description = "先画出巨大十字裁线，再放出四枚不可反射的黑金刀片。"
+accent = Color(0.86, 0.38, 0.86, 1)
+tags = Array[StringName]([&"mechanic", &"controller", &"unreflectable"])
+role = 5
+threat_cost = 5
+minimum_region = 2
+max_simultaneous = 1
+base_health = 13.0
+move_speed = 105.0
+attack_interval = 4.8
+stationary = false
+quota_group = &"control"
+mechanic_rule = "红金十字完成后会沿四个方向射出不可反射的裁切。"
+counterplay = "离开两条亮线；齐射后的青色圆环就是集中输出窗口。"

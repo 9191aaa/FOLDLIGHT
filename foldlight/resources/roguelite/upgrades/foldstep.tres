@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"foldstep"
+title = "折步"
+description = "成功释放至少三枚返光时返还 18% 冲刺冷却。"
+accent = Color(0.76, 0.50, 1, 1)
+tags = Array[StringName]([&"fold", &"refund"])
+family = 2
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"dash_refund_on_release": 0.18}
+

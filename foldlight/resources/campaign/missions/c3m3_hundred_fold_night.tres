@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c3m3"
+chapter = 3
+mission_number = 3
+chapter_title = "第三章 · 无名天光"
+title = "百折长夜"
+subtitle = "掌握的不是套路，是把规则折成机会"
+location = "天光前夜"
+synopsis = "六段精通考验会轮换护航、净化、追猎与大返光。压力增加来自组合，而不是更快的方向键。"
+expected_seconds = 660
+tide_duration = 95.0
+boss_budget_seconds = 90
+difficulty = 1.58
+scene_theme = &"hundred_fold_night"
+accent = Color(0.84, 0.4, 0.94, 1)
+tide_names = Array[String](["满月", "净纸", "行灯", "日链", "慈火", "百折"])
+tide_scene_tags = Array[String](["满月返光", "净纸墨潮", "行灯风路", "日链追函", "慈火护航", "百折长夜"])
+tide_objective_labels = Array[String](["完成三次十二枚大返光", "连续净化三处墨痕", "高速移动中收纳五枚花瓣", "保持五次返光击杀链", "护住纸舟并触发留白", "连续完成三类精通目标"])
+objective_ids = Array[StringName]([&"mastery", &"cleanse", &"mastery", &"mastery", &"escort", &"mastery"])
+objective_targets = Array[int]([3, 3, 5, 5, 130, 3])
+modifier_ids = Array[StringName]([&"petal_rain", &"seal_storm", &"crosswind_flip", &"courier_surge", &"black_tide", &"final_mix"])
+enemy_rosters = Array[String](["moth,bell,fan", "leech,weaver,carver", "ram,carver,thief", "thief,moth,mirror", "rewinder,bell,ram", "mirror,rewinder,thief,moth,carver"])
+ritual_event_pairs = Array[String](["lamp_rain,return_echo", "paper_seal,ink_roots", "crosswind,red_line", "courier,rewind_trace", "black_tide,bell_pull", "hundred_fold,final_mix"])
+boss_id = &"hundred_fold_night"
+boss_title = "百折夜冠"
+boss_subtitle = "它会同时考验你刚学会的三件事"
+opening_title = "你也是被折回来的记忆"
+opening_body = "记录里没有你的出航，却处处留下你的折痕。你不是后来者；你是旧船队为完成返航而折出的最后一盏灯。"
+ending_title = "长夜承认了你的方向"
+ending_body = "所有旧规则在你手里不再是障碍。无名日轮打开终门，等待你把整片夜潮一次送还。"
+base_glimmer_reward = 11

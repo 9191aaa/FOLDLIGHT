@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://c523d57bn7hgv"
+
+[deps]
+
+files=["res://translations/rogue_ui.zh_CN.translation", "res://translations/rogue_ui.en.translation"]
+
+source_file="res://translations/rogue_ui.csv"
+dest_files=["res://translations/rogue_ui.zh_CN.translation", "res://translations/rogue_ui.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

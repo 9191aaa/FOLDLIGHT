@@ -1,0 +1,273 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/endless/endless_slice_runtime.gd" id="1_slice"]
+[ext_resource type="PackedScene" path="res://scenes/endless/endless_survival_controller.tscn" id="2_controller"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="3_player"]
+[ext_resource type="PackedScene" path="res://scenes/roguelite/rogue_world.tscn" id="4_world"]
+
+[sub_resource type="StyleBoxFlat" id="StylePanel"]
+bg_color = Color(0.018, 0.075, 0.082, 0.88)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.36, 0.68, 0.61, 0.52)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="StyleModal"]
+bg_color = Color(0.012, 0.04, 0.052, 0.97)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.45, 0.82, 0.74, 0.82)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+shadow_color = Color(0, 0, 0, 0.62)
+shadow_size = 18
+
+[sub_resource type="StyleBoxFlat" id="StyleButton"]
+bg_color = Color(0.018, 0.09, 0.105, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.29, 0.59, 0.56, 0.72)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleButtonFocus"]
+bg_color = Color(0.035, 0.16, 0.17, 0.98)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.91, 0.72, 0.31, 0.94)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="EndlessSurvivalSlice" type="Node2D"]
+script = ExtResource("1_slice")
+
+[node name="Controller" parent="." instance=ExtResource("2_controller")]
+hide_when_inactive = false
+
+[node name="RogueWorld" parent="." instance=ExtResource("4_world")]
+
+[node name="Player" parent="." instance=ExtResource("3_player")]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+layer = 5
+
+[node name="TopPanel" type="Panel" parent="HUD"]
+offset_left = 28.0
+offset_top = 24.0
+offset_right = 706.0
+offset_bottom = 142.0
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Status" type="Label" parent="HUD"]
+offset_left = 50.0
+offset_top = 43.0
+offset_right = 688.0
+offset_bottom = 124.0
+theme_override_colors/font_color = Color(0.88, 0.92, 0.81, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 23
+
+[node name="ObjectivePanel" type="Panel" parent="HUD"]
+layout_mode = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -620.0
+offset_top = 24.0
+offset_right = -28.0
+offset_bottom = 176.0
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Objective" type="Label" parent="HUD"]
+layout_mode = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -594.0
+offset_top = 42.0
+offset_right = -50.0
+offset_bottom = 160.0
+theme_override_colors/font_color = Color(0.94, 0.83, 0.5, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 21
+autowrap_mode = 2
+
+[node name="HelpPanel" type="Panel" parent="HUD"]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -470.0
+offset_top = -82.0
+offset_right = 470.0
+offset_bottom = -24.0
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Help" type="Label" parent="HUD"]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -442.0
+offset_top = -66.0
+offset_right = 442.0
+offset_bottom = -37.0
+theme_override_colors/font_color = Color(0.75, 0.9, 0.84, 1)
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+text = "WASD / 方向键移动    按住空格收纳弹幕    松开返航    Esc / 手柄菜单返回标题"
+
+[node name="DamageFlash" type="ColorRect" parent="HUD"]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.78, 0.08, 0.07, 0)
+
+[node name="RewardToast" type="Panel" parent="HUD"]
+visible = false
+layout_mode = 0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -420.0
+offset_top = 196.0
+offset_right = 420.0
+offset_bottom = 278.0
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="RewardToastLabel" type="Label" parent="HUD/RewardToast"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 22.0
+offset_top = 12.0
+offset_right = -22.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.96, 0.84, 0.48, 1)
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ModalDim" type="ColorRect" parent="HUD"]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.002, 0.008, 0.014, 0.78)
+
+[node name="ModalPanel" type="Panel" parent="HUD/ModalDim"]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -520.0
+offset_top = -350.0
+offset_right = 520.0
+offset_bottom = 350.0
+theme_override_styles/panel = SubResource("StyleModal")
+
+[node name="ModalTitle" type="Label" parent="HUD/ModalDim/ModalPanel"]
+layout_mode = 0
+offset_left = 46.0
+offset_top = 36.0
+offset_right = 994.0
+offset_bottom = 102.0
+theme_override_colors/font_color = Color(0.96, 0.82, 0.43, 1)
+theme_override_font_sizes/font_size = 38
+horizontal_alignment = 1
+
+[node name="ModalBody" type="Label" parent="HUD/ModalDim/ModalPanel"]
+layout_mode = 0
+offset_left = 64.0
+offset_top = 112.0
+offset_right = 976.0
+offset_bottom = 220.0
+theme_override_colors/font_color = Color(0.79, 0.9, 0.86, 1)
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Choice1" type="Button" parent="HUD/ModalDim/ModalPanel"]
+layout_mode = 0
+offset_left = 90.0
+offset_top = 246.0
+offset_right = 950.0
+offset_bottom = 352.0
+focus_neighbor_bottom = NodePath("../Choice2")
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/hover = SubResource("StyleButtonFocus")
+theme_override_styles/pressed = SubResource("StyleButtonFocus")
+theme_override_styles/focus = SubResource("StyleButtonFocus")
+
+[node name="Choice2" type="Button" parent="HUD/ModalDim/ModalPanel"]
+layout_mode = 0
+offset_left = 90.0
+offset_top = 370.0
+offset_right = 950.0
+offset_bottom = 476.0
+focus_neighbor_top = NodePath("../Choice1")
+focus_neighbor_bottom = NodePath("../Choice3")
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/hover = SubResource("StyleButtonFocus")
+theme_override_styles/pressed = SubResource("StyleButtonFocus")
+theme_override_styles/focus = SubResource("StyleButtonFocus")
+
+[node name="Choice3" type="Button" parent="HUD/ModalDim/ModalPanel"]
+layout_mode = 0
+offset_left = 90.0
+offset_top = 494.0
+offset_right = 950.0
+offset_bottom = 600.0
+focus_neighbor_top = NodePath("../Choice2")
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/hover = SubResource("StyleButtonFocus")
+theme_override_styles/pressed = SubResource("StyleButtonFocus")
+theme_override_styles/focus = SubResource("StyleButtonFocus")
+
+[node name="ModalHint" type="Label" parent="HUD/ModalDim/ModalPanel"]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 624.0
+offset_right = 960.0
+offset_bottom = 670.0
+theme_override_colors/font_color = Color(0.53, 0.72, 0.68, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+text = "方向键 / WASD 选择    空格 / A 确认"

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"paper_storm"
+title = "纸暴"
+description = "需要急折；射击间隔再缩短 28%，但弹体尺寸略小。"
+accent = Color(0.94, 0.80, 0.40, 1)
+tags = Array[StringName]([&"capstone", &"cadence"])
+family = 0
+rarity = 2
+max_stacks = 1
+prerequisites = Array[StringName]([&"rapid_crease"])
+stat_modifiers = {"weapon_interval_multiplier": 0.72, "projectile_size_multiplier": 0.88}

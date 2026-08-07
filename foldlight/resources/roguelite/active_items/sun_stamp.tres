@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueActiveItemDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_active_item_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"sun_stamp"
+title = "日印"
+description = "六秒内自动武器速度提升至 225%，立即补充折息；折域仍可正常使用。"
+accent = Color(1, 0.58, 0.23, 1)
+tags = Array[StringName]([&"overdrive", &"tradeoff"])
+cooldown = 18.0
+effect_id = &"weapon_overdrive"
+power = 2.25
+duration = 6.0

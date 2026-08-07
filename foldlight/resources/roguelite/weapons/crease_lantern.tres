@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FoldlightRogueWeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"crease_lantern"
+title = "折灯"
+description = "自动寻找最近的潮兽，稳定发射一枚轻返光。"
+accent = Color(0.36, 0.86, 0.88, 1)
+tags = Array[StringName]([&"starter", &"direct"])
+targeting = 0
+fire_interval = 0.55
+base_damage = 1.0
+projectile_speed = 840.0
+targeting_range = 920.0
+volley_count = 1
+projectile_style = &"crease_petal"
+

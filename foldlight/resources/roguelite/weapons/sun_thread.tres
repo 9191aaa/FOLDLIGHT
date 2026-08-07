@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FoldlightRogueWeaponDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_weapon_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"sun_thread"
+title = "日裁线"
+description = "锁定生命最低者穿过整列敌人，稳定收尾并减少残血杂音。"
+accent = Color(1, 0.60, 0.24, 1)
+tags = Array[StringName]([&"execute", &"pierce"])
+targeting = 1
+fire_interval = 1.18
+base_damage = 1.8
+projectile_speed = 1180.0
+targeting_range = 1250.0
+volley_count = 1
+pierce = 3
+projectile_style = &"sun_thread"
+

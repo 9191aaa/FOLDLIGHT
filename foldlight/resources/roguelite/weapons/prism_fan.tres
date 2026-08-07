@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="FoldlightRogueWeaponDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_weapon_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"prism_fan"
+title = "棱光扇"
+description = "向最近目标展开三枚窄扇光，贴近时能让多枚命中。"
+accent = Color(0.92, 0.45, 0.82, 1)
+tags = Array[StringName]([&"volley", &"close"])
+targeting = 0
+fire_interval = 0.92
+base_damage = 0.78
+projectile_speed = 790.0
+targeting_range = 820.0
+volley_count = 3
+projectile_style = &"prism_fan"
+

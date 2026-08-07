@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"twin_fold"
+title = "并页齐射"
+description = "弹量：所有自动武器每轮齐射 +1 枚（每级）。"
+accent = Color(0.47, 0.82, 0.98, 1)
+tags = Array[StringName]([&"volley", &"offense"])
+family = 0
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"weapon_volley_add": 1}

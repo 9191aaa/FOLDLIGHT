@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldlightRogueActiveItemDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_active_item_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"crease_anchor"
+title = "定折锚"
+description = "展开五秒四层护盾，并把身边八枚普通敌弹锚成追踪返光。"
+accent = Color(0.35, 0.88, 0.88, 1)
+tags = Array[StringName]([&"shield", &"tradeoff"])
+cooldown = 17.0
+effect_id = &"anchor_shield"
+power = 4.0
+duration = 5.0

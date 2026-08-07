@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"tiny_silhouette"
+title = "小纸身"
+description = "角色外观与真实命中体一同缩小 18%；不改变攻击范围。"
+accent = Color(0.50, 0.94, 0.76, 1)
+tags = Array[StringName]([&"size", &"tiny"])
+family = 3
+rarity = 2
+max_stacks = 1
+exclusions = Array[StringName]([&"large_burden"])
+stat_modifiers = {"body_size_multiplier": 0.82}
+

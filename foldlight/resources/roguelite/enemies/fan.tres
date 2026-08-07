@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"fan"
+title = "扇潮"
+description = "2.0 的双翼扇潮：保持中距并射出五枚清晰扇面。"
+accent = Color(0.88, 0.24, 0.54, 1)
+tags = Array[StringName]([&"ordinary", &"classic", &"shooter"])
+role = 1
+threat_cost = 2
+minimum_region = 1
+max_simultaneous = 5
+base_health = 4.0
+move_speed = 86.0
+attack_interval = 2.45
+stationary = false
+quota_group = &"ordinary"

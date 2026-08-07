@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="FoldMissionDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mission_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = &"c3m2"
+chapter = 3
+mission_number = 2
+chapter_title = "第三章 · 无名天光"
+title = "断航群岛"
+subtitle = "护航与追猎只差一次松手"
+location = "断航群岛"
+synopsis = "六艘回声纸舟困在分裂纸岸之间。护送它们穿岛，截住偷走航名的寄灯使。"
+expected_seconds = 600
+tide_duration = 85.0
+boss_budget_seconds = 90
+difficulty = 1.46
+scene_theme = &"broken_isles"
+accent = Color(0.96, 0.62, 0.28, 1)
+tide_names = Array[String](["一舟", "追函", "双岛", "风桥", "六舟", "归队"])
+tide_scene_tags = Array[String](["断航一舟", "寄灯追函", "双岛护送", "横风纸桥", "六舟共潮", "旧队归航"])
+tide_objective_labels = Array[String](["护送第一艘纸舟", "截住寄灯使", "让两艘纸舟穿过双岛", "在横风桥上修满船帆", "救回六艘回声纸舟", "护送旧船队重新列阵"])
+objective_ids = Array[StringName]([&"escort", &"pursuit", &"escort", &"escort", &"mastery", &"escort"])
+objective_targets = Array[int]([70, 2, 110, 100, 6, 160])
+modifier_ids = Array[StringName]([&"escort_lane", &"courier_surge", &"narrow_shore", &"crosswind_flip", &"pursuit_wake", &"return_echo"])
+enemy_rosters = Array[String](["fan,thief", "thief,carver,ram", "bell,weaver,fan", "carver,moth,ram", "thief,bell,rewinder", "thief,moth,mirror,ram"])
+ritual_event_pairs = Array[String](["lamp_rain,courier", "courier,red_line", "tide_seam,bell_pull", "crosswind,carved_lane", "courier,rewind_trace", "return_echo,hundred_fold"])
+boss_id = &"broken_fleet"
+boss_title = "断航舰群"
+boss_subtitle = "每救回一艘船，终幕就多一盏友方灯"
+opening_title = "旧船队不再只是敌弹"
+opening_body = "他们把记忆拆成花瓣，是为了让任何后来者都能收下。现在该把整支船队折回同一张纸。"
+ending_title = "六艘纸舟重新列阵"
+ending_body = "舰首同时转向无名日轮。那不是终点，是所有名字被扣留的最后一扇门。"
+base_glimmer_reward = 10

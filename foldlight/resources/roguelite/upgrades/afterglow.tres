@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"afterglow"
+title = "余光护页"
+description = "释放至少四枚返光后获得一层短暂护盾。"
+accent = Color(1, 0.62, 0.78, 1)
+tags = Array[StringName]([&"shield", &"release"])
+family = 1
+rarity = 1
+max_stacks = 2
+stat_modifiers = {"release_shield_threshold": -1, "release_shield_layers": 1}
+

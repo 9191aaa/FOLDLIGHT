@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEncounterDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_encounter_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"ink_city_order"
+title = "墨城秩序"
+description = "只引入一种高优先机制，再用熟悉的普通敌人维持持续战斗。"
+accent = Color(0.72, 0.31, 0.91, 1)
+tags = Array[StringName]([&"ink_city", &"support", &"control"])
+threat_budget = 34
+wave_count = 4
+minimum_enemy_count = 22
+target_duration = 82.0
+controller_quota = 1
+buffer_quota = 2
+turret_quota = 2
+minimum_fodder_ratio = 0.50
+enemy_ids = Array[StringName]([&"drifter", &"fan", &"weaver", &"ram", &"bloomer", &"leech", &"mirror", &"rewinder", &"paper_turret", &"bell_binder", &"ink_warden", &"prism_bulwark", &"brood_lantern", &"shear_scribe"])
+room_tags = Array[StringName]([&"partition", &"ink_pool"])

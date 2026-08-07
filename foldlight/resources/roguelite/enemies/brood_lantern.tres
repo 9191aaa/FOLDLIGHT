@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"brood_lantern"
+title = "孵潮灯"
+description = "固定在场边不断孵出脆弱漂兵，让弹药与连杀同步增长。"
+accent = Color(1, 0.66, 0.25, 1)
+tags = Array[StringName]([&"mechanic", &"turret", &"summoner", &"priority"])
+role = 3
+threat_cost = 5
+minimum_region = 1
+max_simultaneous = 1
+base_health = 16.0
+move_speed = 0.0
+attack_interval = 5.8
+stationary = true
+quota_group = &"turret"
+mechanic_rule = "外圈变红后，孵潮灯会在身边补充两只脆弱漂兵。"
+counterplay = "它不能移动；先击破灯体即可停止增援并清掉它孵出的单位。"

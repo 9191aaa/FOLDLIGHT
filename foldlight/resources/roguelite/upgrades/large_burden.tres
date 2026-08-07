@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"large_burden"
+title = "巨页契"
+description = "诅咒：外观与真实命中体增大 22%；武器伤害提高 35%，微光获取提高 25%。"
+accent = Color(0.92, 0.30, 0.42, 1)
+tags = Array[StringName]([&"size", &"large", &"curse"])
+family = 3
+rarity = 4
+max_stacks = 1
+exclusions = Array[StringName]([&"tiny_silhouette"])
+stat_modifiers = {"body_size_multiplier": 1.22, "weapon_damage_multiplier": 1.35, "glimmer_gain_multiplier": 1.25}
+

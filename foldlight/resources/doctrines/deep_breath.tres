@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FoldDoctrine" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/fold_doctrine.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+doctrine_id = &"deep_breath"
+title = "深　息"
+description = "折域消耗 -20%，恢复 +18%\n允许更从容地等弹入网"
+family = 0
+rarity = 1
+max_stacks = 2
+tags = Array[StringName]([&"focus", &"sustain"])

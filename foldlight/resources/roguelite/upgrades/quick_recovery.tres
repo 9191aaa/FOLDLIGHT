@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FoldlightRogueUpgradeDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_upgrade_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"quick_recovery"
+title = "回翼"
+description = "受到伤害后立刻返还 35% 冲刺冷却。"
+accent = Color(0.58, 0.70, 1, 1)
+tags = Array[StringName]([&"recovery"])
+family = 2
+rarity = 1
+max_stacks = 1
+stat_modifiers = {"dash_refund_on_damage": 0.35}
+

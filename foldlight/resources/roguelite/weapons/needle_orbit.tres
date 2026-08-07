@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FoldlightRogueWeaponDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_weapon_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+content_id = &"needle_orbit"
+title = "环针灯"
+description = "细针环身旋转后飞向靠近者，擅长处理贴身压力。"
+accent = Color(0.50, 0.80, 1, 1)
+tags = Array[StringName]([&"orbit", &"close"])
+targeting = 3
+fire_interval = 0.34
+base_damage = 0.62
+projectile_speed = 690.0
+targeting_range = 620.0
+volley_count = 1
+pierce = 1
+projectile_style = &"needle_orbit"
+
