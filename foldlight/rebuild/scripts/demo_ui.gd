@@ -9,6 +9,8 @@ const PAPER := Color("e7e6d7")
 const TEAL := Color("76dbca")
 const GOLD := Color("edc887")
 var hud: Label
+var fold_label: Label
+var dash_label: Label
 var stage_label: Label
 var hint_label: Label
 var build_label: Label
@@ -54,8 +56,11 @@ func _ready() -> void:
 	add_child(base)
 	_panel(base, Rect2(28, 20, 1010, 102))
 	_panel(base, Rect2(1052, 20, 840, 102))
+	_panel(base, Rect2(28, 904, 1864, 160))
 	hud = _label(self, "HUD", Vector2(50, 28), Vector2(960, 34), 22)
 	hud.theme = theme
+	fold_label = _label(base, "FoldLabel", Vector2(370, 28), Vector2(310, 38), 22)
+	dash_label = _label(base, "DashLabel", Vector2(730, 28), Vector2(280, 38), 22)
 	health_bar = _bar(base, Vector2(50, 76), Vector2(270, 9), Color("db8d88"))
 	fold_bar = _bar(base, Vector2(370, 76), Vector2(310, 9), TEAL)
 	dash_bar = _bar(base, Vector2(730, 76), Vector2(270, 9), GOLD)
@@ -85,7 +90,7 @@ func _ready() -> void:
 		_edges.append(edge)
 	overlay = ColorRect.new()
 	overlay.size = Vector2(1920, 1080)
-	overlay.color = Color(0.025, 0.06, 0.09, 0.96)
+	overlay.color = Color(0.025, 0.06, 0.09, 1.0)
 	overlay.theme = theme
 	add_child(overlay)
 	eyebrow = _label(overlay, "Eyebrow", Vector2(150, 200), Vector2(850, 40), 23)
@@ -176,8 +181,14 @@ func _bar(parent: Node, at: Vector2, dimensions: Vector2, tint: Color) -> Progre
 	bar.value = 1.0
 	bar.show_percentage = false
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.add_theme_stylebox_override("background", _box(Color("142f3d"), Color(0, 0, 0, 0), 0))
-	bar.add_theme_stylebox_override("fill", _box(tint, tint, 0))
+	var background := StyleBoxFlat.new()
+	background.bg_color = Color("142f3d")
+	background.set_corner_radius_all(3)
+	background.set_content_margin_all(0.0)
+	var fill := background.duplicate() as StyleBoxFlat
+	fill.bg_color = tint
+	bar.add_theme_stylebox_override("background", background)
+	bar.add_theme_stylebox_override("fill", fill)
 	parent.add_child(bar)
 	return bar
 
@@ -189,6 +200,7 @@ func show_menu(kind: StringName, profile_name: String, shake_name: String, body:
 	heading.position = Vector2(145, 276)
 	heading.add_theme_font_size_override("font_size", 64)
 	description.position = Vector2(150, 545)
+	description.size = Vector2(840, 235)
 	var texts: Array[String] = []
 	match kind:
 		&"title":
@@ -229,7 +241,8 @@ func show_rewards(options: Array, number: int) -> void:
 	heading.add_theme_font_size_override("font_size", 48)
 	heading.text = "选一件，让下一束光不同。"
 	description.position = Vector2(240, 804)
-	description.text = "过关已回复 1 点生命。强化仅在本航次有效；重试保留已选强化。"
+	description.size = Vector2(1440, 130)
+	description.text = "过关已回复 1 点生命。强化仅在本航次有效；重试保留已选强化。\n鼠标点击，或按 1 / 2 / 3 选择。"
 	for index in 3:
 		var item: Dictionary = options[index]
 		card_lanes[index].text = "%02d   /   %s" % [index + 1, item["lane"]]
@@ -256,7 +269,9 @@ func reset_bars() -> void:
 	_hurt_remaining = 0.0
 
 func update_hud(snapshot: Dictionary) -> void:
-	hud.text = "生命  %d / %d                 收纳  %d / %d                 冲刺  %s" % [snapshot["health"], snapshot["max_health"], snapshot["captured"], snapshot["capacity"], "就绪" if float(snapshot["dash_cd"]) <= 0.0 else "%.1f 秒" % float(snapshot["dash_cd"])]
+	hud.text = "生命  %d / %d" % [snapshot["health"], snapshot["max_health"]]
+	fold_label.text = "收纳  %d / %d" % [snapshot["captured"], snapshot["capacity"]] if float(snapshot["fold_cd"]) <= 0.0 else "折域恢复  %.1f 秒" % float(snapshot["fold_cd"])
+	dash_label.text = "冲刺  " + ("就绪" if float(snapshot["dash_cd"]) <= 0.0 else "%.1f 秒" % float(snapshot["dash_cd"]))
 	_hp_target = float(snapshot["health"]) / maxf(1.0, float(snapshot["max_health"]))
 	fold_bar.value = float(snapshot["captured"]) / float(snapshot["capacity"]) if float(snapshot["fold_cd"]) <= 0.0 else 1.0 - float(snapshot["fold_cd"]) / 1.5
 	dash_bar.value = 1.0 - clampf(float(snapshot["dash_cd"]) / 2.0, 0.0, 1.0)
