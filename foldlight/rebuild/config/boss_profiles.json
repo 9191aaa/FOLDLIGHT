@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "default_profile": "normal",
+  "shared": {
+    "capture_capacity": 8,
+    "fold_cooldown": 1.5,
+    "dash_cooldown": 2.0,
+    "weapon_damage": 0.55,
+    "weapon_interval": 0.85,
+    "weapon_range": 1500.0,
+    "phase_threshold": 0.5,
+    "phase_transition_seconds": 1.7,
+    "intro_seconds": 1.5,
+    "stagger_threshold": 44.8,
+    "stagger_seconds": 1.8,
+    "stagger_return_multiplier": 1.35,
+    "salvo_count": [7, 9],
+    "salvo_bursts": [2, 3],
+    "salvo_spread": [1.15, 1.35],
+    "ring_count": [16, 18],
+    "black_count": [3, 3],
+    "black_bursts": [1, 2],
+    "black_spread": [0.22, 0.26],
+    "burst_interval": 0.30,
+    "projectile_lifetime": 4.3,
+    "phase_cycles": [["petal_salvo", "black_lane", "tide_fan"], ["tide_fan", "petal_salvo", "black_lane", "petal_salvo"]]
+  },
+  "profiles": {
+    "relaxed": {"title":"Relaxed","description":"Longer warnings and wider ring openings. Same boss rules.","boss_health":280.0,"player_health":6,"telegraph_seconds":[1.30,1.15],"recovery_seconds":[2.40,2.10],"petal_speed":[210.0,235.0],"black_speed":[280.0,310.0],"ring_gap_half_angle":0.55},
+    "normal": {"title":"Normal","description":"The intended middle difficulty. Learn, collect, release, reposition.","boss_health":320.0,"player_health":5,"telegraph_seconds":[1.05,0.95],"recovery_seconds":[1.90,1.65],"petal_speed":[240.0,265.0],"black_speed":[310.0,340.0],"ring_gap_half_angle":0.45,"human_playtest_duration_target_seconds":[75.0,105.0]},
+    "challenge": {"title":"Challenge","description":"Faster cadence, not extra summons or hidden damage rules.","boss_health":350.0,"player_health":5,"telegraph_seconds":[0.90,0.85],"recovery_seconds":[1.60,1.45],"petal_speed":[270.0,290.0],"black_speed":[340.0,365.0],"ring_gap_half_angle":0.40}
+  }
+}
