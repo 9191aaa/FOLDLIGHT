@@ -1,6 +1,9 @@
 class_name FoldlightBalancedCombat
 extends FoldlightRogueCombatRuntime
 
+signal impact_requested(key: StringName, at: Vector2, incoming: Vector2, damage: float)
+signal enemy_broken(at: Vector2, is_boss: bool)
+
 const LAB_BOSS_SCENE := preload("res://rebuild/scenes/balanced_boss.tscn")
 
 func bind(new_room: FoldlightRoomRuntime, new_player: FoldlightPlayer, run_seed: int = 330031) -> void:
@@ -34,3 +37,19 @@ func _remove_dash_release_hit_stop(_direction: Vector2, _duration: float) -> voi
 	_release_hit_stop_remaining = 0.0
 	if player != null:
 		player._hit_stop_timer = 0.0
+
+func _register_enemy_hit_feedback(target_key: StringName, position_value: Vector2, incoming_velocity: Vector2, damage: float) -> void:
+	super._register_enemy_hit_feedback(target_key, position_value, incoming_velocity, damage)
+	impact_requested.emit(target_key, position_value, incoming_velocity, damage)
+
+func _on_enemy_defeated(actor: Node2D) -> void:
+	if enemies.has(actor):
+		enemy_broken.emit(actor.global_position, actor is FoldlightRogueBossActor)
+	super._on_enemy_defeated(actor)
+
+func _update_enemies(delta: float) -> void:
+	super._update_enemies(delta)
+	# Authored short rooms fit entirely in view; no silent attackers beyond the HUD.
+	for actor: Node2D in enemies:
+		if is_instance_valid(actor) and not actor is FoldlightRogueBossActor:
+			actor.global_position = actor.global_position.clamp(Vector2(100, 180), Vector2(1820, 870))

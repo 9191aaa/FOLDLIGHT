@@ -1,4 +1,4 @@
-"""Build the isolated Reflect Demo; never alter the tracked project or real saves."""
+"""Build and validate the Windows demo in an isolated copy of the project."""
 from __future__ import annotations
 import hashlib
 import json
@@ -13,11 +13,22 @@ import urllib.request
 import zipfile
 
 VERSION = "4.6.3"
+DEMO_VERSION = "0.2.0"
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / ".demo-build"
 PROJECT = WORK / "project"
 LOGS = ROOT / "build-logs"
 DIST = ROOT / "dist" / "FOLDLIGHT_Demo"
+
+
+def release_assets() -> dict:
+    url = f"https://api.github.com/repos/godotengine/godot-builds/releases/tags/{VERSION}-stable"
+    headers = {"User-Agent": "FOLDLIGHT-demo-builder", "Accept": "application/vnd.github+json"}
+    if os.environ.get("GH_TOKEN"):
+        headers["Authorization"] = "Bearer " + os.environ["GH_TOKEN"]
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as response:
+        release = json.load(response)
+    return {asset["name"]: asset for asset in release["assets"]}
 
 
 def download(asset: dict, target: Path) -> None:
@@ -65,7 +76,7 @@ def prepare() -> None:
     project_file = PROJECT / "project.godot"
     text = project_file.read_text(encoding="utf-8-sig")
     text = re.sub(r'^config/name=.*$', 'config/name="FOLDLIGHT Reflect Demo"', text, flags=re.M)
-    text = re.sub(r'^config/version=.*$', 'config/version="0.1.0-demo"', text, flags=re.M)
+    text = re.sub(r'^config/version=.*$', f'config/version="{DEMO_VERSION}-demo"', text, flags=re.M)
     text = re.sub(r'^run/main_scene=.*$', 'run/main_scene="res://rebuild/scenes/boss_lab.tscn"', text, flags=re.M)
     text = re.sub(r'^.*\.pixel_demo=.*\n?', '', text, flags=re.M)
     text = text.replace('[application]', '[application]\nconfig/use_custom_user_dir=true\nconfig/custom_user_dir_name="FOLDLIGHT_ReflectDemo"')
@@ -104,35 +115,27 @@ texture_format/etc2_astc=false
 
 def main() -> None:
     if sys.platform != "win32":
-        raise SystemExit("Run on Windows: the build validates the actual Windows executable.")
+        raise SystemExit("Run on Windows: this job tests the actual Windows executable.")
     WORK.mkdir(exist_ok=True)
     LOGS.mkdir(exist_ok=True)
     DIST.mkdir(parents=True, exist_ok=True)
-    url = f"https://api.github.com/repos/godotengine/godot-builds/releases/tags/{VERSION}-stable"
-    headers = {"User-Agent": "FOLDLIGHT-demo-builder", "Accept": "application/vnd.github+json"}
-    if os.environ.get("GH_TOKEN"):
-        headers["Authorization"] = "Bearer " + os.environ["GH_TOKEN"]
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as response:
-        release = json.load(response)
-    assets = {asset["name"]: asset for asset in release["assets"]}
-    editor_name = f"Godot_v{VERSION}-stable_win64.exe.zip"
-    templates_name = f"Godot_v{VERSION}-stable_export_templates.tpz"
-    download(assets[editor_name], WORK / "editor.zip")
+    assets = release_assets()
+    download(assets[f"Godot_v{VERSION}-stable_win64.exe.zip"], WORK / "editor.zip")
     with zipfile.ZipFile(WORK / "editor.zip") as archive:
         archive.extractall(WORK / "engine")
     engine = next((WORK / "engine").glob("*_console.exe"))
     prepare()
     run("import", [str(engine), "--headless", "--path", str(PROJECT), "--import"])
-    run("mechanics", [str(engine), "--headless", "--path", str(PROJECT), "--script", "res://rebuild/tests/test_ci_demo.gd"], "FOLDLIGHT_DEMO_TESTS_PASS")
-    download(assets[templates_name], WORK / "templates.tpz")
+    for test, marker in [("test_ci_demo.gd", "FOLDLIGHT_DEMO_TESTS_PASS"), ("test_ci_voyage.gd", "FOLDLIGHT_VOYAGE_TESTS_PASS")]:
+        run(test.removesuffix(".gd"), [str(engine), "--headless", "--path", str(PROJECT), "--script", "res://rebuild/tests/" + test], marker)
+    download(assets[f"Godot_v{VERSION}-stable_export_templates.tpz"], WORK / "templates.tpz")
     target = Path(os.environ["APPDATA"]) / "Godot" / "export_templates" / f"{VERSION}.stable"
     target.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(WORK / "templates.tpz") as archive:
         for info in archive.infolist():
             name = Path(info.filename).name
-            if name.startswith("windows_") or name == "version.txt":
-                if not info.is_dir():
-                    (target / name).write_bytes(archive.read(info))
+            if not info.is_dir() and (name.startswith("windows_") or name == "version.txt"):
+                (target / name).write_bytes(archive.read(info))
     exe = DIST / "FOLDLIGHT_Demo.exe"
     run("export", [str(engine), "--headless", "--path", str(PROJECT), "--export-release", "Windows Demo", str(exe)], timeout=420)
     if not exe.exists() or exe.stat().st_size < 10000000 or exe.read_bytes()[:2] != b"MZ":
@@ -141,15 +144,18 @@ def main() -> None:
     digest = hashlib.sha256(exe.read_bytes()).hexdigest()
     (DIST / "SHA256.txt").write_text(digest + "  FOLDLIGHT_Demo.exe\n", encoding="ascii")
     (DIST / "README_先看这里.txt").write_text(
-        "FOLDLIGHT 折光 · 反弹战斗 Demo\n\n解压整个压缩包，双击 FOLDLIGHT_Demo.exe。无需安装 Godot、Python 或其他开发软件。\n"
-        "WASD / 方向键：移动\n空格：按住收弹，松开发射\nShift：冲刺（持有弹药时先反弹再冲刺）\nEsc：暂停 / 继续\n"
-        "Normal：标准难度；Relaxed：较轻松；Challenge：挑战。鼠标点击开始。\n"
-        "紫色弹可收纳；黑芯金边弹要躲开。死亡后 Retry 直接重试。\n\n"
-        "此包是单 Boss 试玩，不是完整战役。已做 Windows 导入、机制及 EXE 无界面启动检查；未做人工手感验收。\n"
-        "程序未做商业代码签名。不要为运行本游戏关闭杀毒软件。\n", encoding="utf-8-sig")
+        "FOLDLIGHT 折光 0.2.0 · 返航试玩\n\n解压后双击 FOLDLIGHT_Demo.exe，不用安装开发软件。\n"
+        "开始返航：3 段短遭遇、2 次强化选择、1 名两阶段 Boss。Boss 单独练习：直接挑战 Boss。\n"
+        "WASD / 方向键：移动\n空格：按住收弹，松手返光\nShift：冲刺，持有弹药时先返光再冲刺\n"
+        "Esc：暂停 / 继续\nF11：窗口 / 全屏\nM：静音\n强化界面也可按 1 / 2 / 3 选择。\n"
+        "震屏默认轻微，在标题或暂停界面可切换关闭 / 轻微 / 标准。血条、菜单不随震屏移动。\n"
+        "普通过关回复 1 点生命；进入 Boss 前至少恢复至 4 点（不超过上限）。\n"
+        "失败后重试当前关卡，恢复满血，保留已选强化；新航次清空强化。\n\n"
+        "这是有限内容 Demo，不是完整战役。已做 Windows 自动测试及 EXE 无界面启动检查；未完成人工难度验收。\n"
+        "程序没有商业代码签名，不要为运行本游戏关闭杀毒软件。\n", encoding="utf-8-sig")
     shutil.copy2(ROOT / "LICENSE", DIST / "LICENSE.txt")
     (DIST / "BUILD_INFO.json").write_text(json.dumps({
-        "commit": os.environ.get("GITHUB_SHA", "local"), "godot": VERSION,
+        "commit": os.environ.get("GITHUB_SHA", "local"), "godot": VERSION, "demo_version": DEMO_VERSION,
         "windows_headless_smoke": "passed", "sha256": digest,
         "manual_playtest": "not performed by CI"}, indent=2), encoding="utf-8")
     print("WINDOWS_DEMO_BUILD_PASS", digest, flush=True)
