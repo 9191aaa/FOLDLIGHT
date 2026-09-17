@@ -1,0 +1,48 @@
+name: Build Windows Reflect Demo
+
+on:
+  push:
+    branches: [demo-reflect-rebuild]
+    paths:
+      - 'foldlight/**'
+      - 'tools/build_reflect_demo.py'
+      - '.github/workflows/reflect-demo-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reflect-demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-demo:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact demo source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Import, test, export and run Windows executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONUTF8: '1'
+        run: python -u tools/build_reflect_demo.py
+      - name: Upload playable Windows demo
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: FOLDLIGHT_Demo_Windows
+          path: dist/FOLDLIGHT_Demo/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: FOLDLIGHT_Demo_Build_Logs
+          path: build-logs/
+          if-no-files-found: ignore
+          retention-days: 14
