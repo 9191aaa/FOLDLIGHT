@@ -1,8 +1,11 @@
 class_name FoldlightDemoFeedback
 extends Node2D
 
-# Render-only translation. Never move actors or the root and never use a gameplay RNG.
-const MAX_SHAKE: float = 8.0
+# Render-only translation: actors, collision, HUD and gameplay RNG stay untouched.
+# 0.2.1: a clear initial impulse, longer readable decay, no stacking of weak hits.
+const MAX_SHAKE: float = 16.0
+const MAX_SHAKE_DURATION: float = 0.30
+const ATTACK_HOLD: float = 0.025
 const MAX_PARTICLES: int = 160
 const MAX_RINGS: int = 20
 var strength: float = 0.55
@@ -15,6 +18,7 @@ var particles: Array[Dictionary] = []
 var rings: Array[Dictionary] = []
 var _clock: float = 0.0
 var _impact_gate: float = 0.0
+var _shake_axis: Vector2 = Vector2.RIGHT
 var _sound_gates: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 
@@ -24,7 +28,7 @@ func _ready() -> void:
 	_rng.seed = 9202
 
 func set_strength(value: float) -> void:
-	strength = clampf(value, 0.0, 1.0)
+	strength = clampf(value, 0.0, 1.0) if is_finite(value) else 0.0
 	reset_camera()
 
 func set_suspended(value: bool) -> void:
@@ -32,12 +36,39 @@ func set_suspended(value: bool) -> void:
 	if value:
 		reset_camera()
 
-func kick(power: float, duration: float = 0.18) -> void:
-	if suspended or strength <= 0.0:
+func _envelope() -> float:
+	if shake_remaining <= 0.0:
+		return 0.0
+	var age: float = shake_duration - shake_remaining
+	# Preserve the onset for one or two rendered frames before a short decay.
+	var tail: float = 1.0 - maxf(0.0, age - ATTACK_HOLD) / maxf(0.001, shake_duration - ATTACK_HOLD)
+	return pow(clampf(tail, 0.0, 1.0), 1.15)
+
+func kick(power: float, duration: float = 0.18, direction: Vector2 = Vector2.RIGHT) -> void:
+	if suspended or strength <= 0.0 or not is_finite(power) or not is_finite(duration) or power <= 0.0:
 		return
-	amplitude = minf(MAX_SHAKE, maxf(amplitude, power * strength))
-	shake_duration = clampf(duration, 0.05, 0.24)
-	shake_remaining = maxf(shake_remaining, shake_duration)
+	var requested: float = minf(MAX_SHAKE, power * strength)
+	# Lesser impacts must not replace a strong release's timing or restart its peak.
+	if shake_remaining > 0.0 and requested <= amplitude * _envelope():
+		return
+	amplitude = requested
+	shake_duration = clampf(duration, 0.05, MAX_SHAKE_DURATION)
+	shake_remaining = shake_duration
+	_shake_axis = direction.normalized() if direction.is_finite() and not direction.is_zero_approx() else Vector2.RIGHT
+	_apply_camera()
+
+func _apply_camera() -> void:
+	if shake_remaining > 0.0 and not suspended and strength > 0.0:
+		var age: float = maxf(0.0, shake_duration - shake_remaining)
+		# Event-local phase gives every release a nonzero initial punch. No rotation.
+		var oscillation := Vector2(cos(age * 73.0), sin(age * 97.0) * 0.55)
+		oscillation = oscillation.rotated(_shake_axis.angle()).limit_length(1.0)
+		camera_offset = oscillation * amplitude * _envelope()
+	else:
+		amplitude = 0.0
+		camera_offset = Vector2.ZERO
+	if is_inside_tree():
+		get_viewport().canvas_transform = Transform2D(0.0, camera_offset)
 
 func reset_camera() -> void:
 	amplitude = 0.0
@@ -58,19 +89,12 @@ func _exit_tree() -> void:
 	reset_camera()
 
 func _process(delta: float) -> void:
-	if suspended:
+	if suspended or not is_finite(delta) or delta < 0.0:
 		return
 	_clock += delta
 	_impact_gate = maxf(0.0, _impact_gate - delta)
 	shake_remaining = maxf(0.0, shake_remaining - delta)
-	if shake_remaining > 0.0:
-		var envelope: float = pow(clampf(shake_remaining / shake_duration, 0.0, 1.0), 2.0)
-		var direction := Vector2(sin(_clock * 79.0), cos(_clock * 91.0)).limit_length(1.0)
-		camera_offset = direction * amplitude * envelope
-	else:
-		amplitude = 0.0
-		camera_offset = Vector2.ZERO
-	get_viewport().canvas_transform = Transform2D(0.0, camera_offset)
+	_apply_camera()
 	for index in range(particles.size() - 1, -1, -1):
 		var particle: Dictionary = particles[index]
 		particle["age"] = float(particle["age"]) + delta
@@ -103,40 +127,42 @@ func ring(at: Vector2, tint: Color, radius: float, life: float = 0.35) -> void:
 	rings.append({"p": at, "color": tint, "radius": radius, "life": life, "age": 0.0})
 
 func captured(count: int, at: Vector2) -> void:
+	# Frequent capture remains a sound/spark cue, not constant camera vibration.
 	_sparks(at, Color("73e2ce"), 3, 155.0)
 	_sound(&"capture", 0.95 + minf(0.28, float(count) * 0.035), -21.0, 0.10)
 
 func released(count: int, _charge: float, at: Vector2) -> void:
 	if count <= 0:
 		return
-	kick(minf(6.0, 2.0 + float(count) * 0.4), 0.18)
+	# Eight lights: 12.8 * 0.55 = 7.04 logical px, versus 2.86 in 0.2.0.
+	kick(minf(16.0, 3.2 + float(count) * 1.2), minf(0.27, 0.14 + float(count) * 0.0125), Vector2(-0.2, 1.0))
 	ring(at, Color("f2d28c"), 90.0 + float(count) * 8.0)
 	_sparks(at, Color("f4db9b"), mini(24, count * 2), 300.0)
 	_sound(&"release", 0.95, -10.0, 0.10)
 
-func impact(_key: StringName, at: Vector2, _velocity: Vector2, damage: float) -> void:
+func impact(_key: StringName, at: Vector2, velocity: Vector2, damage: float) -> void:
 	if _impact_gate > 0.0:
 		return
 	_impact_gate = 0.10
 	_sparks(at, Color("ffe3a3"), 5, 200.0)
 	if damage >= 1.0:
-		kick(1.8, 0.09)
+		kick(3.0, 0.11, velocity)
 	_sound(&"hit", 1.10, -21.0, 0.12)
 
 func broken(at: Vector2, is_boss: bool) -> void:
-	kick(8.0 if is_boss else 3.5, 0.23 if is_boss else 0.15)
+	kick(16.0 if is_boss else 6.5, 0.28 if is_boss else 0.19, Vector2(1.0, -0.35))
 	_sparks(at, Color("f7d498"), 48 if is_boss else 16, 560.0 if is_boss else 300.0)
 	ring(at, Color("6ed6c5"), 340.0 if is_boss else 95.0, 0.65 if is_boss else 0.35)
 	_sound(&"victory" if is_boss else &"kill", 0.95, -10.0 if is_boss else -16.0)
 
 func hurt(at: Vector2) -> void:
-	kick(8.0, 0.22)
+	kick(14.0, 0.26, Vector2(-0.8, 0.6))
 	_sparks(at, Color("ef8e92"), 12, 260.0)
 	ring(at, Color("ef8e92"), 95.0, 0.22)
 	_sound(&"hurt", 1.0, -11.0, 0.3)
 
 func phase_changed(at: Vector2) -> void:
-	kick(6.0, 0.22)
+	kick(10.0, 0.26, Vector2(0.3, 1.0))
 	ring(at, Color("71e3ce"), 280.0, 0.55)
 	_sound(&"boss", 1.05, -16.0, 0.5)
 
