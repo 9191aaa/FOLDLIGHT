@@ -1,0 +1,32 @@
+{
+  "relaxed": {
+    "boss_health": 270.0,
+    "player_health": 6,
+    "telegraph_phase_1": 1.20,
+    "telegraph_phase_2": 1.08,
+    "recovery_phase_1": 2.05,
+    "recovery_phase_2": 1.82,
+    "return_damage_multiplier": 1.10,
+    "stagger_return_bonus": 1.40
+  },
+  "normal": {
+    "boss_health": 320.0,
+    "player_health": 5,
+    "telegraph_phase_1": 1.05,
+    "telegraph_phase_2": 0.95,
+    "recovery_phase_1": 1.90,
+    "recovery_phase_2": 1.65,
+    "return_damage_multiplier": 1.0,
+    "stagger_return_bonus": 1.35
+  },
+  "challenge": {
+    "boss_health": 380.0,
+    "player_health": 5,
+    "telegraph_phase_1": 0.92,
+    "telegraph_phase_2": 0.82,
+    "recovery_phase_1": 1.72,
+    "recovery_phase_2": 1.48,
+    "return_damage_multiplier": 1.0,
+    "stagger_return_bonus": 1.30
+  }
+}
