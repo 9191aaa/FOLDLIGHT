@@ -25,9 +25,11 @@ const PAPER := FoldlightRogueUITheme.PAPER
 const MUTED := FoldlightRogueUITheme.MUTED
 const SURFACE := FoldlightRogueUITheme.SURFACE
 const SHARED_THEME = preload("res://scripts/ui/foldlight_theme.gd")
+const REWARD_CARD = preload("res://scripts/roguelite/ui/reward_card.gd")
 const TITLE_SCREEN = preload("res://scripts/roguelite/ui/rogue_title_screen.gd")
 const QUICK_TUTORIAL_SCENE: PackedScene = preload("res://scenes/roguelite/ui/quick_tutorial_overlay.tscn")
 const MECHANIC_PREVIEW_SCENE := preload("res://scripts/roguelite/ui/mechanic_preview_canvas.gd")
+const ROUTE_ATLAS := preload("res://scripts/roguelite/ui/route_atlas.gd")
 
 var screen_kind: StringName = &"title"
 var _screens: Dictionary = {}
@@ -80,8 +82,16 @@ var _browse_mode_enabled: bool = false
 var _reward_title: Label
 var _reward_buttons: Array[Button] = []
 var _reward_content: Array[Dictionary] = []
+var _reward_selection_locked: bool = false
+var _pending_reward_id: StringName = &""
 var _route_title: Label
 var _route_buttons: Array[Button] = []
+var _route_atlas: Control
+var _route_preview_title: Label
+var _route_preview_body: Label
+var _route_nodes: Dictionary = {}
+var _route_allowed: Array[String] = []
+var _route_pending: bool = false
 var _result_title: Label
 var _result_body: Label
 var _settings_return: StringName = &"title"
@@ -237,7 +247,10 @@ func hide_prologue_step() -> void:
 
 
 func show_reward(choices: Array[Dictionary], room_title: String) -> void:
+	_cancel_reward_motion()
 	_show_only(&"reward")
+	_reward_selection_locked = false
+	_pending_reward_id = &""
 	visual_canvas.configure(&"reward", FOLD)
 	_reward_title.text = _t(&"ROGUE_REWARD_TITLE", "%s 已澄清 · 选择一道折痕") % room_title
 	for index in _reward_buttons.size():
@@ -245,51 +258,42 @@ func show_reward(choices: Array[Dictionary], room_title: String) -> void:
 		if index >= choices.size():
 			button.hide()
 			continue
-		var choice := choices[index]
-		button.show()
-		button.set_meta("upgrade_id", StringName(choice.get("content_id", &"")))
+		var choice := choices[index].duplicate(true)
 		var choice_kind := StringName(choice.get("choice_kind", &"upgrade"))
 		var rarity_text := _choice_kind_title(choice_kind) if choice_kind != &"upgrade" else _rarity_title(int(choice.get("rarity", 0)))
-		if bool(choice.get("offensive", false)):
+		if choice_kind == &"upgrade" and bool(choice.get("offensive", false)):
 			rarity_text += "  ·  火力强化"
-		var level := int(choice.get("next_level", 1))
-		var maximum := int(choice.get("maximum_level", 1))
-		var content := _reward_content[index]
-		(content["title"] as Label).text = str(choice.get("title", "无名折痕"))
-		(content["description"] as Label).text = str(choice.get("description", ""))
-		(content["rarity"] as Label).text = rarity_text
-		(content["level"] as Label).text = "刻印  %d / %d" % [level, maximum]
-		button.tooltip_text = "%s：%s" % [str(choice.get("title", "")), str(choice.get("description", ""))]
-		var accent_value := SHARED_THEME.comfort_accent(Color(choice.get("accent", FOLD)))
-		(content["rarity"] as Label).add_theme_color_override("font_color", accent_value)
-		button.add_theme_color_override("font_hover_color", accent_value.lightened(0.16))
-		button.add_theme_stylebox_override("normal", _choice_card_style(accent_value, false))
-		button.add_theme_stylebox_override("hover", _choice_card_style(accent_value, true))
-		button.add_theme_stylebox_override("pressed", _choice_card_style(accent_value.lightened(0.10), true))
+		choice["display_rarity"] = rarity_text
+		button.show()
+		button.configure(choice, index)
+		button.reveal(float(index) * 0.085)
 	_set_focus_group(_visible_buttons(_reward_buttons))
 
 
 func show_route(region_snapshot: Dictionary, current_id: StringName, exits: Array[String]) -> void:
 	_show_only(&"route")
+	_route_pending = false
+	_route_allowed = exits.duplicate()
 	var region_accent := _region_accent(StringName(region_snapshot.get("id", &"")))
 	visual_canvas.configure(&"route", region_accent)
-	visual_canvas.configure_route(region_snapshot, current_id)
-	_route_title.text = _t(&"ROGUE_ROUTE_TITLE", "%s · 选择下一处折点") % str(region_snapshot.get("title", "无名海域"))
-	var by_id: Dictionary = {}
+	_route_atlas.configure(region_snapshot, current_id, exits)
+	_route_title.text = str(region_snapshot.get("title", "无名海域"))
+	_route_nodes.clear()
 	for node_variant: Variant in region_snapshot.get("nodes", []):
 		if node_variant is Dictionary:
-			by_id[String((node_variant as Dictionary).get("id", ""))] = node_variant
+			_route_nodes[String((node_variant as Dictionary).get("id", ""))] = node_variant
 	for index in _route_buttons.size():
 		var button := _route_buttons[index]
 		if index >= exits.size():
 			button.hide()
 			continue
 		var destination_id := exits[index]
-		var node: Dictionary = by_id.get(destination_id, {})
+		var node: Dictionary = _route_nodes.get(destination_id, {})
 		button.show()
 		button.set_meta("destination_id", StringName(destination_id))
-		button.text = "%s\n%s" % [_category_title(StringName(node.get("category", &"combat"))), _risk_title(int(node.get("risk", 1)))]
+		button.text = "前往%s\n%s" % [_category_title(StringName(node.get("category", &"combat"))), _risk_title(int(node.get("risk", 1)))]
 	_set_focus_group(_visible_buttons(_route_buttons))
+	_preview_route_node(StringName(exits[0]) if not exits.is_empty() else current_id)
 
 
 func show_result(result: Dictionary, prologue: bool = false) -> void:
@@ -652,76 +656,125 @@ func _build_reward() -> void:
 	var choices := HBoxContainer.new()
 	choices.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	choices.alignment = BoxContainer.ALIGNMENT_CENTER
-	choices.add_theme_constant_override("separation", 26)
+	choices.add_theme_constant_override("separation", 30)
 	stack.add_child(choices)
 	for index in 3:
-		var button := _button("", 350)
-		button.custom_minimum_size.x = 420
+		var button := REWARD_CARD.new()
+		button.name = "RewardCard%d" % (index + 1)
 		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		button.pressed.connect(_on_reward_pressed.bind(button))
 		choices.add_child(button)
+		button.pressed.connect(_on_reward_pressed.bind(button))
+		button.selection_confirmed.connect(_on_reward_confirmed)
+		button.focus_entered.connect(_on_reward_focused.bind(button))
 		_reward_buttons.append(button)
-		var content_margin := _full_margin(button, 32, 28, 32, 28)
-		content_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var content_stack := VBoxContainer.new()
-		content_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		content_stack.add_theme_constant_override("separation", 18)
-		content_margin.add_child(content_stack)
-		var rarity := _label("", 17, FOLD)
-		content_stack.add_child(rarity)
-		var title := _label("", 30, PAPER)
-		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		content_stack.add_child(title)
-		var description := _label("", 22, MUTED)
-		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		description.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		content_stack.add_child(description)
-		var level := _label("", 18, PAPER)
-		content_stack.add_child(level)
-		_reward_content.append({"title": title, "description": description, "rarity": rarity, "level": level})
+		_reward_content.append({"title": button.title_label, "description": button.description_label, "rarity": button.rarity_label, "level": button.level_label})
 	var hint := _label(_t(&"ROGUE_REWARD_HINT", "左右选择   ·   空格 / A 刻下折痕"), 18, MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(hint)
 
 
-func _choice_card_style(accent: Color, lifted: bool) -> StyleBoxFlat:
-	var style := SHARED_THEME.panel_style()
-	style.bg_color = Color(SHARED_THEME.SURFACE_SOFT if lifted else SHARED_THEME.SURFACE, 0.97)
-	style.border_color = Color(accent, 0.80 if lifted else 0.32)
-	style.border_width_top = 4 if lifted else 2
-	style.shadow_size = 0
-	style.content_margin_left = 32.0
-	style.content_margin_top = 32.0
-	style.content_margin_right = 32.0
-	style.content_margin_bottom = 32.0
-	return style
-
-
 func _build_route() -> void:
 	var screen := _new_screen(&"route")
-	var margin := _full_margin(screen, 90, 70, 90, 68)
+	var margin := _full_margin(screen, 56, 42, 56, 36)
 	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 20)
 	margin.add_child(stack)
-	var eyebrow := _label("航路选择", 19, FOLD)
-	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stack.add_child(eyebrow)
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 16)
+	stack.add_child(header)
+	var heading := VBoxContainer.new()
+	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(heading)
+	heading.add_child(_label("纸海航图  /  CHART OF THE TIDES", 18, FOLD))
 	_route_title = _label("", 38, PAPER)
-	_route_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stack.add_child(_route_title)
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	stack.add_child(spacer)
+	heading.add_child(_route_title)
+	_route_atlas = ROUTE_ATLAS.new()
+	_route_atlas.name = "RouteAtlas"
+	_route_atlas.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_route_atlas.custom_minimum_size.y = 460
+	_route_atlas.node_selected.connect(_on_atlas_node_selected)
+	for control_name in ["−", "+", "航图全览"]:
+		var action := _button(control_name, 52)
+		action.custom_minimum_size.x = 60 if control_name != "航图全览" else 200
+		action.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		action.focus_mode = Control.FOCUS_NONE
+		action.theme_type_variation = &"QuietButton"
+		if control_name == "−":
+			action.pressed.connect(func() -> void: _route_atlas.zoom_by(1.0 / 1.18))
+		elif control_name == "+":
+			action.pressed.connect(func() -> void: _route_atlas.zoom_by(1.18))
+		else:
+			action.pressed.connect(func() -> void: _route_atlas.recenter())
+		header.add_child(action)
+	stack.add_child(_route_atlas)
+	var legend := HBoxContainer.new()
+	stack.add_child(legend)
+	var guide := _label("拖拽探索  ·  滚轮缩放  ·  点击折岛查看", 18, MUTED)
+	guide.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	legend.add_child(guide)
+	legend.add_child(_label("青光  可前往     金光  终潮     微光  远方", 18, MUTED))
+	var footer := HBoxContainer.new()
+	footer.custom_minimum_size.y = 142
+	footer.add_theme_constant_override("separation", 32)
+	stack.add_child(footer)
+	var preview := VBoxContainer.new()
+	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview.add_theme_constant_override("separation", 10)
+	footer.add_child(preview)
+	_route_preview_title = _label("", 27, PAPER)
+	preview.add_child(_route_preview_title)
+	_route_preview_body = _label("", 20, MUTED)
+	_route_preview_body.custom_minimum_size.x = 420
+	_route_preview_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	preview.add_child(_route_preview_body)
 	var choices := HBoxContainer.new()
 	choices.alignment = BoxContainer.ALIGNMENT_CENTER
-	choices.add_theme_constant_override("separation", 24)
-	stack.add_child(choices)
+	choices.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	choices.add_theme_constant_override("separation", 18)
+	footer.add_child(choices)
 	for index in 3:
-		var button := _button("", 96)
-		button.custom_minimum_size.x = 360
+		var button := _button("", 84)
+		button.custom_minimum_size.x = 310
+		button.add_theme_font_size_override("font_size", 23)
 		button.pressed.connect(_on_route_pressed.bind(button))
+		button.focus_entered.connect(func() -> void: _preview_route_node(StringName(button.get_meta("destination_id", &""))))
 		choices.add_child(button)
 		_route_buttons.append(button)
-	stack.add_child(_label("选择相连的折点。菱形越多，前方的威胁越高。", 17, MUTED))
+	var hint := _label("方向键 / 摇杆选择可达折岛   ·   空格 / A 出发", 17, MUTED)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	stack.add_child(hint)
+
+
+func _on_atlas_node_selected(node_id: StringName) -> void:
+	if screen_kind != &"route" or _route_pending:
+		return
+	_preview_route_node(node_id)
+	if _route_allowed.has(String(node_id)):
+		for button in _route_buttons:
+			if button.visible and StringName(button.get_meta("destination_id", &"")) == node_id:
+				button.grab_focus()
+				return
+	else:
+		# Inspecting a distant island must not leave an unrelated launch focused.
+		var owner := get_viewport().gui_get_focus_owner()
+		if owner != null:
+			owner.release_focus()
+
+
+func _preview_route_node(node_id: StringName) -> void:
+	var node: Dictionary = _route_nodes.get(String(node_id), {})
+	if node.is_empty():
+		return
+	_route_atlas.focus_destination(node_id)
+	var category := StringName(node.get("category", &"combat"))
+	var reachable := _route_allowed.has(String(node_id))
+	_route_preview_title.text = "%s  ·  %s" % [_category_title(category), "可前往" if reachable else "航图预览"]
+	_route_preview_title.add_theme_color_override("font_color", FOLD if reachable else PAPER)
+	var preview: Dictionary = _route_atlas.get_node_preview(node_id)
+	_route_preview_body.text = str(preview.get("description", "查看这座折岛，规划接下来的航行。"))
+	if not reachable:
+		_route_preview_body.text += "\n" + str(preview.get("status", "目前仅可查看。"))
+
 
 
 func _build_result() -> void:
@@ -982,6 +1035,8 @@ func _button(text_value: String, minimum_height: float) -> Button:
 
 
 func _show_only(kind: StringName) -> void:
+	if screen_kind == &"reward" and kind != &"reward":
+		_cancel_reward_motion()
 	screen_kind = kind
 	for key_variant: Variant in _screens.keys():
 		(_screens[key_variant] as Control).visible = StringName(key_variant) == kind
@@ -1022,13 +1077,48 @@ func _visible_buttons(source: Variant) -> Array:
 
 
 func _on_reward_pressed(button: Button) -> void:
+	if screen_kind != &"reward" or _reward_selection_locked or button.disabled or not button.is_visible_in_tree():
+		return
+	if not button.confirm_selection():
+		return
+	_reward_selection_locked = true
+	_pending_reward_id = StringName(button.get_meta("upgrade_id", &""))
+	for card in _reward_buttons:
+		card.lock_choice(card == button)
+	_set_focus_group([])
 	audio_director.play_sfx(&"act", 1.08, -3.0)
-	reward_chosen.emit(StringName(button.get_meta("upgrade_id", &"")))
+
+
+func _on_reward_confirmed(upgrade_id: StringName) -> void:
+	if screen_kind != &"reward" or not _reward_selection_locked or upgrade_id != _pending_reward_id:
+		return
+	# The listener may immediately show the next reward stage. Do not mutate
+	# presentation state after this signal, which would overwrite that stage.
+	reward_chosen.emit(upgrade_id)
+
+
+func _cancel_reward_motion() -> void:
+	_reward_selection_locked = true
+	_pending_reward_id = &""
+	for card in _reward_buttons:
+		card.cancel_motion()
+
+
+func _on_reward_focused(button: Button) -> void:
+	var active: Array = _focus_groups.get(&"active", [])
+	var index := active.find(button)
+	if index >= 0:
+		_focus_index = index
+	audio_director.play_sfx(&"ui", 1.12, -8.0)
 
 
 func _on_route_pressed(button: Button) -> void:
+	var destination_id := StringName(button.get_meta("destination_id", &""))
+	if screen_kind != &"route" or _route_pending or not button.visible or not _route_allowed.has(String(destination_id)):
+		return
+	_route_pending = true
 	audio_director.play_sfx(&"start", 1.12, -5.0)
-	route_chosen.emit(StringName(button.get_meta("destination_id", &"")))
+	route_chosen.emit(destination_id)
 
 
 func _t(key: StringName, fallback: String) -> String:
@@ -1059,7 +1149,7 @@ func _choice_kind_title(kind: StringName) -> String:
 
 
 func _risk_title(risk: int) -> String:
-	return "威胁 " + "◆".repeat(clampi(risk, 1, 5))
+	return "威胁 %d" % maxi(1, risk)
 
 
 func _attack_demo_title(style: StringName, preview_id: StringName) -> String:

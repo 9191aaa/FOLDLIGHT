@@ -9,13 +9,16 @@ signal combat_lock_changed(locked: bool)
 signal encounter_spawn_telegraph(entry: Dictionary, duration: float)
 signal encounter_enemy_requested(entry: Dictionary)
 signal encounter_cleared(performance: Dictionary)
+signal beacon_pulse_requested(beacon: FoldlightTideBeacon)
 
 const TERRAIN_SCENE: PackedScene = preload("res://scenes/roguelite/terrain_piece.tscn")
 const DOOR_SCENE: PackedScene = preload("res://scenes/roguelite/rogue_door.tscn")
+const BEACON_SCENE: PackedScene = preload("res://scenes/roguelite/tide_beacon.tscn")
 const WALL_MARGIN: float = 56.0
 
 var room_id: StringName = &""
 var room_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
+var _interactions_active: bool = false
 
 @onready var backdrop: FoldlightRoomBackdrop = $Backdrop
 @onready var terrain_container: Node2D = $Terrain
@@ -43,6 +46,7 @@ func configure_room(new_room_id: StringName, world_size: Vector2, placements: Ar
 	backdrop.configure(room_id, world_size, accent, backdrop_style)
 	_clear_terrain()
 	_clear_doors()
+	_clear_beacons()
 	encounter_runtime.reset()
 	for placement in placements:
 		var piece := TERRAIN_SCENE.instantiate() as FoldlightTerrainPiece
@@ -152,6 +156,39 @@ func validate_layout(world_size: Vector2, placements: Array[Dictionary]) -> Arra
 
 func bind_player(player: FoldlightPlayer) -> void:
 	player.play_bounds = room_bounds.grow(-WALL_MARGIN)
+
+
+func configure_tide_beacons() -> void:
+	_clear_beacons()
+	# Authored encounters retain their central geometry. These pass-through
+	# devices occupy the open shore on each side and never count as enemies.
+	for point in [Vector2(290, 1060), Vector2(room_bounds.size.x - 290.0, 650)]:
+		var beacon := BEACON_SCENE.instantiate() as FoldlightTideBeacon
+		pickup_container.add_child(beacon)
+		beacon.position = point
+		beacon.set_interaction_active(_interactions_active)
+		beacon.pulse_requested.connect(func(source: FoldlightTideBeacon) -> void: beacon_pulse_requested.emit(source))
+
+
+func set_interactions_active(value: bool) -> void:
+	_interactions_active = value
+	backdrop.set_motion_active(value)
+	for beacon in get_tide_beacons():
+		beacon.set_interaction_active(value)
+
+
+func get_tide_beacons() -> Array[FoldlightTideBeacon]:
+	var result: Array[FoldlightTideBeacon] = []
+	for child in pickup_container.get_children():
+		if child is FoldlightTideBeacon:
+			result.append(child as FoldlightTideBeacon)
+	return result
+
+
+func _clear_beacons() -> void:
+	for beacon in get_tide_beacons():
+		pickup_container.remove_child(beacon)
+		beacon.queue_free()
 
 
 func get_terrain_pieces() -> Array[FoldlightTerrainPiece]:

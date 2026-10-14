@@ -76,6 +76,7 @@ func bind(new_room: FoldlightRoomRuntime, new_player: FoldlightPlayer, run_seed:
 	if room != null:
 		room.encounter_spawn_telegraph.connect(_on_spawn_telegraph)
 		room.encounter_enemy_requested.connect(_on_enemy_requested)
+		room.beacon_pulse_requested.connect(_on_beacon_pulse_requested)
 	if player != null:
 		player.weapon_mount.shot_requested.connect(_on_player_shot_requested)
 		player.fold_released.connect(_on_player_fold_released)
@@ -91,6 +92,28 @@ func bind(new_room: FoldlightRoomRuntime, new_player: FoldlightPlayer, run_seed:
 func set_active(value: bool) -> void:
 	active = value
 	set_physics_process(active)
+	if is_instance_valid(room):
+		room.set_interactions_active(active)
+
+
+func _on_beacon_pulse_requested(beacon: FoldlightTideBeacon) -> void:
+	if not active or not is_instance_valid(player) or not is_instance_valid(room) or not room.get_tide_beacons().has(beacon) or not beacon.can_pulse(player):
+		return
+	var origins := PackedVector2Array()
+	for projectile in projectiles.duplicate():
+		if origins.size() >= beacon.capture_limit or not player.can_capture():
+			break
+		if not is_instance_valid(projectile) or projectile.is_queued_for_deletion() or not projectile.hostile or not projectile.reflectable:
+			continue
+		if projectile.global_position.distance_to(beacon.global_position) > beacon.capture_radius:
+			continue
+		if player.capture_one():
+			origins.append(projectile.global_position)
+			projectile_captured.emit(player.captured, projectile.global_position)
+			_remove_projectile(projectile)
+	if not origins.is_empty():
+		beacon.resolve_pulse(origins)
+		player.grant_invulnerability(0.65)
 
 
 func apply_build_stats(stats: Dictionary) -> void:
@@ -1327,6 +1350,8 @@ func _unbind_signals() -> void:
 			room.encounter_spawn_telegraph.disconnect(_on_spawn_telegraph)
 		if room.encounter_enemy_requested.is_connected(_on_enemy_requested):
 			room.encounter_enemy_requested.disconnect(_on_enemy_requested)
+		if room.beacon_pulse_requested.is_connected(_on_beacon_pulse_requested):
+			room.beacon_pulse_requested.disconnect(_on_beacon_pulse_requested)
 	if player != null:
 		if player.weapon_mount.shot_requested.is_connected(_on_player_shot_requested):
 			player.weapon_mount.shot_requested.disconnect(_on_player_shot_requested)

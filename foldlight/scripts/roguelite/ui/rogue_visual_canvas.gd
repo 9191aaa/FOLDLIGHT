@@ -5,8 +5,6 @@ const PaperArt = preload("res://scripts/visuals/paper_art.gd")
 
 var screen_kind: StringName = &"title"
 var accent: Color = FoldlightRogueUITheme.FOLD
-var route_snapshot: Dictionary = {}
-var current_node_id: StringName = &""
 var _time: float = 0.0
 var _damage_flash: float = 0.0
 
@@ -37,12 +35,6 @@ func get_damage_flash_strength() -> float:
 	return _damage_flash
 
 
-func configure_route(region_snapshot: Dictionary, selected_node_id: StringName) -> void:
-	route_snapshot = region_snapshot.duplicate(true)
-	current_node_id = selected_node_id
-	queue_redraw()
-
-
 func _draw() -> void:
 	var viewport_size := size
 	if screen_kind in [&"title", &"result", &"prologue_result"]:
@@ -52,8 +44,6 @@ func _draw() -> void:
 		_draw_edge_folds(viewport_size, 0.34)
 	else:
 		_draw_hud_frame(viewport_size)
-	if screen_kind == &"route":
-		_draw_route(viewport_size)
 	if _damage_flash > 0.0:
 		_draw_damage_flash(viewport_size)
 
@@ -140,92 +130,7 @@ func _draw_hud_frame(viewport_size: Vector2) -> void:
 	draw_line(Vector2(viewport_size.x - 34, viewport_size.y - 34), Vector2(viewport_size.x - 34, viewport_size.y - 132), color, 2.0, true)
 
 
-func _draw_route(viewport_size: Vector2) -> void:
-	var nodes_variant: Variant = route_snapshot.get("nodes", [])
-	if not nodes_variant is Array:
-		return
-	var nodes := nodes_variant as Array
-	if nodes.is_empty():
-		return
-	var max_depth := 1
-	var by_id: Dictionary = {}
-	for node_variant: Variant in nodes:
-		if node_variant is Dictionary:
-			var node := node_variant as Dictionary
-			max_depth = maxi(max_depth, int(node.get("depth", 0)))
-			by_id[String(node.get("id", ""))] = node
-	var map_rect := Rect2(viewport_size.x * 0.13, viewport_size.y * 0.24, viewport_size.x * 0.74, viewport_size.y * 0.43)
-	for node_variant: Variant in nodes:
-		if not node_variant is Dictionary:
-			continue
-		var node := node_variant as Dictionary
-		var from_pos := _route_node_position(node, nodes, map_rect, max_depth)
-		for exit_variant: Variant in node.get("exits", []):
-			var destination: Dictionary = by_id.get(String(exit_variant), {})
-			if destination.is_empty():
-				continue
-			var to_pos := _route_node_position(destination, nodes, map_rect, max_depth)
-			var visited := StringName(node.get("id", &"")) == current_node_id or int(node.get("depth", 0)) < int(_current_depth(nodes))
-			draw_line(from_pos, to_pos, Color(accent.r, accent.g, accent.b, 0.46 if visited else 0.13), 4.0 if visited else 2.0, true)
-	for node_variant: Variant in nodes:
-		if not node_variant is Dictionary:
-			continue
-		var node := node_variant as Dictionary
-		var node_pos := _route_node_position(node, nodes, map_rect, max_depth)
-		var category := StringName(node.get("category", &"combat"))
-		var radius := 22.0 if category != &"boss" else 34.0
-		var is_current := StringName(node.get("id", &"")) == current_node_id
-		var node_color := FoldlightRogueUITheme.GOLD if category == &"boss" else accent
-		if is_current:
-			draw_circle(node_pos, radius + 10.0 + sin(_time * 3.0) * 3.0, Color(node_color.r, node_color.g, node_color.b, 0.14))
-		draw_circle(node_pos, radius, Color(0.018, 0.045, 0.078, 0.98))
-		draw_circle(node_pos, radius, Color(node_color.r, node_color.g, node_color.b, 0.86 if is_current else 0.46), false, 3.0, true)
-		_draw_category_mark(node_pos, category, node_color)
-
-
-func _route_node_position(node: Dictionary, nodes: Array, map_rect: Rect2, max_depth: int) -> Vector2:
-	var depth := int(node.get("depth", 0))
-	var same_depth: Array[Dictionary] = []
-	for candidate_variant: Variant in nodes:
-		if candidate_variant is Dictionary and int((candidate_variant as Dictionary).get("depth", 0)) == depth:
-			same_depth.append(candidate_variant as Dictionary)
-	same_depth.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return String(a.get("id", "")) < String(b.get("id", "")))
-	var branch_index := same_depth.find(node)
-	var branch_y := 0.5 if same_depth.size() <= 1 else lerpf(0.26, 0.74, float(branch_index) / float(same_depth.size() - 1))
-	return Vector2(map_rect.position.x + map_rect.size.x * float(depth) / float(max_depth), map_rect.position.y + map_rect.size.y * branch_y)
-
-
-func _current_depth(nodes: Array) -> int:
-	for node_variant: Variant in nodes:
-		if node_variant is Dictionary and StringName((node_variant as Dictionary).get("id", &"")) == current_node_id:
-			return int((node_variant as Dictionary).get("depth", 0))
-	return 0
-
-
-func _draw_category_mark(center: Vector2, category: StringName, color: Color) -> void:
-	match category:
-		&"boss":
-			for spoke in 6:
-				var angle := float(spoke) * TAU / 6.0
-				draw_line(center + Vector2.from_angle(angle) * 8.0, center + Vector2.from_angle(angle) * 21.0, color, 2.0, true)
-		&"rest":
-			draw_arc(center, 11.0, -PI * 0.75, PI * 0.75, 18, color, 3.0, true)
-		&"shop", &"forge":
-			draw_rect(Rect2(center - Vector2(8, 8), Vector2(16, 16)), color, false, 3.0, true)
-		&"cache", &"event":
-			draw_colored_polygon(_diamond(center, 0.0, 12.0, 8.0), color)
-		_:
-			draw_circle(center, 7.0, color)
-
-
 func _diamond(center: Vector2, angle: float, length: float, width: float) -> PackedVector2Array:
 	var forward := Vector2.from_angle(angle)
 	var side := forward.rotated(PI * 0.5)
 	return PackedVector2Array([center + forward * length, center + side * width, center - forward * length, center - side * width])
-
-
-func _closed(points: PackedVector2Array) -> PackedVector2Array:
-	var result := points.duplicate()
-	if not result.is_empty():
-		result.append(result[0])
-	return result

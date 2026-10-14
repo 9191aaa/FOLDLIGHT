@@ -7,6 +7,9 @@ var world_size: Vector2 = Vector2(2880.0, 1620.0)
 var accent: Color = PaperArt.FOLD
 var room_id: StringName = &""
 var style_id: StringName = &"paper_reef"
+var _ambient_time: float = 0.0
+var _motion_active: bool = false
+var _redraw_clock: float = 0.0
 
 
 func configure(new_room_id: StringName, new_size: Vector2, new_accent: Color, new_style_id: StringName = &"") -> void:
@@ -14,7 +17,24 @@ func configure(new_room_id: StringName, new_size: Vector2, new_accent: Color, ne
 	world_size = new_size
 	accent = new_accent
 	style_id = new_style_id if not new_style_id.is_empty() else _infer_style(new_room_id)
+	_ambient_time = 0.0
+	_redraw_clock = 0.0
 	queue_redraw()
+
+
+func set_motion_active(value: bool) -> void:
+	_motion_active = value and is_equal_approx(world_size.x, 3360.0)
+	set_process(_motion_active)
+
+
+func _process(delta: float) -> void:
+	if not _motion_active:
+		return
+	_ambient_time += delta
+	_redraw_clock += delta
+	if _redraw_clock >= 0.05:
+		_redraw_clock = fmod(_redraw_clock, 0.05)
+		queue_redraw()
 
 
 func get_visual_contract() -> Dictionary:
@@ -42,8 +62,33 @@ func _draw() -> void:
 		&"sun_court": _draw_sun_court()
 		_: _draw_paper_reef()
 	_draw_paper_grain()
+	if is_equal_approx(world_size.x, 3360.0):
+		_draw_exploration_shores()
 	draw_rect(Rect2(Vector2(28, 28), world_size - Vector2(56, 56)), Color(PaperArt.FOLD, 0.12), false, 2.0, true)
 	draw_rect(Rect2(Vector2(42, 42), world_size - Vector2(84, 84)), Color(PaperArt.GOLD, 0.05), false, 1.0, true)
+
+
+func _draw_exploration_shores() -> void:
+	# Layered paper at the outer margins frames the traversable shore. Keep
+	# contrast below solid terrain so these silhouettes do not imply collision.
+	for side in [-1.0, 1.0]:
+		var edge_x := 0.0 if side < 0.0 else world_size.x
+		for layer in 3:
+			var ridge := PackedVector2Array([Vector2(edge_x, 0)])
+			for step in 12:
+				var depth := 34.0 + float(layer) * 27.0 + sin(float(step) * 1.7 + float(layer)) * 24.0
+				ridge.append(Vector2(edge_x - side * depth, float(step) * world_size.y / 11.0))
+			ridge.append(Vector2(edge_x, world_size.y))
+			draw_colored_polygon(ridge, Color(accent.darkened(0.65), 0.10 + float(layer) * 0.035))
+			draw_polyline(ridge, Color(accent, 0.055), 1.2, true)
+		for stitch in 9:
+			var phase := fmod(_ambient_time * 0.18 + float(stitch) * 0.21, 1.0)
+			var center := Vector2(edge_x - side * (220.0 + phase * 22.0), 270.0 + float(stitch) * 140.0 - phase * 48.0)
+			draw_arc(center, 140.0 + float(stitch % 3) * 18.0, -0.6, 0.5, 20, Color(accent, sin(phase * PI) * 0.07), 2.0, true)
+	var hint := "←  两岸引潮灯 · 靠近按住折翼  →"
+	var font := ThemeDB.fallback_font
+	var width := font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+	draw_string(font, Vector2((world_size.x - width) * 0.5, 1320.0), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(PaperArt.GOLD, 0.38))
 
 
 func _draw_paper_reef() -> void:

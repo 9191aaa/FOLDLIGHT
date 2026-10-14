@@ -9,6 +9,7 @@ $projectPath = Split-Path -Parent $PSScriptRoot
 $engine = (Get-Command $GodotPath -ErrorAction Stop).Source
 $resultsPath = Join-Path $projectPath 'build/refactor-checks'
 [void](New-Item -ItemType Directory -Force -Path $resultsPath)
+[void](New-Item -ItemType File -Force -Path (Join-Path $projectPath 'build/.gdignore'))
 $oldAppData = $env:APPDATA
 $oldLocalAppData = $env:LOCALAPPDATA
 $runId = [guid]::NewGuid().ToString('N')
@@ -61,7 +62,11 @@ try {
         'test_challenge_tutorial_passive',
         'test_full_rogue_route_3_0',
         'test_endless_mission_reward_lanes_3_9',
-        'test_endless_2_0_runtime_reuse'
+        'test_endless_2_0_runtime_reuse',
+        'test_interactive_route_atlas',
+        'test_reward_card_motion',
+        'test_tide_beacon_exploration',
+        'test_rogue_checkpoint_stages_3_0'
     )
     if ($All) {
         $testNames = @(Get-ChildItem -LiteralPath (Join-Path $projectPath 'tests/integration') -Filter 'test_*.gd' | ForEach-Object { $_.BaseName })

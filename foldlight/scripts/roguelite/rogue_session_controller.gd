@@ -5,6 +5,7 @@ enum SessionMode { INACTIVE, TITLE, RUN, PROLOGUE, RESULT }
 
 const WORLD_SIZE := Vector2(2880.0, 1620.0)
 const PLAYER_START := Vector2(1440.0, 1180.0)
+const EXPLORATION_WORLD_SIZE := Vector2(3360.0, 1620.0)
 const ENDLESS_SURVIVAL_SCENE := "res://scenes/endless/endless_survival_slice.tscn"
 const PAPER_REEF_ENEMY_TIERS: Array[Array] = [
 	[&"drifter", &"fan"],
@@ -291,6 +292,8 @@ func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> v
 	var room_id := StringName(room_node.get("id", &"room"))
 	var category := StringName(room_node.get("category", &"combat"))
 	_current_room_template = {}
+	var room_size := WORLD_SIZE if category == &"boss" else EXPLORATION_WORLD_SIZE
+	var layout_offset := (room_size - WORLD_SIZE) * 0.5
 	var terrain: Array[Dictionary] = []
 	if category == &"boss":
 		terrain = _boss_terrain_layout(current_region_definition.content_id)
@@ -302,16 +305,24 @@ func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> v
 			category,
 			int(room_node.get("depth", 0))
 		)
+		# Keep cover dimensions and enemy spacing intact as the shores widen.
+		for key in ["terrain", "spawn_slots"]:
+			for entry: Dictionary in _current_room_template.get(key, []):
+				entry["position"] = Vector2(entry.get("position", Vector2.ZERO)) + layout_offset
 		for placement_variant: Variant in _current_room_template.get("terrain", []):
 			if placement_variant is Dictionary:
 				terrain.append((placement_variant as Dictionary).duplicate(true))
-	var errors := world.load_room(player, room_id, WORLD_SIZE, terrain, current_region_definition.accent, run_controller.run_state.seed + run_controller.run_state.room_count * 7919, current_region_definition.backdrop_style)
+	var errors := world.load_room(player, room_id, room_size, terrain, current_region_definition.accent, run_controller.run_state.seed + run_controller.run_state.room_count * 7919, current_region_definition.backdrop_style)
 	if not errors.is_empty():
 		push_error("RogueSession: room configuration failed: %s" % "; ".join(errors))
 		run_controller.fail_run(&"invalid_room")
 		return
+	if category != &"boss":
+		world.room_runtime.configure_tide_beacons()
 	world.activate()
-	player.global_position = PLAYER_START
+	player.global_position = PLAYER_START + layout_offset
+	player.visible = true
+	world.camera.force_follow()
 	world.combat_runtime.apply_run_build(run_controller.run_state.upgrade_levels)
 	_equip_run_loadout()
 	player.health = clampi(run_controller.run_state.health, 1, player.max_health)
@@ -362,7 +373,7 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 		run_controller.run_state.seed ^ hash(String(room_node.get("id", "room"))),
 		run_controller.run_state.current_region + 1,
 		_spawn_slots(),
-		PLAYER_START,
+		player.global_position,
 		world.room_runtime.get_solid_terrain_bounds(22.0)
 	)
 
@@ -455,9 +466,15 @@ func _on_reward_chosen(upgrade_id: StringName) -> void:
 	run_controller.open_route_choice()
 
 
+func _route_view_snapshot() -> Dictionary:
+	var snapshot := current_region_snapshot.duplicate(true)
+	snapshot["cleared_node_ids"] = run_controller.run_state.cleared_node_ids.duplicate()
+	return snapshot
+
+
 func _on_route_choice_requested(exits: Array[String]) -> void:
 	_enter_modal_safety()
-	presentation.show_route(current_region_snapshot, StringName(current_room_node.get("id", &"")), exits)
+	presentation.show_route(_route_view_snapshot(), StringName(current_room_node.get("id", &"")), exits)
 
 
 func _on_route_chosen(destination_id: StringName) -> void:
@@ -503,7 +520,7 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 		var exits: Array[String] = []
 		for value: Variant in current_room_node.get("exits", []):
 			exits.append(String(value))
-		presentation.show_route(current_region_snapshot, StringName(current_room_node.get("id", &"")), exits)
+		presentation.show_route(_route_view_snapshot(), StringName(current_room_node.get("id", &"")), exits)
 	audio_director.set_intensity(0.06)
 
 
