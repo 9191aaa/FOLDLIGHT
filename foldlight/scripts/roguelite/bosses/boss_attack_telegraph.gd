@@ -7,6 +7,8 @@ var remaining: float = 0.8
 var target_position: Vector2 = Vector2.ZERO
 var accent: Color = Color(0.34, 0.88, 0.84)
 var unreflectable: bool = false
+var spread_radians: float = 0.0
+var zone_radius: float = 0.0
 
 
 func configure(snapshot: Dictionary) -> void:
@@ -18,6 +20,8 @@ func configure(snapshot: Dictionary) -> void:
 	remaining = duration
 	accent = Color(snapshot.get("accent", accent))
 	unreflectable = pattern_id in [&"black_lane", &"margin_cut", &"unreflectable_cut"]
+	spread_radians = maxf(0.0, float(snapshot.get("spread_radians", 0.0)))
+	zone_radius = maxf(0.0, float(snapshot.get("zone_radius", 0.0)))
 	z_as_relative = false
 	z_index = 2
 	queue_redraw()
@@ -40,6 +44,9 @@ func get_visual_contract() -> Dictionary:
 		"pattern_id": pattern_id,
 		"motif": motif,
 		"unreflectable": unreflectable,
+		"warned_spread": spread_radians,
+		"zone_radius": zone_radius,
+		"mixed_unreflectable": pattern_id == &"shrinking_frame",
 		"authored": pattern_id in [&"judgement_petals", &"unreflectable_cut", &"shrinking_frame"],
 	}
 
@@ -50,6 +57,13 @@ func _draw() -> void:
 	var pulse := 0.62 + sin(Time.get_ticks_msec() * 0.018) * 0.16
 	draw_circle(Vector2.ZERO, 78.0 + ratio * 34.0, Color(warning_color, 0.04 + (1.0 - ratio) * 0.08))
 	draw_arc(Vector2.ZERO, 80.0 + ratio * 34.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - ratio), 56, Color(warning_color, 0.84), 5.0, true)
+	if spread_radians > 0.0:
+		_draw_black_gold_spread(pulse)
+	if zone_radius > 0.0:
+		var zone_center := target_position - global_position
+		draw_circle(zone_center, zone_radius, Color(0.88, 0.50, 0.45, 0.045 + (1.0 - ratio) * 0.035))
+		draw_arc(zone_center, zone_radius, 0.0, TAU, 64, Color(0.88, 0.50, 0.45, 0.75), 3.0, true)
+		draw_arc(zone_center, zone_radius + 12.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - ratio), 64, Color(0.84, 0.69, 0.44, 0.66), 2.0, true)
 	if unreflectable:
 		var direction := global_position.direction_to(target_position)
 		if direction.is_zero_approx():
@@ -113,6 +127,21 @@ func _draw() -> void:
 				for petal in 6:
 					var angle := float(petal) * TAU / 6.0
 					draw_line(Vector2.from_angle(angle) * 48.0, Vector2.from_angle(angle) * (92.0 + (1.0 - ratio) * 24.0), Color(warning_color, 0.36), 3.0, true)
+
+
+func _draw_black_gold_spread(pulse: float) -> void:
+	var direction := global_position.direction_to(target_position)
+	if direction.is_zero_approx():
+		direction = Vector2.DOWN
+	var left := direction.rotated(-spread_radians * 0.5) * 1700.0
+	var right := direction.rotated(spread_radians * 0.5) * 1700.0
+	# The entire fan is warned, including the mixed black-gold follow-up on the
+	# judge's frame attack. A single thin center rail understated its old width.
+	draw_colored_polygon(PackedVector2Array([Vector2.ZERO, left, right]), Color(0.88, 0.50, 0.45, 0.035 + pulse * 0.025))
+	draw_dashed_line(Vector2.ZERO, left, Color(0.84, 0.69, 0.44, 0.48 + pulse * 0.16), 2.0, 25.0, true)
+	draw_dashed_line(Vector2.ZERO, right, Color(0.84, 0.69, 0.44, 0.48 + pulse * 0.16), 2.0, 25.0, true)
+	if pattern_id == &"shrinking_frame":
+		draw_dashed_line(Vector2.ZERO, direction * 1700.0, Color(0.84, 0.69, 0.44, 0.75), 3.0, 22.0, true)
 
 
 func _closed(points: PackedVector2Array) -> PackedVector2Array:

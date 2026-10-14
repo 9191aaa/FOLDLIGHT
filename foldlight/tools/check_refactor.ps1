@@ -1,6 +1,7 @@
 param(
     [string]$GodotPath = 'godot',
     [switch]$All,
+    [string[]]$SelectedTests = @(),
     [int]$TimeoutSeconds = 300
 )
 
@@ -66,9 +67,19 @@ try {
         'test_interactive_route_atlas',
         'test_reward_card_motion',
         'test_tide_beacon_exploration',
-        'test_rogue_checkpoint_stages_3_0'
+        'test_rogue_checkpoint_stages_3_0',
+        'test_rogue_pressure_curve',
+        'test_boss_fairness_4_0',
+        'test_weapon_volley_accuracy'
     )
-    if ($All) {
+    if ($SelectedTests.Count -gt 0) {
+        foreach ($selected in $SelectedTests) {
+            if ($selected -notmatch '^test_[a-zA-Z0-9_]+$' -or -not (Test-Path -LiteralPath (Join-Path $projectPath ('tests/integration/' + $selected + '.gd')))) {
+                throw ('Unknown integration test: ' + $selected)
+            }
+        }
+        $testNames = $SelectedTests
+    } elseif ($All) {
         $testNames = @(Get-ChildItem -LiteralPath (Join-Path $projectPath 'tests/integration') -Filter 'test_*.gd' | ForEach-Object { $_.BaseName })
     }
     foreach ($testName in $testNames) {

@@ -5,6 +5,7 @@ enum TideState { REST, TELEGRAPH, SURGE }
 
 const TIDE_TELEGRAPH_DURATION: float = 1.4
 const TIDE_SURGE_DURATION: float = 1.30
+const PHASE_TRANSITION_GRACE: float = 1.5
 
 var rule_id: StringName = &""
 var room_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
@@ -17,6 +18,10 @@ var tide_remaining: float = 3.8
 var pulse_radius: float = 0.0
 var pulse_progress: float = 0.0
 var tide_gap_angle: float = -PI * 0.5
+var _pressure_suspended: bool = false
+var _transition_remaining: float = 0.0
+var _transition_from := Rect2()
+var _player_position := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -37,20 +42,40 @@ func configure(new_rule_id: StringName, bounds: Rect2) -> void:
 	pulse_radius = 0.0
 	pulse_progress = 0.0
 	tide_gap_angle = -PI * 0.5
+	_pressure_suspended = false
+	_transition_remaining = 0.0
+	_player_position = bounds.get_center()
+	modulate.a = 1.0
 	_update_rule()
 	queue_redraw()
 
 
 func set_phase(new_phase_index: int) -> void:
+	_transition_from = safe_rect
+	_transition_remaining = PHASE_TRANSITION_GRACE
 	phase_index = clampi(new_phase_index, 0, 2)
-	if rule_id == &"reef_tide_pulse" and tide_state == TideState.REST:
-		tide_remaining = minf(tide_remaining, 2.4)
+	if rule_id == &"reef_tide_pulse":
+		# A phase change cannot resume an old surge underneath the player.
+		tide_state = TideState.REST
+		tide_remaining = 3.4
+		pulse_radius = 0.0
+		pulse_progress = 0.0
 	_update_rule()
 	queue_redraw()
 
 
-func advance_simulation(delta: float, _player_position: Vector2) -> void:
+func set_pressure_suspended(suspended: bool) -> void:
+	_pressure_suspended = suspended
+	modulate.a = 0.46 if suspended else 1.0
+	queue_redraw()
+
+
+func advance_simulation(delta: float, player_position: Vector2) -> void:
+	_player_position = player_position
+	if _pressure_suspended:
+		return
 	var safe_delta := maxf(0.0, delta)
+	_transition_remaining = maxf(0.0, _transition_remaining - safe_delta)
 	elapsed += safe_delta
 	if rule_id == &"reef_tide_pulse":
 		_advance_tide(safe_delta)
@@ -62,6 +87,8 @@ func advance_simulation(delta: float, _player_position: Vector2) -> void:
 
 
 func is_player_safe(player_position: Vector2) -> bool:
+	if _pressure_suspended or _transition_remaining > 0.0:
+		return true
 	if rule_id == &"moving_safe_frame":
 		return safe_rect.has_point(player_position)
 	if rule_id == &"ink_partitions" and phase_index >= 1:
@@ -101,6 +128,8 @@ func get_rule_snapshot() -> Dictionary:
 		"safe_gap_angle": tide_gap_angle,
 		"safe_gap_half_angle": _tide_gap_half_angle(),
 		"safe_gap_visible": rule_id == &"reef_tide_pulse" and tide_state != TideState.REST,
+		"pressure_suspended": _pressure_suspended,
+		"transition_remaining": _transition_remaining,
 		"telegraph_message": "沿青色缺口穿过潮波" if rule_id == &"reef_tide_pulse" else "",
 	}
 
@@ -109,17 +138,21 @@ func _update_rule() -> void:
 	if rule_id != &"moving_safe_frame":
 		safe_rect = room_bounds.grow(-90.0)
 		return
-	var sizes := [Vector2(1540, 860), Vector2(1260, 720), Vector2(980, 590)]
+	var sizes := [Vector2(1540, 860), Vector2(1320, 760), Vector2(1100, 660)]
 	var size: Vector2 = sizes[phase_index]
 	var center := room_bounds.get_center()
 	if phase_index >= 1:
-		center.x += sin(elapsed * 0.58) * (180.0 + float(phase_index) * 70.0)
+		center.x += sin(elapsed * 0.48) * (150.0 + float(phase_index) * 50.0)
 	if phase_index >= 2:
-		center.y += sin(elapsed * 0.83 + 0.7) * 170.0
+		center.y += sin(elapsed * 0.65 + 0.7) * 130.0
 	var proposed := Rect2(center - size * 0.5, size)
 	proposed.position.x = clampf(proposed.position.x, room_bounds.position.x + 70.0, room_bounds.end.x - 70.0 - size.x)
 	proposed.position.y = clampf(proposed.position.y, room_bounds.position.y + 70.0, room_bounds.end.y - 70.0 - size.y)
-	safe_rect = proposed
+	if _transition_remaining > 0.0:
+		var progress := smoothstep(0.0, 1.0, 1.0 - _transition_remaining / PHASE_TRANSITION_GRACE)
+		safe_rect = Rect2(_transition_from.position.lerp(proposed.position, progress), _transition_from.size.lerp(proposed.size, progress))
+	else:
+		safe_rect = proposed
 
 
 func _advance_tide(delta: float) -> void:
@@ -141,7 +174,12 @@ func _advance_tide(delta: float) -> void:
 				tide_remaining = TIDE_TELEGRAPH_DURATION
 				pulse_progress = 0.0
 				pulse_radius = 120.0
-				tide_gap_angle = wrapf(-PI * 0.5 + elapsed * 0.23 + float(phase_index) * 0.61, -PI, PI)
+				# Place the opening close enough to reach at normal movement speed.
+				# The player still has to move toward it; it is not centered on them.
+				var relative := _player_position - room_bounds.get_center()
+				var player_angle := relative.angle() if not relative.is_zero_approx() else -PI * 0.5
+				var side := -1.0 if sin(elapsed * 0.31) < 0.0 else 1.0
+				tide_gap_angle = wrapf(player_angle + side * (0.70 + float(phase_index) * 0.04), -PI, PI)
 			TideState.TELEGRAPH:
 				tide_state = TideState.SURGE
 				tide_remaining = TIDE_SURGE_DURATION
@@ -159,7 +197,7 @@ func _maximum_tide_radius() -> float:
 
 
 func _tide_gap_half_angle() -> float:
-	return [0.62, 0.54, 0.48][phase_index]
+	return [0.66, 0.60, 0.55][phase_index]
 
 
 func _tide_state_name() -> StringName:

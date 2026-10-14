@@ -4,6 +4,7 @@ extends FoldlightRogueContentDefinition
 @export_range(1, 64, 1) var threat_budget: int = 8
 @export_range(1, 6, 1) var wave_count: int = 2
 @export_range(4, 36, 1) var minimum_enemy_count: int = 12
+@export_range(0, 12, 1) var minimum_pressure_count: int = 0
 @export_range(30.0, 180.0, 1.0) var target_duration: float = 80.0
 @export_range(0, 3, 1) var controller_quota: int = 1
 @export_range(0, 3, 1) var buffer_quota: int = 1

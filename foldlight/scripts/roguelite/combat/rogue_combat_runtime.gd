@@ -483,7 +483,7 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		var actor_id := StringName(enemy.get("actor_id"))
 		if projectile.hit_actor_ids.has(actor_id):
 			continue
-		if projectile.global_position.distance_to(enemy.global_position) > projectile.radius + 27.0:
+		if not _projectile_overlaps_actor(projectile, enemy):
 			continue
 		projectile.hit_actor_ids[actor_id] = true
 		var applied_damage := projectile.damage
@@ -516,6 +516,16 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		if projectile.consume_pierce() or projectile.style == &"tide_bell":
 			_remove_projectile(projectile)
 		return
+
+
+func _projectile_overlaps_actor(projectile: FoldlightRogueProjectile, actor: Node2D) -> bool:
+	# Every shipped enemy has a circular body. Reuse that authored shape so a
+	# large boss and a small support unit do not share a fictitious 27 px target.
+	var collision := actor.get_node_or_null("CollisionShape2D") as CollisionShape2D
+	if collision == null or collision.disabled or not collision.shape is CircleShape2D:
+		return false
+	var radius := (collision.shape as CircleShape2D).radius * absf(collision.global_scale.x)
+	return projectile.global_position.distance_to(collision.global_position) <= projectile.radius + radius
 
 
 func _try_activate_return_chain(projectile: FoldlightRogueProjectile) -> bool:
@@ -664,6 +674,8 @@ func _spawn_boss_actor(definition: FoldlightRogueBossDefinition, entry: Dictiona
 	boss.zone_requested.connect(_on_zone_requested)
 	boss.minion_requested.connect(_on_boss_minion_requested)
 	boss.arena_hit_requested.connect(_try_hit_player)
+	boss.stagger_started.connect(_on_boss_attack_cancelled)
+	boss.phase_changed.connect(_on_boss_attack_cancelled)
 	boss.set_meta("counts_for_room", counts_for_room)
 	enemies.append(boss)
 	enemy_spawned.emit(boss, entry.duplicate(true))
@@ -676,6 +688,14 @@ func _on_boss_telegraph_requested(snapshot: Dictionary) -> void:
 	var telegraph := BOSS_TELEGRAPH_SCENE.instantiate() as FoldlightBossAttackTelegraph
 	room.projectile_container.add_child(telegraph)
 	telegraph.configure(snapshot)
+
+
+func _on_boss_attack_cancelled(_state_value: float) -> void:
+	if not is_instance_valid(room):
+		return
+	for child in room.projectile_container.get_children():
+		if child is FoldlightBossAttackTelegraph:
+			child.queue_free()
 
 
 func _on_boss_volley_requested(snapshot: Dictionary) -> void:
@@ -804,8 +824,14 @@ func _on_player_shot_requested(snapshot: Dictionary) -> void:
 		direction = player.velocity.normalized()
 	var count := clampi(int(snapshot.get("volley_count", 1)), 1, 8)
 	for index in count:
-		var unit := 0.0 if count <= 1 else float(index) / float(count - 1) - 0.5
-		var shot_direction := direction.rotated(unit * 0.28)
+		# Keep the aimed shot when an upgrade adds an even-numbered projectile.
+		# Extra shots fan out on alternating sides within the existing cone.
+		var spread := 0.0
+		if index > 0:
+			var side_rank := ceili(float(index) * 0.5)
+			var side_count := ceili(float(count - 1) * 0.5)
+			spread = 0.14 * float(side_rank) / float(side_count) * (1.0 if index % 2 == 1 else -1.0)
+		var shot_direction := direction.rotated(spread)
 		var shot_damage := float(snapshot.get("damage", 1.0))
 		if _rng.randf() <= float(snapshot.get("critical_chance", 0.0)):
 			shot_damage *= 2.0

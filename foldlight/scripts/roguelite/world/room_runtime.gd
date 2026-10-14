@@ -156,6 +156,7 @@ func validate_layout(world_size: Vector2, placements: Array[Dictionary]) -> Arra
 
 func bind_player(player: FoldlightPlayer) -> void:
 	player.play_bounds = room_bounds.grow(-WALL_MARGIN)
+	encounter_runtime.set_spawn_safety(player, room_bounds.grow(-80.0), get_solid_terrain_bounds(22.0))
 
 
 func configure_tide_beacons() -> void:

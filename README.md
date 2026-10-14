@@ -20,6 +20,8 @@
 
 纸海航图可以拖拽探索、滚轮缩放、悬停或点击查看折岛；远方节点仅可预览，确认可达节点后才会出发。三选一改为有纸雕图腾的折痕卡，加入错峰展开、焦点浮起和确认折光。
 
+普通关现在随航路深度增加敌人组合与增援压力，休息和补给房保留缓冲。首领减少弹幕叠加、延长预警和返光窗口，并修复预警后重新瞄准、转阶段吞掉硬直及「双折」升级后打空的问题。配置与测量方式见 [难度曲线记录](foldlight/docs/godot-prompter/plans/difficulty_curve.md)。
+
 ![交互航图](screenshots/interactive_atlas.jpg)
 ![折痕三选一](screenshots/interactive_reward.jpg)
 
@@ -52,6 +54,8 @@ Windows 输出为 `foldlight/build/FOLDLIGHT_Refactor_Windows/FOLDLIGHT.exe`。�
 ./foldlight/tools/check_refactor.ps1 -GodotPath 'C:/path/to/godot.exe'
 # 扫描全部历史集成测试，包含独立 Demo
 ./foldlight/tools/check_refactor.ps1 -GodotPath 'C:/path/to/godot.exe' -All
+# 仅运行指定回归（仍先做项目导入）
+./foldlight/tools/check_refactor.ps1 -GodotPath 'C:/path/to/godot.exe' -SelectedTests test_weapon_volley_accuracy,test_rogue_pressure_curve
 ```
 
 每个测试使用独立用户数据目录，不接触玩家存档。日志在 `foldlight/build/refactor-checks/`。

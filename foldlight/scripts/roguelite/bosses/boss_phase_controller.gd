@@ -14,9 +14,15 @@ var phase_index: int = 0
 var current_pattern: StringName = &""
 var definition: FoldlightRogueBossDefinition
 
-var _remaining: float = 1.1
+const TELEGRAPH_SECONDS := [1.05, 1.0, 0.95]
+const RECOVERY_SECONDS := [1.05, 0.95, 0.85]
+const BLACK_GOLD_WARNING_BONUS := 0.22
+const PHASE_TRANSITION_SECONDS := 1.5
+
+var _remaining: float = 1.35
 var _attack_cursor: int = 0
 var _last_telegraph_duration: float = 0.9
+var _pending_phase: int = -1
 
 
 func configure(new_definition: FoldlightRogueBossDefinition) -> void:
@@ -24,9 +30,10 @@ func configure(new_definition: FoldlightRogueBossDefinition) -> void:
 	state = State.INTRO
 	phase_index = 0
 	current_pattern = &""
-	_remaining = 1.1
+	_remaining = 1.35
 	_attack_cursor = 0
 	_last_telegraph_duration = 0.9
+	_pending_phase = -1
 
 
 func advance_simulation(delta: float, health_ratio: float) -> void:
@@ -42,11 +49,14 @@ func advance_simulation(delta: float, health_ratio: float) -> void:
 		State.TELEGRAPH:
 			attack_ready.emit(current_pattern, _last_telegraph_duration)
 			state = State.RECOVERY
-			_remaining = maxf(0.42, 0.72 - float(phase_index) * 0.10)
+			_remaining = float(RECOVERY_SECONDS[mini(phase_index, 2)])
 		State.STAGGERED:
 			stagger_ended.emit()
-			state = State.RECOVERY
-			_remaining = 0.72
+			if _pending_phase > phase_index:
+				_apply_phase(_pending_phase)
+			else:
+				state = State.RECOVERY
+				_remaining = float(RECOVERY_SECONDS[mini(phase_index, 2)])
 
 
 func enter_stagger(duration: float) -> void:
@@ -63,7 +73,7 @@ func mark_defeated() -> void:
 
 
 func get_state_snapshot() -> Dictionary:
-	return {"state": state, "phase": phase_index, "pattern_id": current_pattern, "remaining": maxf(0.0, _remaining)}
+	return {"state": state, "phase": phase_index, "pattern_id": current_pattern, "remaining": maxf(0.0, _remaining), "pending_phase": _pending_phase}
 
 
 func _update_phase(health_ratio: float) -> void:
@@ -73,9 +83,19 @@ func _update_phase(health_ratio: float) -> void:
 			next_phase += 1
 	if next_phase <= phase_index:
 		return
+	if state == State.STAGGERED:
+		# Crossing a health threshold is a reward for a good reflection. Finish
+		# that earned damage window before changing arena rules or adding support.
+		_pending_phase = maxi(_pending_phase, next_phase)
+		return
+	_apply_phase(next_phase)
+
+
+func _apply_phase(next_phase: int) -> void:
 	phase_index = mini(next_phase, definition.phase_thresholds.size())
+	_pending_phase = -1
 	state = State.RECOVERY
-	_remaining = 1.15
+	_remaining = PHASE_TRANSITION_SECONDS
 	phase_changed.emit(phase_index)
 
 
@@ -88,7 +108,9 @@ func _begin_telegraph() -> void:
 	var pattern_index := (_attack_cursor + phase_index) % available_count
 	current_pattern = definition.pattern_ids[pattern_index]
 	_attack_cursor += 1
-	_last_telegraph_duration = maxf(0.58, 0.94 - float(phase_index) * 0.10)
+	_last_telegraph_duration = float(TELEGRAPH_SECONDS[mini(phase_index, 2)])
+	if current_pattern in [&"black_lane", &"margin_cut", &"unreflectable_cut", &"shrinking_frame"]:
+		_last_telegraph_duration += BLACK_GOLD_WARNING_BONUS
 	state = State.TELEGRAPH
 	_remaining = _last_telegraph_duration
 	telegraph_started.emit(current_pattern, _last_telegraph_duration)

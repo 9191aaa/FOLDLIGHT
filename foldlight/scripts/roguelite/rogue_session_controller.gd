@@ -364,10 +364,14 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 		&"event": 1.06,
 		&"elite": 1.25,
 	}.get(category, 1.0) as float
-	definition.threat_budget = maxi(22, int(round(float(current_region_definition.base_threat_budget + int(room_node.get("risk", 1))) * multiplier * 1.10)))
+	var progression := float(current_region_definition.base_threat_budget + int(room_node.get("risk", 1))) + float(depth) * 0.65
+	definition.threat_budget = clampi(int(round(progression * multiplier * 1.10)), 22, 64)
 	definition.minimum_enemy_count = clampi(int(round(float(base_definition.minimum_enemy_count) * multiplier * 1.10)), 16, 32)
 	definition.wave_count = 4 if category == &"elite" or run_controller.run_state.current_region > 0 else 3
-	return encounter_director.compose_encounter(
+	var pressure := _encounter_pressure_profile(run_controller.run_state.current_region, depth, category)
+	definition.minimum_pressure_count = int(pressure["minimum_pressure_count"])
+	definition.minimum_fodder_ratio = float(pressure["fodder_ratio"])
+	var plan := encounter_director.compose_encounter(
 		definition,
 		FoldlightRogueContentCatalog.ENEMIES,
 		run_controller.run_state.seed ^ hash(String(room_node.get("id", "room"))),
@@ -376,6 +380,34 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 		player.global_position,
 		world.room_runtime.get_solid_terrain_bounds(22.0)
 	)
+	plan["reinforcement_interval"] = pressure["reinforcement_interval"]
+	plan["reinforcement_threshold"] = pressure["reinforcement_threshold"]
+	plan["maximum_active_enemies"] = 16
+	return plan
+
+
+func _encounter_pressure_profile(region: int, depth: int, category: StringName) -> Dictionary:
+	if region == 0 and depth == 0:
+		return {"minimum_pressure_count": 0, "fodder_ratio": 0.52, "reinforcement_interval": 0.0, "reinforcement_threshold": 4}
+	var stage := 0 if depth == 0 else (1 if depth <= 2 else 2)
+	if category == &"elite":
+		stage = 3
+	if region == 0:
+		stage = 0 if depth == 1 else (1 if depth <= 3 else 2)
+		if category == &"elite":
+			stage = 3
+	var minimums := [[3, 4, 5, 6], [4, 5, 6, 7], [5, 6, 7, 8]]
+	var fodder_ratios := [[0.44, 0.42, 0.40, 0.40], [0.42, 0.40, 0.38, 0.36], [0.38, 0.36, 0.34, 0.32]]
+	var minimum := int(minimums[region][stage])
+	var interval := 12.0 - float(region)
+	if category == &"rest":
+		minimum = maxi(1, minimum - 2)
+		interval += 3.0
+	elif category in [&"cache", &"shop", &"forge"]:
+		minimum = maxi(1, minimum - 1)
+		interval += 2.0
+	var threshold := 4 if region == 0 and depth < 4 else (6 if region > 0 and depth >= 3 else 5)
+	return {"minimum_pressure_count": minimum, "fodder_ratio": float(fodder_ratios[region][stage]), "reinforcement_interval": interval, "reinforcement_threshold": threshold}
 
 
 func _enemy_ids_for_room(region_id: StringName, depth: int, category: StringName) -> Array[StringName]:

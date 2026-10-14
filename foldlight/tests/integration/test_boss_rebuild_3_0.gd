@@ -52,6 +52,8 @@ func _run() -> void:
 
 	reef.health = reef.definition.base_health * 0.66
 	reef.advance_simulation(0.01, Vector2(320, 810))
+	_check(reef.phase_controller.phase_index == 0 and reef.phase_controller.state == FoldlightBossPhaseController.State.STAGGERED, "crossing a phase threshold preserves the earned return-light window")
+	reef.advance_simulation(reef.definition.return_window_seconds, Vector2(320, 810))
 	_check(reef.phase_controller.phase_index == 1 and phase_events.has(1), "health threshold advances to a clearly signaled second phase")
 	reef.health = reef.definition.base_health * 0.30
 	reef.advance_simulation(0.01, Vector2(320, 810))
@@ -82,7 +84,7 @@ func _run() -> void:
 	var reef_center := reef.arena_controller.room_bounds.get_center()
 	reef.arena_controller.set_phase(2)
 	_check(reef.arena_controller.is_player_safe(reef_center), "Reef-Crown tide warning never deals hidden early damage")
-	reef.arena_controller.advance_simulation(2.5, reef_center)
+	reef.arena_controller.advance_simulation(reef.arena_controller.tide_remaining, reef_center)
 	reef.arena_controller.advance_simulation(1.4, reef_center)
 	var tide_snapshot := reef.arena_controller.get_rule_snapshot()
 	var tide_angle := float(tide_snapshot.get("safe_gap_angle", 0.0)) + PI
