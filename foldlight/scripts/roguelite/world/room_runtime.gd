@@ -14,11 +14,13 @@ signal beacon_pulse_requested(beacon: FoldlightTideBeacon)
 const TERRAIN_SCENE: PackedScene = preload("res://scenes/roguelite/terrain_piece.tscn")
 const DOOR_SCENE: PackedScene = preload("res://scenes/roguelite/rogue_door.tscn")
 const BEACON_SCENE: PackedScene = preload("res://scenes/roguelite/tide_beacon.tscn")
+const TERRAIN_HINT = preload("res://scripts/roguelite/world/terrain_hint.gd")
 const WALL_MARGIN: float = 56.0
 
 var room_id: StringName = &""
 var room_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
 var _interactions_active: bool = false
+var _terrain_hint: Node2D
 
 @onready var backdrop: FoldlightRoomBackdrop = $Backdrop
 @onready var terrain_container: Node2D = $Terrain
@@ -157,6 +159,15 @@ func validate_layout(world_size: Vector2, placements: Array[Dictionary]) -> Arra
 func bind_player(player: FoldlightPlayer) -> void:
 	player.play_bounds = room_bounds.grow(-WALL_MARGIN)
 	encounter_runtime.set_spawn_safety(player, room_bounds.grow(-80.0), get_solid_terrain_bounds(22.0))
+	for piece in get_terrain_pieces():
+		piece.bind_observer(player)
+		piece.set_motion_active(_interactions_active)
+	if not is_instance_valid(_terrain_hint):
+		_terrain_hint = TERRAIN_HINT.new()
+		_terrain_hint.name = "TerrainHint"
+		add_child(_terrain_hint)
+	_terrain_hint.bind(self, player)
+	_terrain_hint.set_active(_interactions_active)
 
 
 func configure_tide_beacons() -> void:
@@ -174,6 +185,10 @@ func configure_tide_beacons() -> void:
 func set_interactions_active(value: bool) -> void:
 	_interactions_active = value
 	backdrop.set_motion_active(value)
+	for piece in get_terrain_pieces():
+		piece.set_motion_active(value)
+	if is_instance_valid(_terrain_hint):
+		_terrain_hint.set_active(value)
 	for beacon in get_tide_beacons():
 		beacon.set_interaction_active(value)
 

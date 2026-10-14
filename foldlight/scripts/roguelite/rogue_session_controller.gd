@@ -15,7 +15,7 @@ const PAPER_REEF_ENEMY_TIERS: Array[Array] = [
 const PROLOGUE_STEPS: Array[Dictionary] = [
 	{"title": "移动与冲刺", "body": "移动一小段，再用一次 2.0 秒冷却的冲刺。"},
 	{"title": "收纳与追踪", "body": "按住折域收纳普通弹，松开后追踪返航；击杀普通敌人会接力一次，黑金弹不可反射。"},
-	{"title": "自动火力与地形", "body": "靠近敌人后武器会自动开火。利用墙体挡弹，青金地形有利，墨色与刺纸地形有害。"},
+	{"title": "自动火力与地形", "body": "靠近敌人后武器会自动开火。青绿日纹加速回息，紫色湿墨压低回息，红色刺纸触碰受伤；蓝色箭头指示潮流推移。"},
 ]
 
 var mode: SessionMode = SessionMode.INACTIVE

@@ -94,6 +94,14 @@ func set_active(value: bool) -> void:
 	set_physics_process(active)
 	if is_instance_valid(room):
 		room.set_interactions_active(active)
+		# These effects own render-frame clocks, unlike actors advanced by this
+		# runtime. Preserve those clocks across pause, rewards and introductions.
+		for child in room.get_children():
+			if child is FoldlightSpawnTelegraph:
+				child.set_simulation_active(active)
+		for child in room.projectile_container.get_children():
+			if child is FoldlightInkDenialZone or child is FoldlightBossAttackTelegraph:
+				child.set_simulation_active(active)
 
 
 func _on_beacon_pulse_requested(beacon: FoldlightTideBeacon) -> void:
@@ -591,6 +599,7 @@ func _on_spawn_telegraph(entry: Dictionary, duration: float) -> void:
 	var telegraph := TELEGRAPH_SCENE.instantiate() as FoldlightSpawnTelegraph
 	room.add_child(telegraph)
 	telegraph.configure(entry, duration)
+	telegraph.set_simulation_active(active)
 
 
 func _on_enemy_requested(entry: Dictionary) -> void:
@@ -688,6 +697,7 @@ func _on_boss_telegraph_requested(snapshot: Dictionary) -> void:
 	var telegraph := BOSS_TELEGRAPH_SCENE.instantiate() as FoldlightBossAttackTelegraph
 	room.projectile_container.add_child(telegraph)
 	telegraph.configure(snapshot)
+	telegraph.set_simulation_active(active)
 
 
 func _on_boss_attack_cancelled(_state_value: float) -> void:
@@ -803,6 +813,7 @@ func _on_zone_requested(snapshot: Dictionary) -> void:
 	var zone := ZONE_SCENE.instantiate() as FoldlightInkDenialZone
 	room.projectile_container.add_child(zone)
 	zone.configure(snapshot)
+	zone.set_simulation_active(active)
 
 
 func _update_denial_zones() -> void:

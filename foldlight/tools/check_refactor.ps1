@@ -70,7 +70,9 @@ try {
         'test_rogue_checkpoint_stages_3_0',
         'test_rogue_pressure_curve',
         'test_boss_fairness_4_0',
-        'test_weapon_volley_accuracy'
+        'test_weapon_volley_accuracy',
+        'test_terrain_context_hint',
+        'test_temporary_hazard_pause'
     )
     if ($SelectedTests.Count -gt 0) {
         foreach ($selected in $SelectedTests) {

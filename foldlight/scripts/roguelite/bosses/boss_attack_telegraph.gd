@@ -9,6 +9,7 @@ var accent: Color = Color(0.34, 0.88, 0.84)
 var unreflectable: bool = false
 var spread_radians: float = 0.0
 var zone_radius: float = 0.0
+var _simulation_active: bool = true
 
 
 func configure(snapshot: Dictionary) -> void:
@@ -27,7 +28,14 @@ func configure(snapshot: Dictionary) -> void:
 	queue_redraw()
 
 
+func set_simulation_active(value: bool) -> void:
+	_simulation_active = value
+	set_process(value)
+
+
 func _process(delta: float) -> void:
+	if not _simulation_active:
+		return
 	remaining = maxf(0.0, remaining - delta)
 	queue_redraw()
 	if remaining <= 0.0:
@@ -54,7 +62,7 @@ func get_visual_contract() -> Dictionary:
 func _draw() -> void:
 	var ratio := clampf(remaining / duration, 0.0, 1.0)
 	var warning_color := Color(1.0, 0.66, 0.20) if unreflectable else accent
-	var pulse := 0.62 + sin(Time.get_ticks_msec() * 0.018) * 0.16
+	var pulse := 0.62 + sin((duration - remaining) * 18.0) * 0.16
 	draw_circle(Vector2.ZERO, 78.0 + ratio * 34.0, Color(warning_color, 0.04 + (1.0 - ratio) * 0.08))
 	draw_arc(Vector2.ZERO, 80.0 + ratio * 34.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - ratio), 56, Color(warning_color, 0.84), 5.0, true)
 	if spread_radians > 0.0:

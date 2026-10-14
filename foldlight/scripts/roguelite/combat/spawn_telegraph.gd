@@ -4,6 +4,7 @@ extends Node2D
 var duration: float = 0.7
 var remaining: float = 0.7
 var accent: Color = Color(0.96, 0.48, 0.28)
+var _simulation_active: bool = true
 
 
 func configure(snapshot: Dictionary, new_duration: float) -> void:
@@ -18,7 +19,14 @@ func configure(snapshot: Dictionary, new_duration: float) -> void:
 	queue_redraw()
 
 
+func set_simulation_active(value: bool) -> void:
+	_simulation_active = value
+	set_process(value)
+
+
 func _process(delta: float) -> void:
+	if not _simulation_active:
+		return
 	remaining = maxf(0.0, remaining - delta)
 	queue_redraw()
 	if remaining <= 0.0:
