@@ -1,6 +1,8 @@
 class_name FoldlightPlayer
 extends CharacterBody2D
 
+const PaperArt = preload("res://scripts/visuals/paper_art.gd")
+
 signal fold_started
 signal fold_released(captured_count: int, charge_ratio: float)
 signal focus_empty(captured_count: int, charge_ratio: float)
@@ -118,6 +120,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Pause/menu overlays suspend gameplay timers as well as movement. Otherwise
+	# waiting in a menu could recharge Fold, dash and active items for free.
+	if not play_enabled:
+		velocity = Vector2.ZERO
+		_dash_buffer_timer = 0.0
+		return
 	simulate_combat_cooldowns(delta)
 	if _hit_stop_timer > 0.0:
 		_hit_stop_timer = maxf(0.0, _hit_stop_timer - delta)
@@ -127,10 +135,6 @@ func _physics_process(delta: float) -> void:
 	if visual_flash > 0.0:
 		visual_flash = maxf(0.0, visual_flash - delta * 3.8)
 
-	if not play_enabled:
-		velocity = velocity.move_toward(Vector2.ZERO, FRICTION * delta)
-		_dash_buffer_timer = 0.0
-		return
 	status_effects.tick(delta)
 	if _fold_buffer_timer > 0.0:
 		_fold_buffer_timer = maxf(0.0, _fold_buffer_timer - delta)
@@ -532,7 +536,7 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if roguelite_combat and fold_component.cooldown_remaining > 0.0:
 		var ready_ratio := 1.0 - clampf(fold_component.cooldown_remaining / maxf(0.01, fold_component.roguelite_cooldown), 0.0, 1.0)
-		draw_arc(Vector2.ZERO, 38.0, -PI * 0.5, -PI * 0.5 + TAU * ready_ratio, 32, Color(0.35, 0.86, 0.88, 0.72), 2.0, true)
+		draw_arc(Vector2.ZERO, 38.0, -PI * 0.5, -PI * 0.5 + TAU * ready_ratio, 32, Color(PaperArt.FOLD, 0.72), 2.0, true)
 
 
 func _set_physical_radius(radius: float) -> void:
@@ -560,119 +564,59 @@ func _draw_trail() -> void:
 		var life: float = clampf(float(point.life), 0.0, 1.0)
 		var local_position: Vector2 = to_local(point.position)
 		var size := lerpf(3.0, 18.0, life)
-		draw_circle(local_position, size * 1.8, Color(0.12, 0.82, 0.88, life * 0.035))
-		draw_circle(local_position, size * 0.52, Color(0.98, 0.72, 0.30, life * 0.28))
+		draw_circle(local_position, size * 1.8, Color(PaperArt.FOLD, life * 0.025))
+		draw_circle(local_position, size * 0.52, Color(PaperArt.GOLD, life * 0.22))
 		if index < _trail.size() - 1:
 			var next_position: Vector2 = to_local(_trail[index + 1].position)
-			draw_line(local_position, next_position, Color(0.25, 0.72, 0.78, life * 0.22), maxf(1.0, life * 4.0), true)
+			draw_line(local_position, next_position, Color(PaperArt.FOLD, life * 0.18), maxf(1.0, life * 4.0), true)
 
 
 func _draw_fold_field() -> void:
 	var radius := get_fold_radius()
 	var charge_ratio := get_charge_ratio()
-	var pulse := sin(_visual_time * (4.0 + charge_ratio * 2.0)) * (3.0 + charge_ratio * 3.0)
-	for ring in 5:
-		var ring_radius := radius - float(ring) * 13.0 + pulse * (1.0 - float(ring) * 0.12)
-		var alpha := 0.075 - float(ring) * 0.009
-		draw_circle(Vector2.ZERO, ring_radius, Color(0.16, 0.83, 0.85, alpha))
-		draw_arc(Vector2.ZERO, ring_radius, -PI * 0.88 + float(ring), PI * 0.13 + float(ring), 64, Color(0.95, 0.77, 0.42, 0.38 - float(ring) * 0.045), 2.2, true)
-	for crease in 8:
-		var angle := float(crease) * TAU / 8.0 + _visual_time * (0.08 + charge_ratio * 0.10)
-		var inner := Vector2.from_angle(angle) * 46.0
-		var outer := Vector2.from_angle(angle + sin(_visual_time + crease) * 0.035) * radius
-		draw_line(inner, outer, Color(0.55, 0.93, 0.88, 0.11), 1.5, true)
-	# A travelling fold front makes the growing collection radius readable even
-	# while the player is moving through a dense projectile field.
-	var front_progress := fposmod(_visual_time * (0.72 + charge_ratio * 0.25), 1.0)
-	var front_radius := lerpf(52.0, radius, front_progress)
-	var front_alpha := (1.0 - front_progress) * (0.16 + charge_ratio * 0.20)
-	draw_arc(Vector2.ZERO, front_radius, 0.0, TAU, 72, Color(0.46, 0.94, 0.88, front_alpha), 3.0 + charge_ratio * 2.0, true)
-	for marker in 12:
-		var marker_angle := float(marker) * TAU / 12.0 - _visual_time * (0.24 + charge_ratio * 0.18)
-		var marker_position := Vector2.from_angle(marker_angle) * (radius - 9.0 + sin(_visual_time * 3.2 + marker) * 4.0)
-		var tangent := Vector2.from_angle(marker_angle + PI * 0.5)
-		var radial := Vector2.from_angle(marker_angle)
-		var marker_size := 3.0 + charge_ratio * 2.0
-		draw_colored_polygon(PackedVector2Array([
-			marker_position + radial * marker_size,
-			marker_position + tangent * marker_size * 0.75,
-			marker_position - radial * marker_size,
-			marker_position - tangent * marker_size * 0.75,
-		]), Color(0.66, 0.98, 0.90, 0.22 + charge_ratio * 0.30))
-	draw_arc(Vector2.ZERO, radius + 2.0, -PI * 0.5, -PI * 0.5 + TAU * charge_ratio, 96, Color(0.45, 0.94, 0.88, 0.48), 4.0, true)
+	var breathe := sin(_visual_time * 3.0) * 0.025
+	# A single, true-radius perimeter communicates the capture area. Translucent
+	# paper facets keep hostile bullet silhouettes readable through the field.
+	draw_circle(Vector2.ZERO, radius, Color(PaperArt.FOLD, 0.035 + charge_ratio * 0.012))
+	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 96, Color(PaperArt.FOLD, 0.32 + breathe), 1.5, true)
+	for fold_index in 6:
+		var angle := float(fold_index) * TAU / 6.0 + _visual_time * 0.035
+		var outer := Vector2.from_angle(angle) * radius
+		var next := Vector2.from_angle(angle + TAU / 6.0) * radius
+		var inner := Vector2.from_angle(angle + TAU / 12.0) * radius * 0.40
+		draw_colored_polygon(PackedVector2Array([outer, next, inner]), Color(PaperArt.PAPER, 0.012))
+		draw_line(inner, outer, Color(PaperArt.PAPER, 0.055), 1.0, true)
+		var marker := Vector2.from_angle(angle) * (radius - 5.0)
+		var tangent := Vector2.from_angle(angle + PI * 0.5)
+		draw_line(marker - tangent * 4.0, marker + tangent * 4.0, Color(PaperArt.PAPER, 0.44), 1.5, true)
+	# One travelling crease gives an immediate growth cue without stacking glows.
+	var front_progress := fposmod(_visual_time * 0.65, 1.0)
+	var front_radius := lerpf(40.0, radius, front_progress)
+	draw_arc(Vector2.ZERO, front_radius, 0.0, TAU, 72, Color(PaperArt.FOLD, (1.0 - front_progress) * 0.14), 1.0, true)
+	draw_arc(Vector2.ZERO, radius + 3.0, -PI * 0.5, -PI * 0.5 + TAU * charge_ratio, 96, Color(PaperArt.FOLD, 0.72), 2.6, true)
 	if charge_ratio >= 0.995:
-		draw_arc(Vector2.ZERO, radius + 12.0 + sin(_visual_time * 7.0) * 4.0, 0.0, TAU, 96, Color(1.0, 0.78, 0.38, 0.48), 4.0, true)
+		draw_arc(Vector2.ZERO, radius + 3.0, 0.0, TAU, 96, Color(PaperArt.PAPER, 0.48 + breathe), 2.0, true)
 	var filled := float(captured) / float(get_capture_capacity())
 	if filled > 0.0:
-		draw_arc(Vector2.ZERO, radius + 8.0, -PI * 0.5, -PI * 0.5 + TAU * filled, 80, Color(1.0, 0.72, 0.31, 0.9), 5.0, true)
+		draw_arc(Vector2.ZERO, radius + 9.0, -PI * 0.5, -PI * 0.5 + TAU * filled, 80, Color(PaperArt.GOLD, 0.94), 3.0, true)
 
 
 func _draw_moth(origin: Vector2, scale_factor: float, flash: float) -> void:
 	var move_ratio := clampf(velocity.length() / maxf(1.0, MOVE_SPEED * move_speed_multiplier), 0.0, 1.0)
-	var dash_ratio := 1.0 if dash_component.is_dashing() else 0.0
-	var wing_speed := 7.2 + move_ratio * 5.6 + dash_ratio * 4.0
-	var wing := 1.0 + sin(_visual_time * wing_speed) * (0.08 + move_ratio * 0.07)
+	var dashing := dash_component.is_dashing()
+	var wing_speed := 6.8 + move_ratio * 4.8 + (4.0 if dashing else 0.0)
+	var wing := 1.0 + sin(_visual_time * wing_speed) * (0.045 + move_ratio * 0.075)
 	if folding:
-		wing = lerpf(wing, 0.76 + sin(_visual_time * 4.2) * 0.035, 0.72)
-	var shadow := Color(0.0, 0.0, 0.02, 0.52)
-	var paper := Color(0.94, 0.91, 0.78).lerp(Color.WHITE, flash * 0.7)
-	var cool := Color(0.38, 0.88, 0.86).lerp(Color.WHITE, flash)
-	var gold := Color(1.0, 0.69, 0.28)
-	var idle_bob := sin(_visual_time * 3.1) * (2.4 * (1.0 - move_ratio))
-	var o := origin + Vector2(0.0, idle_bob + move_ratio * 1.5)
-	if dash_ratio > 0.0:
-		for streak in 4:
-			var x := (float(streak) - 1.5) * 11.0
-			var length := 42.0 + float(streak % 2) * 22.0
-			draw_line(o + Vector2(x, 24.0), o + Vector2(x * 1.35, 24.0 + length), Color(0.38, 0.94, 0.90, 0.22 + float(streak) * 0.06), 3.0, true)
-
-	# Soft luminous silhouette.
-	for glow in range(4, 0, -1):
-		draw_circle(o, float(glow) * 12.0 * scale_factor, Color(cool.r, cool.g, cool.b, 0.018 * float(5 - glow)))
-
-	var left_wing := PackedVector2Array([
-		o + Vector2(-5, -11) * scale_factor,
-		o + Vector2(-47 * wing, -34 - move_ratio * 7.0) * scale_factor,
-		o + Vector2(-34 * wing, 7 + move_ratio * 5.0) * scale_factor,
-		o + Vector2(-8, 18) * scale_factor,
-	])
-	var right_wing := PackedVector2Array([
-		o + Vector2(5, -11) * scale_factor,
-		o + Vector2(47 * wing, -34 - move_ratio * 7.0) * scale_factor,
-		o + Vector2(34 * wing, 7 + move_ratio * 5.0) * scale_factor,
-		o + Vector2(8, 18) * scale_factor,
-	])
-	draw_colored_polygon(_offset_polygon(left_wing, Vector2(4, 7)), shadow)
-	draw_colored_polygon(_offset_polygon(right_wing, Vector2(4, 7)), shadow)
-	draw_colored_polygon(left_wing, paper)
-	draw_colored_polygon(right_wing, paper.darkened(0.06))
-
-	# Fold facets make the silhouette read as paper, not a flat icon.
-	draw_colored_polygon(PackedVector2Array([left_wing[0], left_wing[1], left_wing[2]]), Color(0.36, 0.78, 0.78, 0.44))
-	draw_colored_polygon(PackedVector2Array([right_wing[0], right_wing[1], right_wing[2]]), Color(0.97, 0.64, 0.28, 0.32))
-	draw_line(left_wing[0], left_wing[2], Color(0.12, 0.31, 0.38, 0.52), 1.4, true)
-	draw_line(right_wing[0], right_wing[2], Color(0.12, 0.31, 0.38, 0.42), 1.4, true)
-
-	var body := PackedVector2Array([
-		o + Vector2(0, -30) * scale_factor,
-		o + Vector2(10, -5) * scale_factor,
-		o + Vector2(0, 29) * scale_factor,
-		o + Vector2(-10, -5) * scale_factor,
-	])
-	draw_colored_polygon(_offset_polygon(body, Vector2(3, 6)), shadow)
-	draw_colored_polygon(body, cool)
-	draw_colored_polygon(PackedVector2Array([body[0], body[1], body[2]]), Color(0.84, 1.0, 0.92, 0.78))
-	draw_line(body[0], body[2], Color(0.07, 0.29, 0.35, 0.52), 1.5, true)
-	draw_circle(o + Vector2(0, -12) * scale_factor, 3.2 * scale_factor, gold)
-	draw_arc(o, 52.0 * scale_factor, -PI * 0.12, PI * 0.12, 12, Color(gold.r, gold.g, gold.b, 0.5), 2.0, true)
-	if move_ratio > 0.08:
-		var tail_sway := sin(_visual_time * 9.0) * 5.0 * move_ratio
-		draw_colored_polygon(PackedVector2Array([o + Vector2(-7, 20) * scale_factor, o + Vector2(tail_sway - 4, 42 + move_ratio * 8) * scale_factor, o + Vector2(0, 29) * scale_factor]), Color(0.35, 0.86, 0.82, 0.34))
-		draw_colored_polygon(PackedVector2Array([o + Vector2(7, 20) * scale_factor, o + Vector2(tail_sway + 4, 42 + move_ratio * 8) * scale_factor, o + Vector2(0, 29) * scale_factor]), Color(1.0, 0.66, 0.25, 0.24))
-
-
-func _offset_polygon(points: PackedVector2Array, offset: Vector2) -> PackedVector2Array:
-	var result := PackedVector2Array()
-	for point in points:
-		result.append(point + offset)
-	return result
+		wing = lerpf(wing, 0.77 + sin(_visual_time * 3.8) * 0.025, 0.76)
+	var bob := sin(_visual_time * 2.8) * (1.8 * (1.0 - move_ratio))
+	var center := origin + Vector2(0, bob)
+	if dashing:
+		for streak in 3:
+			var x := (float(streak) - 1.0) * 13.0 * scale_factor
+			var length := (34.0 + float(streak % 2) * 24.0) * scale_factor
+			draw_line(center + Vector2(x, 22.0 * scale_factor), center + Vector2(x, 22.0 * scale_factor + length), Color(PaperArt.FOLD, 0.24), 2.0, true)
+	PaperArt.draw_moth(self, center, scale_factor, wing, flash)
+	# This fixed center is the actual hurtbox center, independent of wing/bob art.
+	# It remains legible while folding or when the wings bank during movement.
+	draw_circle(origin, 3.3, PaperArt.INK)
+	draw_circle(origin, 2.0, PaperArt.PAPER)

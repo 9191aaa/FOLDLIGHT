@@ -1,109 +1,62 @@
 # FOLDLIGHT · 折光
 
-> 一款纸海弹幕肉鸽。收下光，再还回去。
+收下光，再还回去。一款以**迷航肉鸽**为主线的纸海弹幕游戏。
 
-![2.0 标题画面](screenshots/01_title.png)
+![重构版主菜单](screenshots/refactor_title.png)
 
----
+## 统一的纸海
 
-## 这是什么
+当前分支是 `3.10.0-dev` 重构预览。自动武器负责开火；你负责移动、冲刺、按住折域收纳弹幕，再松开返光。黑芯金边弹不可反射。
 
-《折光》是一款支持单手键盘与手柄的纸海弹幕游戏。武器自动开火；玩家只需移动、冲刺、展开折域收纳可反射弹幕，并在松开时把光返还给敌人。黑芯金边弹幕不能反射，必须靠走位、冲刺或实体掩体应对。
+| 入口 | 内容 |
+| --- | --- |
+| 开始／继续迷航 | 分支房间、局内强化与区域首领；首次进入附操作教学 |
+| 故事航路 | 原有三章十二航战役与潮界检查点 |
+| 无尽挑战 | 开放纸海、生存进化与任务奖励 |
 
-游戏以**经典战役·十二航**为核心：3 章 × 4 航程 = 12 个独立设计的关卡，从「纸海档案」（第一航·））走到「无名日」（终章）。每航程结束解锁 1 件折光教义（共 19 件），可永久调整后续航程的玩法。
+三个入口共用深海墨、纸白、折光青与旧金的视觉语言。标题纸蛾、玩家、纸礁与灯台采用程序化矢量绘制。像素 Demo 保留在独立场景和导出预设中。
 
-源代码用 Godot 4.6 编写，100% 程序化矢量绘制（无运行时贴图）。
+## 运行与构建
 
----
-
-## 版本
-
-| 版本 | | 状态 | | 说明 |
-|---|---|---|---|---|
-| **2.0** | | ✅ 经典战役·十二航完整版 | | 三个核心脚本：游戏核心 + 主角 + HUD。关卡 12 航程 + 教义 19 件。`release/FOLDLIGHT_2.0.exe` 是这个版本的预编译二进制。 |
-| **3.9.0** | | ⚠️ 实验性扩展 | | 在 2.0 基础上叠加了肉鸽迷航（22 房间 / 36 强化 / 6 武器）、无尽生存（折光三角洲 6144×4096）、像素 Demo 与教学。三套内容混合被认为是割裂设计，**仅供 fork 实验**，不推荐作为发布基线。 |
-
-**对大多数 fork 用户**：建议以 **2.0** 为基准做你的实验。需要完整游戏性请从 3.9.0 提取并裁剪。
-
----
-
-## 快速运行
-
-### 直接玩（推荐新手）
-
-下载 `release/FOLDLIGHT_2.0.exe`（≈106 MB），双击即可。Windows 10/11。
-
-### 自己构建
-
-源码在 `foldlight/` 子目录。Godot 4.6.3：
+使用 **Godot 4.6.3** 打开 `foldlight/project.godot`，按 F5 运行项目，或使用命令行：
 
 ```powershell
-& 'G:\path\to\Godot_v4.6.3-stable_win64.exe' --path 'H:\path\to\foldlight_release\foldlight'
+godot --path ./foldlight
+godot --headless --path ./foldlight --export-release "Windows Desktop"
 ```
 
-项目根有 `project.godot`，主场景为 `foldlight/scenes/main.tscn`。导出配置：`foldlight/export_presets.cfg`（含 Windows Desktop preset）。
-
----
+Windows 输出为 `foldlight/build/FOLDLIGHT_Refactor_Windows/FOLDLIGHT.exe`。预览导出使用独立的 `FOLDLIGHT Refactor Preview` 存档目录，可与已有版本共存。需要对应版本的导出模板；构建产物不提交到 Git。
 
 ## 操作
 
-| 动作 | | 键盘 | | 手柄 |
-|---|---|---|---|---|
-| 移动 | | WASD / 方向键 | | 左摇杆 / 十字键 |
-| 折域：按住收纳 / 松开返光 | | 空格（也支持 E） | | A |
-| 冲刺 | | Shift | | B |
-| 主动道具 | | Q | | X |
-| 暂停 | | Esc | | Start |
+| 动作 | 键盘 | 手柄 |
+| --- | --- | --- |
+| 移动 | WASD／方向键 | 左摇杆／十字键 |
+| 收纳／返光 | 按住／松开空格或 E | 按住／松开 A |
+| 冲刺 | Shift | B |
+| 主动道具 | Q | X |
+| 暂停／继续 | Esc | Start |
 
-首次进入建议选择「开始序章」；五个短步骤会在真实战斗房间中教授移动、冲刺、折域、主动道具与完整遭遇。
+无尽暂停后可继续同一局，或主动结束挑战。故事地图／结算按 Esc 返回主菜单；战斗中先暂停，再按 C／LB 返回，保留最近的潮界存档。
 
----
+## 开发与验证
 
-## 项目结构
-
-```
-foldlight/
-├── assets/             # 品牌图标与导入元数据（运行时无贴图）
-├── docs/               # 设计文档与计划（foldlight_design / endless_survival / ...）
-├── scenes/             # 3 个 .tscn（main / player / hud）
-├── scripts/             # 14 个核心脚本（game / player / hud / ...）
-├── resources/          # 12 个航程 .tres + 19 个教义 .tres
-├── tests/              # 集成测试
-├── tools/              # 辅助脚本
-├── export_presets.cfg
-├── project.godot
-├── README.md           # 3.9.0 完整说明（机械敌人 / 无尽 / 像素 Demo 等）
-└── ...
+```powershell
+./foldlight/tools/check_refactor.ps1 -GodotPath 'C:/path/to/godot.exe'
+# 扫描全部历史集成测试，包含独立 Demo
+./foldlight/tools/check_refactor.ps1 -GodotPath 'C:/path/to/godot.exe' -All
 ```
 
----
+每个测试使用独立用户数据目录，不接触玩家存档。日志在 `foldlight/build/refactor-checks/`。
 
-## 美术与设计
+主要职责边界：
 
-- **美术**：深靛纸海 + 暖象牙折纸 + 克制的青金光。玩家是纸翼飞蛾，敌人是紫红花瓣，HUD 是金色。
-- **核心循环**：移动闪避 → 按住折域收纳敌弹 → 松开折返为制导返航 → 命中击杀可沿可达路径接力一次（日链）。
-- **设计文档**：`foldlight/docs/godot-prompter/specs/`（`foldlight_design.md` / `endless_survival.md` / `chapter_one_campaign.md` 等）。
+- `scripts/ui/foldlight_theme.gd`：共享颜色、字体、控件样式。
+- `scripts/roguelite/ui/rogue_title_screen.gd`：主菜单构图与动作信号。
+- `scripts/roguelite/rogue_session_controller.gd`：迷航流程与存档协调。
+- `scripts/visuals/paper_art.gd`：共用纸蛾和纸海绘制。
+- `scripts/campaign/story_content_catalog.gd`：故事文案、教义和敌人说明。
+- `scripts/game.gd`：既有故事战斗及与统一主菜单的交接。
+- `scripts/endless/endless_slice_runtime.gd`：无尽模式适配，共用玩家和战斗组件。
 
-更多细节见 [`foldlight/README.md`](foldlight/README.md)。
-
----
-
-## 贡献
-
-- 主要面向 **2.0 经典战役** 做扩展（保持原作节奏与手感）。
-- 3.9.0 的肉鸽/无尽部分被认为「两个游戏的割裂」，欢迎重构重写，但请新建分支不要直接动主分支。
-- 提 PR 时附带测试用例（`foldlight/tests/integration/`）。
-
----
-
-## 截图
-
-| | |
-|---|---|
-| ![2.0 标题](screenshots/01_title.png) | 标题画面：`PAPER SEA / 纸海档案 07` + 青金双拼标题 + 纸翼飞蛾图样 |
-
----
-
-## 协议
-
-MIT。详见 `LICENSE`。
+范围与验证说明见 [重构记录](foldlight/docs/godot-prompter/plans/unified_refactor.md)。修改请提交分支和 PR。MIT 许可证见 [LICENSE](LICENSE)。

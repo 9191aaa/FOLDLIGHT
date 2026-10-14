@@ -1,6 +1,8 @@
 class_name FoldlightEndlessHandcraftedMap
 extends Node2D
 
+const PaperArt = preload("res://scripts/visuals/paper_art.gd")
+
 const WALL_COLLISION_LAYER := 1
 const WALL_COLLISION_MASK := 0
 const COVER_CLEARANCE := 34.0
@@ -249,35 +251,35 @@ func _draw() -> void:
 	if map_definition == null:
 		return
 	var bounds := map_definition.bounds
-	draw_rect(bounds, Color("071920"), true)
+	draw_rect(bounds, PaperArt.INK, true)
 	_draw_water_grid(bounds)
 	for index in map_definition.district_rects.size():
 		var district := map_definition.district_rects[index]
-		var color := map_definition.district_colors[index]
-		draw_rect(district, color, true)
-		draw_rect(district.grow(-12.0), color.lightened(0.08), false, 5.0)
-		draw_string(ThemeDB.fallback_font, district.position + Vector2(42.0, 70.0), map_definition.district_names[index], HORIZONTAL_ALIGNMENT_LEFT, -1.0, 30, Color(0.84, 0.91, 0.84, 0.5))
+		var color := PaperArt.SEA.lerp(map_definition.district_colors[index], 0.07)
+		draw_rect(district, Color(color, 0.42), true)
+		draw_rect(district.grow(-12.0), Color(PaperArt.PAPER, 0.045), false, 1.0, true)
+		draw_string(ThemeDB.fallback_font, district.position + Vector2(42.0, 70.0), map_definition.district_names[index], HORIZONTAL_ALIGNMENT_LEFT, -1.0, 30, Color(PaperArt.PAPER, 0.32))
 	_draw_authored_paths()
 	if draw_cover_visuals:
 		for index in map_definition.walls.size():
 			_draw_cover(map_definition.walls[index], index)
 	for index in map_definition.capture_points.size():
 		var point := map_definition.capture_points[index]
-		draw_circle(point, 84.0, Color(0.15, 0.50, 0.49, 0.12))
-		draw_arc(point, 84.0, 0.0, TAU, 48, Color(0.43, 0.78, 0.69, 0.62), 5.0, true)
-		draw_circle(point, 13.0, Color(0.87, 0.72, 0.34, 0.86))
+		draw_circle(point, 84.0, Color(PaperArt.FOLD, 0.035))
+		draw_arc(point, 84.0, 0.0, TAU, 48, Color(PaperArt.FOLD, 0.38), 2.0, true)
+		draw_circle(point, 13.0, Color(PaperArt.GOLD, 0.76))
 	for index in map_definition.flag_positions.size():
 		_draw_flag(map_definition.flag_positions[index], index)
 	_draw_active_objective()
-	draw_rect(bounds, Color(0.50, 0.75, 0.69, 0.48), false, 12.0)
+	draw_rect(bounds, Color(PaperArt.FOLD, 0.22), false, 3.0)
 
 
 func _draw_water_grid(bounds: Rect2) -> void:
-	for x in range(128, int(bounds.size.x), 256):
-		var alpha := 0.035 if int(x / 256) % 2 == 0 else 0.022
-		draw_line(Vector2(x, 0.0), Vector2(x - 320.0, bounds.size.y), Color(0.31, 0.68, 0.68, alpha), 3.0)
-	for y in range(192, int(bounds.size.y), 320):
-		draw_line(Vector2(0.0, y), Vector2(bounds.size.x, y + 110.0), Color(0.78, 0.72, 0.51, 0.026), 4.0)
+	# Match the paper sea in the main voyage. This is only a drawing transform;
+	# district contracts, navigation, cover and objective geometry stay intact.
+	draw_set_transform(bounds.position)
+	PaperArt.draw_tide(self, bounds.size, 0.0, 7, 0.74)
+	draw_set_transform(Vector2.ZERO)
 
 
 func _draw_authored_paths() -> void:
@@ -287,30 +289,30 @@ func _draw_authored_paths() -> void:
 	for index in hubs.size():
 		var a := hubs[index]
 		var b := hubs[(index + 1) % hubs.size()]
-		draw_line(a, b, Color(0.39, 0.62, 0.57, 0.12), 76.0, true)
-		draw_line(a, b, Color(0.80, 0.70, 0.42, 0.18), 5.0, true)
+		draw_line(a, b, Color(PaperArt.FOLD, 0.025), 54.0, true)
+		draw_line(a, b, Color(PaperArt.GOLD, 0.14), 1.6, true)
 
 
 func _draw_cover(rect: Rect2, index: int) -> void:
-	draw_rect(Rect2(rect.position + Vector2(15.0, 19.0), rect.size), Color(0.01, 0.05, 0.06, 0.42), true)
-	var base := Color("173b3a") if index % 3 != 1 else Color("3f4a3b")
+	draw_rect(Rect2(rect.position + Vector2(15.0, 19.0), rect.size), Color(PaperArt.INK, 0.62), true)
+	var base := Color("354b49") if index % 3 != 1 else Color("46534d")
 	draw_rect(rect, base, true)
-	draw_rect(rect.grow(-8.0), base.lightened(0.16), false, 5.0)
+	draw_rect(rect.grow(-8.0), Color(base.lightened(0.12), 0.72), false, 2.0)
 	var ridge_y := rect.position.y + rect.size.y * 0.34
-	draw_line(Vector2(rect.position.x + 12.0, ridge_y), Vector2(rect.end.x - 12.0, ridge_y + 6.0), Color(0.76, 0.70, 0.45, 0.26), 4.0, true)
+	draw_line(Vector2(rect.position.x + 12.0, ridge_y), Vector2(rect.end.x - 12.0, ridge_y + 6.0), Color(PaperArt.GOLD, 0.26), 1.4, true)
 	for notch in range(1, maxi(2, int(rect.size.x / 120.0))):
 		var px := rect.position.x + rect.size.x * float(notch) / float(maxi(2, int(rect.size.x / 120.0)))
-		draw_line(Vector2(px, rect.position.y + 10.0), Vector2(px - 18.0, rect.end.y - 10.0), Color(0.04, 0.15, 0.16, 0.38), 3.0)
+		draw_line(Vector2(px, rect.position.y + 10.0), Vector2(px - 18.0, rect.end.y - 10.0), Color(PaperArt.INK, 0.38), 3.0)
 
 
 func _draw_flag(position: Vector2, index: int) -> void:
-	draw_line(position + Vector2(0.0, 48.0), position - Vector2(0.0, 60.0), Color(0.79, 0.69, 0.40, 0.52), 7.0, true)
+	draw_line(position + Vector2(0.0, 48.0), position - Vector2(0.0, 60.0), Color(PaperArt.GOLD, 0.52), 3.0, true)
 	var sway := 12.0 if index % 2 == 0 else -8.0
 	draw_colored_polygon(PackedVector2Array([
 		position - Vector2(0.0, 58.0),
 		position + Vector2(68.0 + sway, -39.0),
 		position + Vector2(14.0, -10.0),
-	]), Color(0.72, 0.29, 0.22, 0.42))
+	]), Color(PaperArt.DANGER, 0.42))
 
 
 func _draw_active_objective() -> void:
@@ -318,8 +320,8 @@ func _draw_active_objective() -> void:
 		return
 	var position := Vector2(_active_objective.get("target_position", Vector2.ZERO))
 	var kind := StringName(_active_objective.get("kind", &""))
-	var color := Color("efc45c")
+	var color := PaperArt.GOLD
 	var radius := 122.0 if kind == &"capture_point" else 94.0
 	draw_circle(position, radius, Color(color, 0.08))
-	draw_arc(position, radius, -PI * 0.5, PI * 1.5, 64, Color(color, 0.82), 8.0, true)
-	draw_arc(position, radius + 21.0, 0.0, TAU, 48, Color(0.37, 0.79, 0.72, 0.38), 3.0, true)
+	draw_arc(position, radius, -PI * 0.5, PI * 1.5, 64, Color(color, 0.86), 3.5, true)
+	draw_arc(position, radius + 21.0, 0.0, TAU, 48, Color(PaperArt.FOLD, 0.30), 1.5, true)

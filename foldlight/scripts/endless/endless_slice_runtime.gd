@@ -47,6 +47,7 @@ var _transitioning_to_title: bool = false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_apply_shared_theme()
 	controller.enemy_wave_requested.connect(_on_enemy_wave_requested)
 	controller.player_evolution_changed.connect(_on_player_evolution_changed)
 	controller.mission_reward_offered.connect(_on_mission_reward_offered)
@@ -56,6 +57,7 @@ func _ready() -> void:
 	combat_runtime.enemy_defeated_detailed.connect(_on_enemy_defeated_detailed)
 	for index in modal_buttons.size():
 		modal_buttons[index].pressed.connect(_activate_modal_choice.bind(index))
+		modal_buttons[index].focus_entered.connect(_on_modal_button_focused.bind(index))
 	call_deferred("start_slice")
 
 
@@ -133,7 +135,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
 	if not _modal_kind.is_empty():
-		if event.is_action_pressed(&"ui_up") or event.is_action_pressed(&"move_up"):
+		if _modal_kind == &"pause" and event.is_action_pressed(&"pause_game"):
+			_resume_game()
+		elif event.is_action_pressed(&"ui_up") or event.is_action_pressed(&"move_up"):
 			_move_modal_selection(-1)
 		elif event.is_action_pressed(&"ui_down") or event.is_action_pressed(&"move_down"):
 			_move_modal_selection(1)
@@ -142,8 +146,33 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"pause_game"):
-		_return_to_title()
+		_pause_game()
 		get_viewport().set_input_as_handled()
+
+
+func _pause_game() -> void:
+	if run_ended or not _modal_kind.is_empty() or not controller.active:
+		return
+	_modal_kind = &"pause"
+	_modal_selected = 0
+	modal_title.text = "暂泊纸海"
+	modal_body.text = "无尽挑战已暂停。\n返回主菜单会结束本次挑战。"
+	modal_buttons[0].text = "继续航行"
+	modal_buttons[0].show()
+	modal_buttons[1].text = "结束挑战 · 返回主菜单"
+	modal_buttons[1].show()
+	modal_buttons[2].hide()
+	modal_dim.show()
+	_set_combat_suspended(true)
+	_update_modal_focus()
+
+
+func _resume_game() -> void:
+	if _modal_kind != &"pause":
+		return
+	_modal_kind = &""
+	modal_dim.hide()
+	_set_combat_suspended(false)
 
 
 func _return_to_title() -> void:
@@ -258,8 +287,17 @@ func _update_modal_focus() -> void:
 		modal_buttons[_modal_selected].grab_focus()
 
 
+func _on_modal_button_focused(index: int) -> void:
+	_modal_selected = index
+
+
 func _activate_modal_choice(index: int) -> void:
-	if _modal_kind == &"reward":
+	if _modal_kind == &"pause":
+		if index == 0:
+			_resume_game()
+		elif index == 1:
+			_return_to_title()
+	elif _modal_kind == &"reward":
 		if index < 0 or index >= _modal_options.size():
 			return
 		var reward_id := StringName(_modal_options[index].get("id", &""))
@@ -287,13 +325,13 @@ func _finish_run() -> void:
 	_modal_options.clear()
 	_modal_selected = 0
 	modal_title.text = "灯火熄灭"
-	modal_body.text = "坚持 %s · 击破 %d\n所有战斗规则均来自 2.0 本体。" % [
+	modal_body.text = "航行 %s · 击破 %d\n再点亮一次，继续向深海出发。" % [
 		_format_time(controller.evolution.survival_seconds),
 		controller.defeated_total,
 	]
 	modal_buttons[0].text = "重新开始"
 	modal_buttons[0].show()
-	modal_buttons[1].text = "返回标题"
+	modal_buttons[1].text = "返回主菜单"
 	modal_buttons[1].show()
 	modal_buttons[2].hide()
 	modal_dim.show()
@@ -369,7 +407,7 @@ func _build_room_terrain() -> Array[Dictionary]:
 func _refresh_hud() -> void:
 	var enemy_state := controller.evolution.get_enemy_snapshot()
 	var player_state := controller.evolution.get_player_snapshot()
-	status_label.text = "FOLDLIGHT / 无尽生存\n生命 %d/%d · 敌人 %d · 击破 %d\n威胁阶段 %d · 收纳进化 %d · 生存 %s" % [
+	status_label.text = "FOLDLIGHT / 无尽挑战\n灯芯 %d/%d · 敌人 %d · 击破 %d\n威胁阶段 %d · 收纳进化 %d · 航行 %s" % [
 		player.health,
 		player.max_health,
 		combat_runtime.enemies.size(),
@@ -385,7 +423,26 @@ func _refresh_hud() -> void:
 		int(float(objective.get("progress_ratio", 0.0)) * 100.0),
 		int(ceil(float(objective.get("time_remaining", 0.0)))),
 	]
-	help_label.text = "WASD / 方向键移动    空格折域    Shift 冲刺    Q 主动道具    Esc 返回标题"
+	help_label.text = "左摇杆移动    A 折域    B 冲刺    X 主动道具    Start 暂停" if not Input.get_connected_joypads().is_empty() else "WASD / 方向键移动    空格折域    Shift 冲刺    Q 主动道具    Esc 暂停"
+
+
+func _apply_shared_theme() -> void:
+	var shared_theme := FoldlightTheme.build()
+	for child in $HUD.get_children():
+		if child is Control:
+			child.theme = shared_theme
+	for panel: Panel in [$HUD/TopPanel, $HUD/ObjectivePanel, $HUD/HelpPanel, reward_toast, $HUD/ModalDim/ModalPanel]:
+		panel.add_theme_stylebox_override("panel", FoldlightTheme.panel_style())
+	for button in modal_buttons:
+		for style in [&"normal", &"hover", &"pressed", &"focus"]:
+			button.remove_theme_stylebox_override(style)
+		button.add_theme_font_size_override("font_size", 24)
+	status_label.add_theme_color_override("font_color", FoldlightTheme.PAPER)
+	objective_label.add_theme_color_override("font_color", FoldlightTheme.GOLD)
+	help_label.add_theme_color_override("font_color", FoldlightTheme.MUTED)
+	modal_title.add_theme_color_override("font_color", FoldlightTheme.PAPER)
+	modal_body.add_theme_color_override("font_color", FoldlightTheme.MUTED)
+	reward_toast_label.add_theme_color_override("font_color", FoldlightTheme.GOLD)
 
 
 func get_slice_snapshot() -> Dictionary:

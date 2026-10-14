@@ -1,6 +1,8 @@
 class_name FoldlightRogueVisualCanvas
 extends Control
 
+const PaperArt = preload("res://scripts/visuals/paper_art.gd")
+
 var screen_kind: StringName = &"title"
 var accent: Color = FoldlightRogueUITheme.FOLD
 var route_snapshot: Dictionary = {}
@@ -46,7 +48,7 @@ func _draw() -> void:
 	if screen_kind in [&"title", &"result", &"prologue_result"]:
 		_draw_full_bleed(viewport_size)
 	elif screen_kind in [&"reward", &"route", &"pause", &"mechanic_intro"]:
-		draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.006, 0.013, 0.032, 0.88), true)
+		draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(PaperArt.INK, 0.94), true)
 		_draw_edge_folds(viewport_size, 0.34)
 	else:
 		_draw_hud_frame(viewport_size)
@@ -68,41 +70,66 @@ func _draw_damage_flash(viewport_size: Vector2) -> void:
 
 
 func _draw_full_bleed(viewport_size: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.008, 0.016, 0.043, 1.0), true)
-	for band in 12:
-		var y := viewport_size.y * (0.05 + float(band) * 0.085)
-		var points := PackedVector2Array()
-		for segment in 33:
-			var x := viewport_size.x * float(segment) / 32.0
-			var wave := sin(float(segment) * 0.51 + float(band) * 1.37 + _time * (0.10 + band * 0.007)) * (10.0 + float(band % 4) * 6.0)
-			points.append(Vector2(x, y + wave))
-		draw_polyline(points, Color(accent.r, accent.g, accent.b, 0.035 + float(band % 3) * 0.012), 2.0, true)
-	var fold_a := PackedVector2Array([
-		Vector2(viewport_size.x * 0.54, -40.0),
-		Vector2(viewport_size.x * 0.72, viewport_size.y * 0.42),
-		Vector2(viewport_size.x * 0.61, viewport_size.y + 40.0),
+	draw_rect(Rect2(Vector2.ZERO, viewport_size), PaperArt.INK, true)
+	var unit := minf(viewport_size.x / 1920.0, viewport_size.y / 1080.0)
+	var center := Vector2(viewport_size.x * 0.717, viewport_size.y * 0.456)
+	var moon_radius := 248.0 * unit
+	# A dark, layered aperture holds the illustration. Its thin rim is quieter
+	# than the paper itself and stays entirely outside the menu's reading column.
+	draw_circle(center + Vector2(16, 20) * unit, moon_radius + 17.0 * unit, Color(0.016, 0.052, 0.068, 0.55))
+	draw_circle(center, moon_radius, Color("102a34"))
+	draw_circle(center - Vector2(13, 10) * unit, moon_radius - 19.0 * unit, Color("132e37"))
+	draw_arc(center, moon_radius + 7.0 * unit, -PI * 0.86, PI * 0.28, 80, Color(PaperArt.GOLD, 0.22), 1.0, true)
+	draw_arc(center, moon_radius + 22.0 * unit, PI * 0.35, PI * 0.96, 48, Color(PaperArt.FOLD, 0.12), 1.0, true)
+	PaperArt.draw_tide(self, viewport_size, _time, 7)
+	_draw_chart_routes(viewport_size, unit)
+	# The same folded silhouette is used at player scale in combat.
+	var bob := sin(_time * 0.72) * 7.0 * unit
+	PaperArt.draw_moth(self, center + Vector2(0, bob), 5.5 * unit, 1.0 + sin(_time * 0.58) * 0.018, 0.0, true)
+	# Sparse paper shards carry the eye toward the sea without a particle veil.
+	for index in 5:
+		var p := Vector2(viewport_size.x * (0.66 + float(index) * 0.035), viewport_size.y * (0.73 + float(index % 3) * 0.043))
+		p.y += sin(_time * 0.45 + float(index)) * 6.0 * unit
+		var length := (7.0 + float(index % 3) * 4.0) * unit
+		var shard := _diamond(p, -0.48 + float(index) * 0.32, length, length * 0.23)
+		draw_colored_polygon(shard, Color(PaperArt.PAPER, 0.16 + float(index % 2) * 0.14))
+	# Flat ink over the left gives every title/menu state a stable contrast floor.
+	var fade_start := viewport_size.x * 0.39
+	var fade_end := viewport_size.x * 0.516
+	draw_polygon(PackedVector2Array([
+		Vector2(fade_start, 0), Vector2(fade_end, 0),
+		Vector2(fade_end, viewport_size.y), Vector2(fade_start, viewport_size.y),
+	]), PackedColorArray([
+		Color(PaperArt.INK, 0.70), Color(PaperArt.INK, 0.0),
+		Color(PaperArt.INK, 0.0), Color(PaperArt.INK, 0.70),
+	]))
+	draw_rect(Rect2(Vector2.ZERO, Vector2(viewport_size.x * 0.39, viewport_size.y)), Color(PaperArt.INK, 0.70), true)
+	_draw_edge_folds(viewport_size, 0.13)
+
+
+func _draw_chart_routes(viewport_size: Vector2, unit: float) -> void:
+	var route := PackedVector2Array([
+		Vector2(viewport_size.x * 0.56, viewport_size.y * 0.92),
+		Vector2(viewport_size.x * 0.64, viewport_size.y * 0.80),
+		Vector2(viewport_size.x * 0.83, viewport_size.y * 0.73),
+		Vector2(viewport_size.x * 0.87, viewport_size.y * 0.54),
+		Vector2(viewport_size.x * 0.93, viewport_size.y * 0.40),
+		Vector2(viewport_size.x * 0.89, viewport_size.y * 0.17),
 	])
-	draw_polyline(fold_a, Color(accent.r, accent.g, accent.b, 0.34), 3.0, true)
-	draw_polyline(fold_a, Color(accent.r, accent.g, accent.b, 0.07), 22.0, true)
-	var moth_center := Vector2(viewport_size.x * 0.33, viewport_size.y * 0.49)
-	for ring in range(8, 0, -1):
-		draw_circle(moth_center, 72.0 + float(ring) * 28.0, Color(accent.r, accent.g, accent.b, 0.008 * float(9 - ring)))
-	for wing in [-1.0, 1.0]:
-		var flap := 0.34 + sin(_time * 1.4) * 0.045
-		var angle: float = float(wing) * (1.02 + flap)
-		var center := moth_center + Vector2.from_angle(angle) * 76.0
-		var shape := _diamond(center, angle, 118.0, 48.0)
-		draw_colored_polygon(shape, Color(0.035, 0.13, 0.14, 0.92))
-		draw_polyline(_closed(shape), Color(accent.r, accent.g, accent.b, 0.75), 3.0, true)
-	draw_circle(moth_center, 28.0, Color(0.04, 0.20, 0.19, 1.0))
-	draw_circle(moth_center, 7.0, FoldlightRogueUITheme.GOLD)
-	_draw_edge_folds(viewport_size, 0.28)
+	draw_polyline(route, Color(PaperArt.GOLD, 0.23), 1.0, true)
+	for index in route.size():
+		var p := route[index]
+		draw_circle(p, 4.5 * unit, PaperArt.INK)
+		draw_circle(p, 4.5 * unit, Color(PaperArt.GOLD, 0.46), false, 1.0, true)
+		if index == 2 or index == 4:
+			draw_circle(p, 1.8 * unit, Color(PaperArt.PAPER, 0.70))
 
 
 func _draw_edge_folds(viewport_size: Vector2, alpha: float) -> void:
-	draw_line(Vector2(0, 78), Vector2(viewport_size.x * 0.40, 0), Color(accent.r, accent.g, accent.b, alpha), 2.0, true)
-	draw_line(Vector2(viewport_size.x, viewport_size.y - 96), Vector2(viewport_size.x * 0.63, viewport_size.y), Color(accent.r, accent.g, accent.b, alpha), 2.0, true)
-	draw_circle(Vector2(viewport_size.x - 72, 72), 7.0 + sin(_time * 2.0) * 2.0, Color(accent.r, accent.g, accent.b, 0.65))
+	draw_line(Vector2(44, 44), Vector2(100, 44), Color(accent, alpha), 1.0, true)
+	draw_line(Vector2(44, 44), Vector2(44, 94), Color(accent, alpha), 1.0, true)
+	draw_line(Vector2(viewport_size.x - 44, viewport_size.y - 44), Vector2(viewport_size.x - 100, viewport_size.y - 44), Color(accent, alpha), 1.0, true)
+	draw_line(Vector2(viewport_size.x - 44, viewport_size.y - 44), Vector2(viewport_size.x - 44, viewport_size.y - 94), Color(accent, alpha), 1.0, true)
 
 
 func _draw_hud_frame(viewport_size: Vector2) -> void:

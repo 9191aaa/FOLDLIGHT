@@ -4,12 +4,12 @@ extends Control
 ## Responsive, cardless HUD drawn in screen space. The world pushes snapshots down;
 ## this node never polls gameplay state.
 
-const INK := Color(0.018, 0.028, 0.075, 0.96)
-const PAPER := Color(0.94, 0.91, 0.78, 1.0)
-const MUTED_PAPER := Color(0.67, 0.70, 0.70, 1.0)
-const CYAN := Color(0.30, 0.88, 0.86, 1.0)
-const GOLD := Color(1.0, 0.70, 0.29, 1.0)
-const MAGENTA := Color(0.90, 0.30, 0.60, 1.0)
+const INK := FoldlightTheme.INK
+const PAPER := FoldlightTheme.PAPER
+const MUTED_PAPER := FoldlightTheme.MUTED
+const CYAN := FoldlightTheme.FOLD
+const GOLD := FoldlightTheme.GOLD
+const MAGENTA := FoldlightTheme.DANGER
 
 var _state: Dictionary = {
 	"mode": &"title",
@@ -88,7 +88,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_font = ThemeDB.fallback_font
+	_font = FoldlightTheme.build().default_font
 
 
 func _process(delta: float) -> void:
@@ -173,9 +173,9 @@ func _draw_title() -> void:
 
 
 func _draw_campaign_map() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.006, 0.014, 0.046, 0.96))
-	_draw_text("PAPER SEA / MAIN VOYAGE", Vector2(76, 62), 18, Color(CYAN.r, CYAN.g, CYAN.b, 0.64), 1.0)
-	_draw_centered("纸　海　航　路", 92, 46, PAPER, 4.0)
+	draw_rect(Rect2(Vector2.ZERO, size), INK)
+	_draw_text("FOLDLIGHT / 故事航路", Vector2(76, 62), 18, Color(CYAN.r, CYAN.g, CYAN.b, 0.80), 1.0)
+	_draw_centered("纸海十二航", 92, 46, PAPER, 4.0)
 	var campaign: Dictionary = _state.get("campaign", {})
 	var campaign_seconds := float(campaign.get("campaign_seconds", 0.0))
 	var completed: Dictionary = campaign.get("completed", {})
@@ -190,11 +190,11 @@ func _draw_campaign_map() -> void:
 		var column := index % 4
 		var row := index / 4
 		var rect := Rect2(Vector2(76.0 + column * 444.0, 196.0 + row * 176.0), card_size)
-		var accent: Color = mission.get("accent", CYAN)
+		var accent := FoldlightTheme.comfort_accent(mission.get("accent", CYAN))
 		var locked := bool(mission.get("locked", false))
 		var is_selected := index == selected
-		var alpha := 0.32 if locked else 1.0
-		draw_rect(rect, Color(0.018, 0.032, 0.072, 0.90 if not locked else 0.55))
+		var alpha := 0.72 if locked else 1.0
+		draw_rect(rect, Color(FoldlightTheme.SURFACE, 0.90 if not locked else 0.40))
 		draw_rect(rect, Color(accent.r, accent.g, accent.b, (0.92 if is_selected else 0.22) * alpha), false, 3.0 if is_selected else 1.0)
 		if is_selected:
 			draw_rect(rect.grow(7.0), Color(accent.r, accent.g, accent.b, 0.075), false, 3.0)
@@ -210,8 +210,8 @@ func _draw_campaign_map() -> void:
 	if not missions.is_empty():
 		var selected_mission: Dictionary = missions[selected]
 		var detail_rect := Rect2(Vector2(76, 738), Vector2(size.x - 152, 250))
-		var detail_accent: Color = selected_mission.get("accent", CYAN)
-		draw_rect(detail_rect, Color(0.012, 0.026, 0.062, 0.88))
+		var detail_accent := FoldlightTheme.comfort_accent(selected_mission.get("accent", CYAN))
+		draw_rect(detail_rect, Color(FoldlightTheme.SURFACE, 0.88))
 		draw_rect(detail_rect, Color(detail_accent.r, detail_accent.g, detail_accent.b, 0.30), false, 1.0)
 		_draw_text(str(selected_mission.get("chapter_title", "")), detail_rect.position + Vector2(28, 36), 14, Color(detail_accent.r, detail_accent.g, detail_accent.b, 0.72), 1.0)
 		_draw_text(str(selected_mission.get("title", "")), detail_rect.position + Vector2(28, 83), 34, PAPER, 2.0)
@@ -227,7 +227,7 @@ func _draw_campaign_map() -> void:
 			_draw_text("从第一潮出航", detail_rect.position + Vector2(1160, 111), 17, Color(CYAN.r, CYAN.g, CYAN.b, 0.68), 1.0)
 
 	var device: StringName = _state.get("device", &"keyboard")
-	var prompt := "左摇杆选航路　·　A 出航　·　X 折光庭　·　START 返回" if device == &"gamepad" else "WASD / 方向键选航路　·　空格出航　·　C 折光庭　·　ESC 返回"
+	var prompt := "左摇杆选航路　·　A 出航　·　LB 折光庭　·　START 主菜单" if device == &"gamepad" else "WASD / 方向键选航路　·　空格出航　·　C 折光庭　·　ESC 主菜单"
 	_draw_centered(prompt, size.y - 38, 17, Color(PAPER.r, PAPER.g, PAPER.b, 0.52), 1.0)
 
 
@@ -690,15 +690,15 @@ func _draw_archive() -> void:
 
 
 func _draw_pause() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.006, 0.012, 0.04, 0.76))
-	_draw_centered("潮汐暂停", size.y * 0.44, 55, PAPER, 4.0)
+	draw_rect(Rect2(Vector2.ZERO, size), Color(INK, 0.86))
+	_draw_centered("暂泊纸海", size.y * 0.44, 55, PAPER, 4.0)
 	var device: StringName = _state.get("device", &"keyboard")
 	var text := "按 START 继续" if device == &"gamepad" else "按 ESC 继续"
 	_draw_centered(text, size.y * 0.54, 23, Color(GOLD.r, GOLD.g, GOLD.b, 0.82), 1.0)
 	var browse_enabled := bool(_state.get("debug_invincible", false))
 	if browse_enabled:
 		_draw_centered("浏览模式已开启  ·  玩家伤害无效", size.y * 0.60, 19, Color(0.52, 1.0, 0.86, 0.92), 2.0)
-	_draw_centered("M　切换声音", size.y * (0.65 if browse_enabled else 0.60), 16, Color(PAPER.r, PAPER.g, PAPER.b, 0.46), 1.0)
+	_draw_centered("LB 返回主菜单 · 保留潮界存档" if device == &"gamepad" else "C 返回主菜单 · 保留潮界存档", size.y * (0.65 if browse_enabled else 0.60), 20, MUTED_PAPER, 1.0)
 
 
 func _draw_result(victory: bool) -> void:
@@ -736,7 +736,7 @@ func _draw_result(victory: bool) -> void:
 		_draw_centered(assist_prompt, size.y - 150, 17, Color(CYAN.r, CYAN.g, CYAN.b, 0.74), 1.0)
 	elif not victory and bool(mission_result.get("assist_enabled", false)):
 		_draw_centered("宽折援助已启用 · 下一次从潮界生效", size.y - 150, 17, Color(CYAN.r, CYAN.g, CYAN.b, 0.74), 1.0)
-	_draw_centered("X 前往折光庭" if device == &"gamepad" else "C 前往折光庭", size.y - 68, 16, Color(CYAN.r, CYAN.g, CYAN.b, 0.56), 1.0)
+	_draw_centered("LB 折光庭　·　START 主菜单" if device == &"gamepad" else "C 折光庭　·　ESC 主菜单", size.y - 68, 18, MUTED_PAPER, 1.0)
 
 
 func _draw_stage_message(alpha: float) -> void:
@@ -764,7 +764,7 @@ func _draw_life_petals(center: Vector2, active: bool) -> void:
 
 func _draw_text(text: String, position: Vector2, font_size: int, color: Color, shadow: float = 0.0) -> void:
 	if shadow > 0.0:
-		draw_string(_font, position + Vector2(shadow, shadow + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.0, 0.0, 0.02, color.a * 0.66))
+		draw_string(_font, position + Vector2(0.0, 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(INK, color.a * 0.30))
 	draw_string(_font, position, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, color)
 
 

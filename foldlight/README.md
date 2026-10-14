@@ -1,4 +1,6 @@
-# FOLDLIGHT / 折光 3.9.0
+# FOLDLIGHT / 折光 3.10.0-dev
+
+当前为纸海统一重构预览：迷航为主入口，战役入口改名「故事航路」，生存入口改名「无尽挑战」。主菜单、HUD、奖励、设置与场景共用主题及程序化纸雕造型。运行、验证和架构说明见 [仓库 README](../README.md) 和 [重构记录](docs/godot-prompter/plans/unified_refactor.md)。下文保留原玩法内容说明。
 
 把危险折进掌心，再让整片光返航。
 
@@ -10,7 +12,7 @@
 
 发行包中运行 `FOLDLIGHT.exe`。项目环境也可运行 `run_foldlight.ps1`。
 
-首次进入建议选择“开始序章”；五个短步骤会在真实战斗房间中教授移动、冲刺、折域、主动道具与完整遭遇。
+首次选择“开始迷航 · 操作教学”，会在真实房间中教授移动冲刺、折域返光和自动武器／主动道具。
 
 ## 操作
 
@@ -40,6 +42,6 @@
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\run_godot_local.ps1 --headless --path . --script res://tests/integration/test_full_rogue_route_3_0.gd
 ```
 
-开发测试统一通过 `tools/run_godot_local.ps1` 启动。它只把 Godot 的测试日志、缓存和 `user://` 重定向到项目内的 `.codex-runtime`，不会读取或改写玩家真实存档，也不需要 Codex 为 Windows 用户目录反复申请写入权限；正式导出的游戏仍使用系统标准用户存档目录。
+重构回归通过 `tools/check_refactor.ps1 -GodotPath <引擎路径>` 启动，每个测试使用独立用户数据目录。Windows 预览导出使用独立的 `FOLDLIGHT Refactor Preview` 存档目录。
 
-版本：3.9.0 · Windows x86-64 · Godot 4.6.3
+版本：3.10.0-dev · Windows x86-64 · Godot 4.6.3

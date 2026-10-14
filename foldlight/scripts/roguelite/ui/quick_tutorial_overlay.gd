@@ -72,7 +72,7 @@ func _ready() -> void:
 	_apply_styles()
 	continue_button.pressed.connect(advance)
 	skip_button.pressed.connect(skip)
-	skip_button.text = "F / LB  跳过并开始"
+	skip_button.text = "F / L3  跳过并开始"
 	set_manual_advance_enabled(manual_advance_enabled)
 	_apply_step(false)
 
@@ -236,45 +236,27 @@ func _apply_styles() -> void:
 	device_label.add_theme_font_size_override("font_size", 18)
 	controls_label.add_theme_color_override("font_color", FoldlightRogueUITheme.GOLD)
 	controls_label.add_theme_font_size_override("font_size", 25)
-	body_label.add_theme_color_override("font_color", Color(0.75, 0.86, 0.84, 1.0))
+	body_label.add_theme_color_override("font_color", FoldlightTheme.PAPER)
 	body_label.add_theme_font_size_override("font_size", 21)
-	warning_label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.42, 1.0))
+	warning_label.add_theme_color_override("font_color", FoldlightTheme.GOLD)
 	warning_label.add_theme_font_size_override("font_size", 18)
 	page_label.add_theme_color_override("font_color", FoldlightRogueUITheme.MUTED)
 	page_label.add_theme_font_size_override("font_size", 18)
-	step_progress.add_theme_stylebox_override("background", _bar_style(Color(0.08, 0.14, 0.17, 0.9)))
+	step_progress.add_theme_stylebox_override("background", _bar_style(FoldlightTheme.INK))
 	step_progress.add_theme_stylebox_override("fill", _bar_style(FoldlightRogueUITheme.FOLD))
 
 
 func _card_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.012, 0.030, 0.060, 0.96)
-	style.border_color = Color(0.29, 0.88, 0.83, 0.64)
-	style.border_width_left = 5
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 2
-	style.corner_radius_top_left = 3
-	style.corner_radius_top_right = 18
-	style.corner_radius_bottom_left = 3
-	style.corner_radius_bottom_right = 18
-	style.content_margin_left = 30.0
-	style.content_margin_top = 22.0
-	style.content_margin_right = 26.0
-	style.content_margin_bottom = 20.0
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.48)
-	style.shadow_size = 18
-	style.shadow_offset = Vector2(0.0, 8.0)
+	var style := FoldlightTheme.panel_style()
+	style.border_color = Color(FoldlightTheme.FOLD, 0.50)
+	style.border_width_left = 3
 	return style
 
 
 func _badge_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = FoldlightRogueUITheme.FOLD
-	style.corner_radius_top_left = 2
-	style.corner_radius_top_right = 9
-	style.corner_radius_bottom_left = 2
-	style.corner_radius_bottom_right = 9
+	style.set_corner_radius_all(2)
 	style.content_margin_left = 13.0
 	style.content_margin_right = 13.0
 	style.content_margin_top = 7.0
@@ -284,11 +266,9 @@ func _badge_style() -> StyleBoxFlat:
 
 func _warning_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.075, 0.035, 0.58)
-	style.border_color = Color(1.0, 0.68, 0.26, 0.58)
-	style.border_width_left = 3
-	style.corner_radius_top_right = 8
-	style.corner_radius_bottom_right = 8
+	style.bg_color = Color(FoldlightTheme.GOLD, 0.07)
+	style.border_color = Color(FoldlightTheme.GOLD, 0.50)
+	style.border_width_left = 2
 	style.content_margin_left = 13.0
 	style.content_margin_right = 13.0
 	style.content_margin_top = 8.0
@@ -297,13 +277,7 @@ func _warning_style() -> StyleBoxFlat:
 
 
 func _bar_style(color: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = 3
-	style.corner_radius_top_right = 3
-	style.corner_radius_bottom_left = 3
-	style.corner_radius_bottom_right = 3
-	return style
+	return FoldlightTheme.bar_style(color)
 
 
 func _animate_out() -> void:

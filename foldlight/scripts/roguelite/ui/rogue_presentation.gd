@@ -24,6 +24,8 @@ const GOLD := FoldlightRogueUITheme.GOLD
 const PAPER := FoldlightRogueUITheme.PAPER
 const MUTED := FoldlightRogueUITheme.MUTED
 const SURFACE := FoldlightRogueUITheme.SURFACE
+const SHARED_THEME = preload("res://scripts/ui/foldlight_theme.gd")
+const TITLE_SCREEN = preload("res://scripts/roguelite/ui/rogue_title_screen.gd")
 const QUICK_TUTORIAL_SCENE: PackedScene = preload("res://scenes/roguelite/ui/quick_tutorial_overlay.tscn")
 const MECHANIC_PREVIEW_SCENE := preload("res://scripts/roguelite/ui/mechanic_preview_canvas.gd")
 
@@ -32,6 +34,7 @@ var _screens: Dictionary = {}
 var _focus_groups: Dictionary = {}
 var _focus_index: int = 0
 var _mechanic_remaining: float = 0.0
+var _title_screen: Control
 var _title_primary: Button
 var _title_continue: Button
 var _title_prologue: Button
@@ -76,6 +79,7 @@ var _pause_browse_status: Label
 var _browse_mode_enabled: bool = false
 var _reward_title: Label
 var _reward_buttons: Array[Button] = []
+var _reward_content: Array[Dictionary] = []
 var _route_title: Label
 var _route_buttons: Array[Button] = []
 var _result_title: Label
@@ -141,18 +145,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func show_title(profile_snapshot: Dictionary) -> void:
 	_show_only(&"title")
 	visual_canvas.configure(&"title", FOLD)
-	var active_variant: Variant = profile_snapshot.get("active_run", {})
-	var active := active_variant as Dictionary if active_variant is Dictionary else {}
-	var has_continue := not active.is_empty()
-	var learned := bool(profile_snapshot.get("prologue_complete", false))
-	_title_continue.visible = has_continue
-	_title_primary.text = _t(&"ROGUE_MENU_NEW", "开始迷航") if learned else "45 秒教学 · 开始"
-	_title_prologue.visible = learned
-	_title_guide.text = "移动  ·  冲刺  ·  折域反射  ·  自动武器  ·  主动技能"
-	var runs := int(profile_snapshot.get("runs", 0))
-	var victories := int(profile_snapshot.get("victories", 0))
-	var best_region := int(profile_snapshot.get("best_region", 0))
-	_title_stats.text = _t(&"ROGUE_TITLE_RECORD", "迷航记录  %d 次   返航 %d 次   最深 第%d区") % [runs, victories, best_region]
+	_title_screen.present(profile_snapshot)
 	_set_focus_group(_visible_buttons(_focus_groups.get(&"title", [])))
 
 
@@ -167,7 +160,7 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 		return
 	_hud_region.text = "%s  /  %s" % [region_title, _category_title(StringName(room_node.get("category", &"combat")))]
 	_hud_room.text = _t(&"ROGUE_HUD_ROOM", "房间 %d  ·  微光 %d") % [int(snapshot.get("room_count", 0)) + 1, int(snapshot.get("glimmer", 0))]
-	_hud_health.text = "灯芯  %d / %d   %s%s" % [player.health, player.max_health, "◆".repeat(player.health), "◇".repeat(maxi(0, player.max_health - player.health))]
+	_hud_health.text = "灯芯  %d / %d" % [player.health, player.max_health]
 	_hud_health_bar.max_value = maxi(1, player.max_health)
 	_hud_health_bar.value = player.health
 	var health_accent := FoldlightRogueUITheme.DANGER if player.health <= ceili(float(player.max_health) * 0.34) else GOLD
@@ -175,19 +168,19 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 	_hud_health_bar.add_theme_stylebox_override("fill", FoldlightRogueUITheme.bar_style(health_accent))
 	var cooldown := player.get_fold_cooldown_remaining()
 	var fold_ready := cooldown <= 0.01
-	_hud_fold.text = "[空格 / A]  折域  %d / %d" % [player.captured, player.get_capture_capacity()] if fold_ready else "折域回折  %.1fs  ·  %d / %d" % [cooldown, player.captured, player.get_capture_capacity()]
+	_hud_fold.text = "折域  ·  收纳 %d / %d" % [player.captured, player.get_capture_capacity()] if fold_ready else "折域回折  %.1fs  ·  %d / %d" % [cooldown, player.captured, player.get_capture_capacity()]
 	_hud_focus_bar.value = player.focus * 100.0
 	_hud_charge_bar.value = player.get_charge_ratio() * 100.0 if player.folding else 0.0
 	_hud_charge_row.visible = player.folding
 	var dash_ratio := player.get_dash_cooldown_ratio()
 	var dash_ready := player.dash_component.is_ready()
-	_hud_dash.text = "[SHIFT / B]  冲刺  ·  就绪" if dash_ready else "[SHIFT / B]  冲刺  ·  %.1fs" % player.dash_component.cooldown_remaining
+	_hud_dash.text = "就绪" if dash_ready else "回充  %.1fs" % player.dash_component.cooldown_remaining
 	_hud_dash_bar.value = 100.0 if dash_ready else (1.0 - dash_ratio) * 100.0
 	_hud_dash.add_theme_color_override("font_color", FOLD if dash_ready else MUTED)
 	var weapon_title := "折灯"
 	if not player.weapon_mount.definitions.is_empty() and player.weapon_mount.definitions[0] != null:
 		weapon_title = player.weapon_mount.definitions[0].title
-	_hud_weapon.text = "[自动]  %s  ·  持续开火" % weapon_title
+	_hud_weapon.text = weapon_title
 	_hud_weapon_bar.value = 100.0
 	var active_title := _t(&"ROGUE_HUD_EMPTY_ACTIVE", "未装备主动道具")
 	if player.active_item_slot.definition != null:
@@ -195,15 +188,15 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 	var active_ratio := player.get_active_item_cooldown_ratio()
 	var active_ready := active_ratio <= 0.01 and player.active_item_slot.definition != null
 	if player.active_item_slot.definition == null:
-		_hud_active.text = "[Q / X]  主动道具  ·  尚未获得"
+		_hud_active.text = "尚未获得"
 		_hud_active_bar.value = 0.0
 		_hud_active.add_theme_color_override("font_color", MUTED)
 	elif active_ready:
-		_hud_active.text = "[Q / X]  %s  ·  就绪" % active_title
+		_hud_active.text = "%s · 就绪" % active_title
 		_hud_active_bar.value = 100.0
 		_hud_active.add_theme_color_override("font_color", GOLD)
 	else:
-		_hud_active.text = "[Q / X]  %s  ·  %.1fs" % [active_title, player.active_item_slot.cooldown_remaining]
+		_hud_active.text = "%s · %.1fs" % [active_title, player.active_item_slot.cooldown_remaining]
 		_hud_active_bar.value = (1.0 - active_ratio) * 100.0
 		_hud_active.add_theme_color_override("font_color", MUTED)
 	_hud_status.text = wave_text
@@ -261,8 +254,14 @@ func show_reward(choices: Array[Dictionary], room_title: String) -> void:
 			rarity_text += "  ·  火力强化"
 		var level := int(choice.get("next_level", 1))
 		var maximum := int(choice.get("maximum_level", 1))
-		button.text = "%s\n\n%s\n%s  ·  Lv.%d/%d" % [str(choice.get("title", "无名折痕")), str(choice.get("description", "")), rarity_text, level, maximum]
-		var accent_value: Color = choice.get("accent", FOLD)
+		var content := _reward_content[index]
+		(content["title"] as Label).text = str(choice.get("title", "无名折痕"))
+		(content["description"] as Label).text = str(choice.get("description", ""))
+		(content["rarity"] as Label).text = rarity_text
+		(content["level"] as Label).text = "刻印  %d / %d" % [level, maximum]
+		button.tooltip_text = "%s：%s" % [str(choice.get("title", "")), str(choice.get("description", ""))]
+		var accent_value := SHARED_THEME.comfort_accent(Color(choice.get("accent", FOLD)))
+		(content["rarity"] as Label).add_theme_color_override("font_color", accent_value)
 		button.add_theme_color_override("font_hover_color", accent_value.lightened(0.16))
 		button.add_theme_stylebox_override("normal", _choice_card_style(accent_value, false))
 		button.add_theme_stylebox_override("hover", _choice_card_style(accent_value, true))
@@ -295,10 +294,10 @@ func show_route(region_snapshot: Dictionary, current_id: StringName, exits: Arra
 
 func show_result(result: Dictionary, prologue: bool = false) -> void:
 	_show_only(&"result")
-	visual_canvas.configure(&"prologue_result" if prologue else &"result", GOLD if bool(result.get("won", false)) else Color(0.90, 0.28, 0.42))
+	visual_canvas.configure(&"prologue_result" if prologue else &"result", GOLD if bool(result.get("won", false)) else SHARED_THEME.DANGER)
 	if prologue:
-		_result_title.text = _t(&"ROGUE_PROLOGUE_COMPLETE", "折灯已经会呼吸")
-		_result_body.text = _t(&"ROGUE_PROLOGUE_COMPLETE_BODY", "你学会了走位、冲刺、折域、自动武器与主动道具。\n真正的纸海会更难，但规则不会再藏起来。")
+		_result_title.text = "准备好，驶入纸海"
+		_result_body.text = "操作教学已完成。\n收纳来袭弹幕，松开折翼，让光返航。"
 	else:
 		var won := bool(result.get("won", false))
 		_result_title.text = _t(&"ROGUE_RESULT_WIN", "光已返航") if won else _t(&"ROGUE_RESULT_LOSE", "这盏灯沉入了纸海")
@@ -404,84 +403,35 @@ func get_mechanic_briefing_snapshot() -> Dictionary:
 
 
 func _build_title() -> void:
-	var screen := _new_screen(&"title")
-	var margin := _full_margin(screen, 110, 78, 110, 74)
-	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", 72)
-	margin.add_child(columns)
-	var identity := VBoxContainer.new()
-	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	identity.add_theme_constant_override("separation", 6)
-	columns.add_child(identity)
-	var top_space := Control.new()
-	top_space.custom_minimum_size.y = 82
-	identity.add_child(top_space)
-	var eyebrow := _label(_t(&"ROGUE_TITLE_EYEBROW", "一只手的深海折返战"), 22, FOLD)
-	identity.add_child(eyebrow)
-	var logo := _label("FOLDLIGHT", 88, PAPER)
-	logo.add_theme_constant_override("outline_size", 8)
-	logo.add_theme_color_override("font_outline_color", Color(0.01, 0.02, 0.05, 0.82))
-	identity.add_child(logo)
-	var chinese := _label("折  光", 42, GOLD)
-	identity.add_child(chinese)
-	var strap := _label(_t(&"ROGUE_TITLE_STRAP", "把危险折进掌心，再让整片光返航。"), 26, MUTED)
-	strap.custom_minimum_size.x = 700
-	strap.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	identity.add_child(strap)
-	_title_guide = _label("", 19, Color(FOLD.r, FOLD.g, FOLD.b, 0.82))
-	_title_guide.custom_minimum_size.x = 700
-	identity.add_child(_title_guide)
-	var identity_spacer := Control.new()
-	identity_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	identity.add_child(identity_spacer)
-	_title_stats = _label("", 18, Color(MUTED.r, MUTED.g, MUTED.b, 0.85))
-	identity.add_child(_title_stats)
+	_title_screen = TITLE_SCREEN.new()
+	interface.add_child(_title_screen)
+	_title_screen.build(_button)
+	_screens[&"title"] = _title_screen
+	_title_screen.action_requested.connect(_on_title_action)
+	# Keep the presentation API used by the session and existing integration tests.
+	_title_primary = _title_screen.primary_button
+	_title_continue = _title_screen.continue_button
+	_title_prologue = _title_screen.tutorial_button
+	_title_stats = _title_screen.record_label
+	_title_guide = _title_screen.guide_label
+	_focus_groups[&"title"] = _title_screen.focus_buttons
 
-	var menu := VBoxContainer.new()
-	menu.custom_minimum_size.x = 470
-	menu.alignment = BoxContainer.ALIGNMENT_CENTER
-	menu.add_theme_constant_override("separation", 12)
-	columns.add_child(menu)
-	var menu_label := _label("折灯航海台", 19, MUTED)
-	menu_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	menu.add_child(menu_label)
-	_title_continue = _button(_t(&"ROGUE_MENU_CONTINUE", "继续迷航"), 70)
-	_title_continue.pressed.connect(func() -> void: continue_requested.emit())
-	menu.add_child(_title_continue)
-	_title_primary = _button(_t(&"ROGUE_MENU_NEW", "开始迷航"), 82)
-	_title_primary.add_theme_font_size_override("font_size", 30)
-	_title_primary.pressed.connect(func() -> void: new_run_requested.emit())
-	menu.add_child(_title_primary)
-	_title_prologue = _button("重温 45 秒教学", 62)
-	_title_prologue.pressed.connect(func() -> void: prologue_requested.emit())
-	menu.add_child(_title_prologue)
-	var classic := _button(_t(&"ROGUE_MENU_CLASSIC", "经典战役 · 2.0 十二航"), 62)
-	classic.pressed.connect(func() -> void: classic_requested.emit())
-	menu.add_child(classic)
-	var endless := _button("无尽生存 · 进化远航", 58)
-	endless.pressed.connect(func() -> void: endless_requested.emit())
-	menu.add_child(endless)
-	var utility_row := HBoxContainer.new()
-	utility_row.add_theme_constant_override("separation", 12)
-	menu.add_child(utility_row)
-	var settings := _button(_t(&"ROGUE_MENU_SETTINGS", "设置"), 58)
-	settings.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	settings.pressed.connect(func() -> void: settings_requested.emit())
-	utility_row.add_child(settings)
-	var quit := _button(_t(&"ROGUE_MENU_QUIT", "退出"), 58)
-	quit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	quit.pressed.connect(func() -> void: quit_requested.emit())
-	utility_row.add_child(quit)
-	var hint := _label(_t(&"ROGUE_TITLE_INPUT", "方向键 / WASD 选择   ·   空格 / A 确认"), 18, MUTED)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	menu.add_child(hint)
-	_focus_groups[&"title"] = [_title_continue, _title_primary, _title_prologue, classic, endless, settings, quit]
+
+func _on_title_action(action: StringName) -> void:
+	match action:
+		&"new_run": new_run_requested.emit()
+		&"continue": continue_requested.emit()
+		&"prologue": prologue_requested.emit()
+		&"classic": classic_requested.emit()
+		&"endless": endless_requested.emit()
+		&"settings": settings_requested.emit()
+		&"quit": quit_requested.emit()
 
 
 func _build_hud() -> void:
 	var screen := _new_screen(&"hud")
 	screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var margin := _full_margin(screen, 34, 28, 34, 26)
+	var margin := _full_margin(screen, 42, 30, 42, 28)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var layout := VBoxContainer.new()
 	layout.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -494,14 +444,14 @@ func _build_hud() -> void:
 	var voyage_panel := PanelContainer.new()
 	voyage_panel.name = "VoyagePanel"
 	voyage_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	voyage_panel.custom_minimum_size = Vector2(410, 118)
+	voyage_panel.custom_minimum_size = Vector2(340, 94)
 	voyage_panel.add_theme_stylebox_override("panel", _hud_surface_style(Color(FOLD.r, FOLD.g, FOLD.b, 0.48)))
 	top.add_child(voyage_panel)
 	var voyage_stack := VBoxContainer.new()
 	voyage_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	voyage_stack.add_theme_constant_override("separation", 7)
 	voyage_panel.add_child(voyage_stack)
-	_hud_region = _label("", 24, PAPER)
+	_hud_region = _label("", 21, PAPER)
 	voyage_stack.add_child(_hud_region)
 	_hud_room = _label("", 18, MUTED)
 	voyage_stack.add_child(_hud_room)
@@ -509,19 +459,16 @@ func _build_hud() -> void:
 	var health_panel := PanelContainer.new()
 	health_panel.name = "HealthCard"
 	health_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	health_panel.custom_minimum_size = Vector2(410, 118)
+	health_panel.custom_minimum_size = Vector2(284, 94)
 	health_panel.add_theme_stylebox_override("panel", _hud_surface_style(Color(GOLD.r, GOLD.g, GOLD.b, 0.68)))
 	top.add_child(health_panel)
 	var health_stack := VBoxContainer.new()
 	health_stack.add_theme_constant_override("separation", 7)
 	health_panel.add_child(health_stack)
-	health_stack.add_child(_label("生命", 16, MUTED))
-	_hud_health = _label("灯芯  5 / 5   ◆◆◆◆◆", 25, GOLD)
-	_hud_health.add_theme_constant_override("outline_size", 3)
-	_hud_health.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.74))
+	_hud_health = _label("灯芯  5 / 5", 23, GOLD)
 	health_stack.add_child(_hud_health)
 	_hud_health_bar = _hud_progress_bar("HealthBar", GOLD)
-	_hud_health_bar.custom_minimum_size.y = 15
+	_hud_health_bar.custom_minimum_size.y = 8
 	health_stack.add_child(_hud_health_bar)
 
 	var boss_stack := VBoxContainer.new()
@@ -559,20 +506,13 @@ func _build_hud() -> void:
 	var fold_core := PanelContainer.new()
 	fold_core.name = "FoldCorePanel"
 	fold_core.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	fold_core.custom_minimum_size = Vector2(548, 122)
-	var core_style := StyleBoxFlat.new()
-	core_style.bg_color = Color(0.020, 0.054, 0.068, 0.94)
-	core_style.border_color = Color(FOLD.r, FOLD.g, FOLD.b, 0.68)
-	core_style.border_width_left = 5
-	core_style.border_width_top = 1
-	core_style.border_width_right = 1
-	core_style.border_width_bottom = 2
-	core_style.corner_radius_top_left = 2
-	core_style.corner_radius_top_right = 14
-	core_style.corner_radius_bottom_left = 2
-	core_style.corner_radius_bottom_right = 14
-	core_style.shadow_color = Color(0.0, 0.0, 0.0, 0.42)
-	core_style.shadow_size = 8
+	fold_core.custom_minimum_size = Vector2(420, 106)
+	var core_style := _hud_surface_style(Color(FOLD, 0.65))
+	core_style.border_width_left = 3
+	core_style.content_margin_left = 0.0
+	core_style.content_margin_right = 0.0
+	core_style.content_margin_top = 0.0
+	core_style.content_margin_bottom = 0.0
 	fold_core.add_theme_stylebox_override("panel", core_style)
 	action_band.add_child(fold_core)
 	var core_margin := MarginContainer.new()
@@ -586,8 +526,8 @@ func _build_hud() -> void:
 	fold_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fold_stack.add_theme_constant_override("separation", 3)
 	core_margin.add_child(fold_stack)
-	fold_stack.add_child(_label("核心操作", 15, MUTED))
-	_hud_fold = _label("", 23, PAPER)
+	fold_stack.add_child(_label("折翼    SPACE / A", 15, MUTED))
+	_hud_fold = _label("", 21, PAPER)
 	fold_stack.add_child(_hud_fold)
 	var focus_row := HBoxContainer.new()
 	focus_row.add_theme_constant_override("separation", 10)
@@ -607,17 +547,17 @@ func _build_hud() -> void:
 	fold_stack.add_child(_hud_charge_row)
 	_hud_charge_row.hide()
 
-	var dash_card := _hud_action_card("机动", "冲刺", Color(0.42, 0.68, 0.78), 290.0)
+	var dash_card := _hud_action_card("冲刺", "SHIFT / B", FOLD, 230.0)
 	action_band.add_child(dash_card["panel"])
 	_hud_dash = dash_card["state"] as Label
 	_hud_dash_bar = dash_card["bar"] as ProgressBar
 
-	var active_card := _hud_action_card("主动道具", "Q / X", GOLD, 340.0)
+	var active_card := _hud_action_card("主动道具", "Q / X", GOLD, 280.0)
 	action_band.add_child(active_card["panel"])
 	_hud_active = active_card["state"] as Label
 	_hud_active_bar = active_card["bar"] as ProgressBar
 
-	var weapon_card := _hud_action_card("自动武器", "AUTO", FOLD, 320.0)
+	var weapon_card := _hud_action_card("自动武器", "AUTO", FOLD, 240.0)
 	action_band.add_child(weapon_card["panel"])
 	_hud_weapon = weapon_card["state"] as Label
 	_hud_weapon_bar = weapon_card["bar"] as ProgressBar
@@ -635,7 +575,7 @@ func _hud_action_card(title: String, binding: String, accent: Color, width: floa
 	var panel := PanelContainer.new()
 	panel.name = "%sCard" % title
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.custom_minimum_size = Vector2(width, 122)
+	panel.custom_minimum_size = Vector2(width, 106)
 	panel.add_theme_stylebox_override("panel", _hud_surface_style(Color(accent.r, accent.g, accent.b, 0.62)))
 	var stack := VBoxContainer.new()
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -654,7 +594,7 @@ func _hud_action_card(title: String, binding: String, accent: Color, width: floa
 	state.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	stack.add_child(state)
 	var bar := _hud_progress_bar("%sCooldown" % title, accent)
-	bar.custom_minimum_size.y = 11
+	bar.custom_minimum_size.y = 6
 	stack.add_child(bar)
 	return {"panel": panel, "state": state, "bar": bar}
 
@@ -670,38 +610,20 @@ func _hud_progress_bar(node_name: String, accent: Color) -> ProgressBar:
 	bar.show_percentage = false
 	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.custom_minimum_size.y = 9
-	var background := StyleBoxFlat.new()
-	background.bg_color = Color(0.04, 0.06, 0.09, 0.88)
-	background.corner_radius_top_left = 5
-	background.corner_radius_top_right = 5
-	background.corner_radius_bottom_left = 5
-	background.corner_radius_bottom_right = 5
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = accent
-	fill.corner_radius_top_left = 5
-	fill.corner_radius_top_right = 5
-	fill.corner_radius_bottom_left = 5
-	fill.corner_radius_bottom_right = 5
-	bar.add_theme_stylebox_override("background", background)
-	bar.add_theme_stylebox_override("fill", fill)
+	bar.add_theme_stylebox_override("background", SHARED_THEME.bar_style(Color(SHARED_THEME.INK, 0.88)))
+	bar.add_theme_stylebox_override("fill", SHARED_THEME.bar_style(accent))
 	return bar
 
 
 func _hud_surface_style(accent: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(SURFACE.r, SURFACE.g, SURFACE.b, 0.88)
-	style.border_color = accent
-	style.border_width_left = 4
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.corner_radius_top_left = 2
-	style.corner_radius_top_right = 12
-	style.corner_radius_bottom_left = 2
-	style.corner_radius_bottom_right = 12
-	style.content_margin_left = 16.0
+	var style := SHARED_THEME.panel_style()
+	style.bg_color = Color(SHARED_THEME.INK, 0.88)
+	style.border_color = Color(accent, 0.28)
+	style.border_width_bottom = 2
+	style.shadow_size = 0
+	style.content_margin_left = 18.0
 	style.content_margin_top = 12.0
-	style.content_margin_right = 16.0
+	style.content_margin_right = 18.0
 	style.content_margin_bottom = 12.0
 	return style
 
@@ -721,7 +643,7 @@ func _build_reward() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 22)
 	margin.add_child(stack)
-	var eyebrow := _label(_t(&"ROGUE_REWARD_EYEBROW", "局内构筑 · 只在本次迷航生效"), 20, FOLD)
+	var eyebrow := _label("折痕选择 · 本次迷航生效", 20, FOLD)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(eyebrow)
 	_reward_title = _label("", 38, PAPER)
@@ -733,36 +655,45 @@ func _build_reward() -> void:
 	choices.add_theme_constant_override("separation", 26)
 	stack.add_child(choices)
 	for index in 3:
-		var button := _button("", 390)
-		button.custom_minimum_size.x = 430
+		var button := _button("", 350)
+		button.custom_minimum_size.x = 420
 		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		button.add_theme_font_size_override("font_size", 22)
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(_on_reward_pressed.bind(button))
 		choices.add_child(button)
 		_reward_buttons.append(button)
+		var content_margin := _full_margin(button, 32, 28, 32, 28)
+		content_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var content_stack := VBoxContainer.new()
+		content_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content_stack.add_theme_constant_override("separation", 18)
+		content_margin.add_child(content_stack)
+		var rarity := _label("", 17, FOLD)
+		content_stack.add_child(rarity)
+		var title := _label("", 30, PAPER)
+		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		content_stack.add_child(title)
+		var description := _label("", 22, MUTED)
+		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		description.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		content_stack.add_child(description)
+		var level := _label("", 18, PAPER)
+		content_stack.add_child(level)
+		_reward_content.append({"title": title, "description": description, "rarity": rarity, "level": level})
 	var hint := _label(_t(&"ROGUE_REWARD_HINT", "左右选择   ·   空格 / A 刻下折痕"), 18, MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(hint)
 
 
 func _choice_card_style(accent: Color, lifted: bool) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.025, 0.065, 0.088, 0.97) if lifted else Color(0.015, 0.035, 0.062, 0.90)
-	style.border_color = Color(accent.r, accent.g, accent.b, 0.92 if lifted else 0.46)
-	style.border_width_left = 6 if lifted else 3
-	style.border_width_top = 2 if lifted else 1
-	style.border_width_right = 2 if lifted else 1
-	style.border_width_bottom = 2 if lifted else 1
-	style.corner_radius_top_left = 2
-	style.corner_radius_top_right = 16
-	style.corner_radius_bottom_left = 2
-	style.corner_radius_bottom_right = 16
-	style.content_margin_left = 28.0
-	style.content_margin_top = 24.0
-	style.content_margin_right = 28.0
-	style.content_margin_bottom = 24.0
+	var style := SHARED_THEME.panel_style()
+	style.bg_color = Color(SHARED_THEME.SURFACE_SOFT if lifted else SHARED_THEME.SURFACE, 0.97)
+	style.border_color = Color(accent, 0.80 if lifted else 0.32)
+	style.border_width_top = 4 if lifted else 2
+	style.shadow_size = 0
+	style.content_margin_left = 32.0
+	style.content_margin_top = 32.0
+	style.content_margin_right = 32.0
+	style.content_margin_bottom = 32.0
 	return style
 
 
@@ -771,7 +702,7 @@ func _build_route() -> void:
 	var margin := _full_margin(screen, 90, 70, 90, 68)
 	var stack := VBoxContainer.new()
 	margin.add_child(stack)
-	var eyebrow := _label(_t(&"ROGUE_ROUTE_EYEBROW", "折航图 · 你只能驶向相连的房间"), 19, FOLD)
+	var eyebrow := _label("航路选择", 19, FOLD)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(eyebrow)
 	_route_title = _label("", 38, PAPER)
@@ -790,7 +721,7 @@ func _build_route() -> void:
 		button.pressed.connect(_on_route_pressed.bind(button))
 		choices.add_child(button)
 		_route_buttons.append(button)
-	stack.add_child(_label(_t(&"ROGUE_ROUTE_HINT", "分支会在汇流处重新相遇；难度标记代表威胁预算，而非敌人堆量。"), 17, MUTED))
+	stack.add_child(_label("选择相连的折点。菱形越多，前方的威胁越高。", 17, MUTED))
 
 
 func _build_result() -> void:
@@ -814,7 +745,7 @@ func _build_result() -> void:
 	retry.custom_minimum_size.x = 280
 	retry.pressed.connect(func() -> void: retry_requested.emit())
 	action_row.add_child(retry)
-	var title := _button(_t(&"ROGUE_RESULT_TITLE", "返回标题"), 70)
+	var title := _button(_t(&"ROGUE_RESULT_TITLE", "返回主菜单"), 70)
 	title.custom_minimum_size.x = 280
 	title.pressed.connect(func() -> void: title_requested.emit())
 	action_row.add_child(title)
@@ -823,24 +754,25 @@ func _build_result() -> void:
 
 func _build_pause() -> void:
 	var screen := _new_screen(&"pause")
-	var margin := _full_margin(screen, 650, 150, 650, 150)
+	var margin := _full_margin(screen, 650, 230, 650, 230)
 	var panel := PanelContainer.new()
 	margin.add_child(panel)
 	var stack := VBoxContainer.new()
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	stack.add_theme_constant_override("separation", 16)
 	panel.add_child(stack)
-	var eyebrow := _label("纸海暂时静止", 19, FOLD)
+	var eyebrow := _label("迷航途中", 18, FOLD)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(eyebrow)
 	var title := _label("暂停", 48, PAPER)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(title)
-	_pause_browse_status = _label("浏览模式已开启  ·  玩家伤害无效", 20, Color(0.52, 1.0, 0.86))
+	_pause_browse_status = _label("浏览模式已开启  ·  玩家伤害无效", 20, FOLD)
 	_pause_browse_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_pause_browse_status.hide()
 	stack.add_child(_pause_browse_status)
-	var resume := _button("继续航行", 72)
+	var resume := _button("继续迷航", 72)
+	resume.theme_type_variation = "PrimaryButton"
 	resume.pressed.connect(func() -> void: resume_requested.emit())
 	stack.add_child(resume)
 	var settings := _button("设置", 64)
@@ -855,7 +787,7 @@ func _build_pause() -> void:
 
 func _build_settings() -> void:
 	var screen := _new_screen(&"settings")
-	var margin := _full_margin(screen, 520, 74, 520, 66)
+	var margin := _full_margin(screen, 550, 130, 550, 120)
 	var panel := PanelContainer.new()
 	margin.add_child(panel)
 	var stack := VBoxContainer.new()
@@ -877,7 +809,7 @@ func _build_settings() -> void:
 	back.pressed.connect(func() -> void: settings_back_requested.emit(_settings_return))
 	stack.add_child(back)
 	_settings_buttons.append(back)
-	stack.add_child(_label("上下选择 · 左右调整 · 高对比模式会强化不可反射弹的黑色内芯", 16, MUTED))
+	stack.add_child(_label("上下选择  ·  左右调整  ·  空格确认", 17, MUTED))
 
 
 func _build_mechanic_toast() -> void:
@@ -904,7 +836,7 @@ func _build_mechanic_briefing() -> void:
 	var screen := _new_screen(&"mechanic_intro")
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.006, 0.011, 0.021, 0.93)
+	dim.color = Color(SHARED_THEME.INK, 0.94)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	screen.add_child(dim)
 	var margin := _full_margin(screen, 280, 130, 280, 110)
@@ -962,7 +894,7 @@ func _build_mechanic_briefing() -> void:
 	briefing.add_child(divider)
 	var rule_panel := PanelContainer.new()
 	rule_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	rule_panel.add_theme_stylebox_override("panel", _briefing_info_style(Color(0.74, 0.48, 0.34, 0.66)))
+	rule_panel.add_theme_stylebox_override("panel", _briefing_info_style(Color(SHARED_THEME.DANGER, 0.50)))
 	briefing.add_child(rule_panel)
 	_mechanic_intro_rule = _label("", 23, PAPER)
 	_mechanic_intro_rule.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -973,7 +905,7 @@ func _build_mechanic_briefing() -> void:
 	counter_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	counter_panel.add_theme_stylebox_override("panel", _briefing_info_style(Color(FOLD.r, FOLD.g, FOLD.b, 0.70)))
 	briefing.add_child(counter_panel)
-	_mechanic_intro_counter = _label("", 23, Color(0.57, 0.84, 0.74))
+	_mechanic_intro_counter = _label("", 23, FOLD)
 	_mechanic_intro_counter.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_mechanic_intro_counter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_mechanic_intro_counter.custom_minimum_size = Vector2(620, 140)
@@ -984,17 +916,11 @@ func _build_mechanic_briefing() -> void:
 
 
 func _briefing_info_style(border: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.018, 0.035, 0.050, 0.94)
+	var style := SHARED_THEME.panel_style()
+	style.bg_color = Color(SHARED_THEME.INK, 0.65)
 	style.border_color = border
-	style.border_width_left = 4
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.corner_radius_top_left = 2
-	style.corner_radius_top_right = 12
-	style.corner_radius_bottom_left = 2
-	style.corner_radius_bottom_right = 12
+	style.border_width_left = 3
+	style.shadow_size = 0
 	style.content_margin_left = 22.0
 	style.content_margin_top = 16.0
 	style.content_margin_right = 22.0
