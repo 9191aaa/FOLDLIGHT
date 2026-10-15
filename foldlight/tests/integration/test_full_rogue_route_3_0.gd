@@ -44,6 +44,10 @@ func _run() -> void:
 		if session.mode != FoldlightRogueSessionController.SessionMode.RUN:
 			break
 		if category == &"boss":
+			_check(session.run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR and session.world.visible, "boss %d retains its arena until a deliberate continue" % defeated_bosses.size())
+			for step in 24:
+				session._boss_clear_banner._input_guard._process(0.10)
+			session._boss_clear_banner._confirm()
 			await process_frame
 			continue
 		_check(session.run_controller.phase == FoldlightRogueRunController.Phase.REWARD, "room %d reaches reward phase" % room_guard)

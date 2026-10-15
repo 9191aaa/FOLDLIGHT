@@ -16,6 +16,7 @@ var _surface: Control
 var _active: bool = false
 var _ready_for_choice: bool = false
 var _elapsed: float = 0.0
+var _read_seconds: float = READ_SECONDS
 var _neutral_elapsed: float = 0.0
 var _held_touches: Dictionary = {}
 var _last_hint: String = ""
@@ -26,12 +27,13 @@ func _ready() -> void:
 	set_process(false)
 
 
-func begin(surface: Control) -> void:
+func begin(surface: Control, read_seconds: float = READ_SECONDS) -> void:
 	cancel()
 	_surface = surface
 	_surface.visibility_changed.connect(_on_surface_visibility_changed)
 	_active = true
 	_elapsed = 0.0
+	_read_seconds = maxf(READ_SECONDS, read_seconds)
 	_neutral_elapsed = 0.0
 	set_process(true)
 	_last_hint = get_hint()
@@ -52,7 +54,7 @@ func can_select() -> bool:
 
 
 func get_hint() -> String:
-	if _elapsed < READ_SECONDS:
+	if _elapsed < _read_seconds:
 		return "折痕正在展开 · 请稍候"
 	return "松开按键、鼠标或摇杆，再作选择"
 
@@ -66,7 +68,7 @@ func _process(delta: float) -> void:
 	var step := minf(delta, 0.10)
 	_elapsed += step
 	_neutral_elapsed = 0.0 if _has_held_input() else _neutral_elapsed + step
-	if _elapsed >= READ_SECONDS and _neutral_elapsed >= NEUTRAL_SECONDS:
+	if _elapsed >= _read_seconds and _neutral_elapsed >= NEUTRAL_SECONDS:
 		_ready_for_choice = true
 		set_process(false)
 		state_changed.emit()

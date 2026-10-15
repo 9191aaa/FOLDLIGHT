@@ -235,7 +235,7 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 		var maximum := maxf(1.0, float(boss_snapshot.get("maximum_health", 1.0)))
 		_boss_bar.max_value = maximum
 		_boss_bar.value = health
-		_boss_label.text = "%s  ·  阶段 %d" % [str(boss_snapshot.get("title", "终潮")), int(boss_snapshot.get("phase", 1))]
+		_boss_label.text = "%s  ·  已澄清" % str(boss_snapshot.get("title", "终潮")) if bool(boss_snapshot.get("defeated", false)) else "%s  ·  阶段 %d" % [str(boss_snapshot.get("title", "终潮")), int(boss_snapshot.get("phase", 1))]
 
 
 func show_prologue_step(step_number: int, _total_steps: int, _title: String, _body: String) -> void:

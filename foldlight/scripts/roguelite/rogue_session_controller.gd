@@ -7,6 +7,7 @@ const WORLD_SIZE := Vector2(2880.0, 1620.0)
 const PLAYER_START := Vector2(1440.0, 1180.0)
 const EXPLORATION_WORLD_SIZE := Vector2(3360.0, 1620.0)
 const ENDLESS_SURVIVAL_SCENE := "res://scenes/endless/endless_survival_slice.tscn"
+const BOSS_CLEAR_BANNER = preload("res://scripts/roguelite/ui/boss_clear_banner.gd")
 const PAPER_REEF_ENEMY_TIERS: Array[Array] = [
 	[&"drifter", &"fan"],
 	[&"ram", &"bloomer"],
@@ -46,6 +47,8 @@ var _current_reward_title: String = ""
 var _kill_combo_count: int = 0
 var _kill_combo_timer: float = 0.0
 var _kill_shake_cooldown: float = 0.0
+var _boss_clear_banner: Control
+var _boss_clear_snapshot: Dictionary = {}
 
 @onready var player: FoldlightPlayer = get_parent().get_node("Player")
 @onready var run_controller: FoldlightRogueRunController = get_parent().get_node("RogueRunController")
@@ -60,6 +63,7 @@ var _kill_shake_cooldown: float = 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	call_deferred("_setup_boss_clear_banner")
 	run_controller.room_requested.connect(_on_room_requested)
 	run_controller.room_cleared.connect(_on_run_room_cleared)
 	run_controller.checkpoint_ready.connect(_on_checkpoint_ready)
@@ -100,8 +104,20 @@ func _ready() -> void:
 	call_deferred("enter_title")
 
 
+func _setup_boss_clear_banner() -> void:
+	# Presentation is a later sibling, so its onready Interface exists only
+	# after the scene has finished entering the tree.
+	_boss_clear_banner = BOSS_CLEAR_BANNER.new()
+	_boss_clear_banner.name = "BossClearBanner"
+	presentation.interface.add_child(_boss_clear_banner)
+	_boss_clear_banner.continue_requested.connect(_on_boss_clear_continue)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not _active or not event.is_pressed() or event.is_echo():
+		return
+	if run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR and mode == SessionMode.RUN:
+		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"pause_game"):
 		if _paused:
@@ -130,6 +146,8 @@ func _process(delta: float) -> void:
 		return
 	if _paused:
 		return
+	if mode == SessionMode.RUN and run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR:
+		world.combat_runtime.advance_aftermath_feedback(minf(delta, 0.10))
 	_feedback_shake_cooldown = maxf(0.0, _feedback_shake_cooldown - delta)
 	_capture_sfx_cooldown = maxf(0.0, _capture_sfx_cooldown - delta)
 	_kill_shake_cooldown = maxf(0.0, _kill_shake_cooldown - delta)
@@ -149,6 +167,7 @@ func _process(delta: float) -> void:
 
 
 func enter_title() -> void:
+	_reset_boss_clear()
 	_active = true
 	_paused = false
 	mode = SessionMode.TITLE
@@ -166,6 +185,7 @@ func enter_title() -> void:
 
 
 func deactivate_for_classic() -> void:
+	_reset_boss_clear()
 	_active = false
 	_paused = false
 	mode = SessionMode.INACTIVE
@@ -247,6 +267,7 @@ func start_prologue() -> void:
 
 
 func _activate_gameplay() -> void:
+	_reset_boss_clear()
 	_active = true
 	_paused = false
 	var legacy_hud := get_parent().get_node_or_null("HUD")
@@ -280,6 +301,7 @@ func _on_classic_requested() -> void:
 func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> void:
 	if mode != SessionMode.RUN:
 		return
+	_reset_boss_clear()
 	current_room_node = room_node.duplicate(true)
 	current_region_snapshot = region_snapshot.duplicate(true)
 	current_region_definition = FoldlightRogueContentCatalog.REGIONS[clampi(run_controller.run_state.current_region, 0, FoldlightRogueContentCatalog.REGIONS.size() - 1)]
@@ -451,6 +473,7 @@ func _on_run_room_cleared(room_node: Dictionary, performance: Dictionary) -> voi
 	run_controller.run_state.glimmer += int(round(float(base_glimmer) * world.combat_runtime.get_glimmer_gain_multiplier()))
 	if StringName(room_node.get("category", &"")) == &"boss":
 		world.combat_runtime.grant_region_shield(run_controller.run_state.glimmer)
+		_begin_boss_clear()
 		return
 	var rogue := profile_manager.get_roguelite_snapshot()
 	_current_reward_kind = &""
@@ -467,6 +490,55 @@ func _on_run_room_cleared(room_node: Dictionary, performance: Dictionary) -> voi
 		return
 	presentation.show_reward(choices, _category_display(StringName(room_node.get("category", &"combat"))))
 	audio_director.set_intensity(0.07)
+
+
+func _begin_boss_clear() -> void:
+	_enter_modal_safety()
+	var definition := FoldlightRogueContentCatalog.boss_by_id(StringName(current_room_node.get("boss_id", &"")))
+	_boss_clear_snapshot = world.combat_runtime.last_boss_defeat.duplicate(true)
+	if _boss_clear_snapshot.is_empty():
+		_boss_clear_snapshot = {"title": definition.title if definition != null else "首领", "health": 0.0, "maximum_health": definition.base_health if definition != null else 1.0, "phase": 3, "defeated": true, "position": Vector2(1440, 720)}
+	world.combat_runtime.begin_boss_aftermath(Vector2(_boss_clear_snapshot.get("position", Vector2(1440, 720))), float(profile_manager.get_setting(&"screen_shake", 1.0)))
+	current_wave_text = "首领已澄清 · 航路已留存"
+	presentation.show_hud()
+	_refresh_hud()
+	var next_region := run_controller.run_state.current_region + 1
+	var next_title := FoldlightRogueContentCatalog.REGIONS[next_region].title if next_region < FoldlightRogueContentCatalog.REGIONS.size() else ""
+	_boss_clear_banner.present(str(_boss_clear_snapshot.get("title", "首领")), next_title)
+	audio_director.set_intensity(0.055)
+	audio_director.play_sfx(&"victory", 1.0, -4.0)
+
+
+func _on_boss_clear_continue() -> void:
+	if mode != SessionMode.RUN or run_controller.phase != FoldlightRogueRunController.Phase.BOSS_CLEAR or not _boss_clear_banner._confirmed:
+		return
+	_boss_clear_banner.dismiss()
+	run_controller.continue_after_boss()
+
+
+func _reset_boss_clear() -> void:
+	_boss_clear_snapshot.clear()
+	if is_instance_valid(_boss_clear_banner):
+		_boss_clear_banner.dismiss()
+
+
+func _restore_boss_clear() -> void:
+	# Reconstruct the cleared arena, not its encounter. The checkpoint already
+	# contains the room count and glimmer; neither may be granted twice.
+	var errors := world.load_room(player, StringName(current_room_node.get("id", &"")), WORLD_SIZE, _boss_terrain_layout(current_region_definition.content_id), current_region_definition.accent, run_controller.run_state.seed, current_region_definition.backdrop_style)
+	if not errors.is_empty():
+		push_error("RogueSession: cleared boss room failed: %s" % "; ".join(errors))
+		enter_title()
+		return
+	world.activate()
+	player.global_position = PLAYER_START
+	player.visible = true
+	world.camera.force_follow()
+	world.combat_runtime.apply_run_build(run_controller.run_state.upgrade_levels)
+	_equip_run_loadout()
+	player.health = clampi(run_controller.run_state.health, 1, player.max_health)
+	world.room_runtime.set_doors_locked(true)
+	_begin_boss_clear()
 
 
 func _on_reward_chosen(upgrade_id: StringName) -> void:
@@ -526,6 +598,9 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 	current_room_node = run_controller.get_current_room_node()
 	current_region_snapshot = run_controller.get_current_region_snapshot()
 	current_region_definition = FoldlightRogueContentCatalog.REGIONS[clampi(run_controller.run_state.current_region, 0, FoldlightRogueContentCatalog.REGIONS.size() - 1)]
+	if phase_hint == &"boss_clear":
+		_restore_boss_clear()
+		return
 	world.deactivate()
 	player.apply_roguelite_build(run_controller.run_state.upgrade_levels)
 	_equip_run_loadout()
@@ -553,6 +628,8 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 func _on_run_finished(result: Dictionary) -> void:
 	if mode != SessionMode.RUN:
 		return
+	var from_boss_clear := not _boss_clear_snapshot.is_empty()
+	_reset_boss_clear()
 	mode = SessionMode.RESULT
 	world.deactivate()
 	player.set_play_enabled(false)
@@ -564,9 +641,9 @@ func _on_run_finished(result: Dictionary) -> void:
 		_result_committed = true
 	presentation.show_result(completed)
 	audio_director.set_intensity(0.04)
-	if bool(completed.get("won", false)):
+	if bool(completed.get("won", false)) and not from_boss_clear:
 		audio_director.play_sfx(&"victory", 1.0, -2.0)
-	elif StringName(completed.get("reason", &"")) != &"lantern_extinguished":
+	elif not bool(completed.get("won", false)) and StringName(completed.get("reason", &"")) != &"lantern_extinguished":
 		# Fatal damage already plays hurt before fail_run emits this result.
 		audio_director.play_sfx(&"hurt", 1.0, -2.0)
 
@@ -690,6 +767,8 @@ func _refresh_hud() -> void:
 
 
 func _boss_hud_snapshot() -> Dictionary:
+	if not _boss_clear_snapshot.is_empty():
+		return _boss_clear_snapshot.duplicate(true)
 	for enemy in world.combat_runtime.enemies:
 		if enemy is FoldlightRogueBossActor and is_instance_valid(enemy):
 			var boss := enemy as FoldlightRogueBossActor
@@ -1125,7 +1204,7 @@ func _enter_modal_safety() -> void:
 
 
 func _pause_game() -> void:
-	if _paused or mode not in [SessionMode.RUN, SessionMode.PROLOGUE]:
+	if _paused or mode not in [SessionMode.RUN, SessionMode.PROLOGUE] or (mode == SessionMode.RUN and run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR):
 		return
 	_paused = true
 	_enter_modal_safety()

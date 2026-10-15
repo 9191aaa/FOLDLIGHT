@@ -75,6 +75,7 @@ try {
         'test_rogue_checkpoint_stages_3_0',
         'test_rogue_pressure_curve',
         'test_boss_fairness_4_0',
+        'test_boss_clear_transition',
         'test_weapon_volley_accuracy',
         'test_terrain_context_hint',
         'test_temporary_hazard_pause'
