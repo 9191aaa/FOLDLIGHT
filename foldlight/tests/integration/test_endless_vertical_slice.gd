@@ -42,6 +42,10 @@ func _run() -> void:
 	slice.controller._on_objective_completed({"completion_count": 1, "title": "测试任务"})
 	_check(slice._modal_kind == &"reward" and slice.modal_dim.visible, "mission completion opens a visible three-choice evolution")
 	_check(slice._modal_options.size() == 3, "mission evolution presents exactly three authored rewards")
+	for frame in 180:
+		if not slice.modal_buttons[0].disabled:
+			break
+		await create_timer(0.02).timeout
 	slice._activate_modal_choice(0)
 	_check(slice._modal_kind.is_empty() and slice.reward_toast.visible, "chosen mission evolution resumes play with explicit reward feedback")
 

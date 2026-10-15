@@ -73,6 +73,7 @@ func build(button_factory: Callable) -> void:
 	utility.add_child(settings)
 	var quit := _action(button_factory, "退出游戏", &"quit", "QuietButton", 52)
 	quit.custom_minimum_size.x = 130
+	quit.visible = not OS.has_feature("web")
 	utility.add_child(quit)
 	var breathing_space := Control.new()
 	breathing_space.custom_minimum_size.y = 24

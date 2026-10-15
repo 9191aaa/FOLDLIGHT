@@ -84,6 +84,14 @@ func reveal(delay: float = 0.0) -> void:
 	_refresh_attention()
 
 
+func set_selection_available(available: bool) -> void:
+	if _locked or _confirming:
+		return
+	disabled = not available
+	_action_label.text = "刻下折痕  →" if available else "细看折痕…"
+	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if available else Control.CURSOR_ARROW
+
+
 func confirm_selection() -> bool:
 	if _locked or _confirming or disabled or not is_visible_in_tree() or _content_id.is_empty():
 		return false

@@ -94,6 +94,10 @@ func _build_music_player() -> void:
 	_music_player = AudioStreamPlayer.new()
 	_music_player.name = "GeneratedMusic"
 	_music_player.bus = &"Music"
+	if OS.has_feature("web"):
+		# Web's default Sample backend cannot consume AudioStreamGenerator.
+		# Only the adaptive score needs Stream; pooled SFX keep Sample latency.
+		_music_player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 	add_child(_music_player)
 	var generator := AudioStreamGenerator.new()
 	generator.mix_rate = MIX_RATE

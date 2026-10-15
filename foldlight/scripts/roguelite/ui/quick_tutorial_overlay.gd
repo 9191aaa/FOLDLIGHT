@@ -104,7 +104,7 @@ func begin(prefer_gamepad: bool = false) -> void:
 	_transition.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	_transition.tween_property(self, "modulate:a", 1.0, transition_duration)
 	if manual_advance_enabled:
-		continue_button.call_deferred("grab_focus")
+		_focus_continue.call_deferred()
 
 
 ## Replaces the built-in copy while keeping the three-step limit.
@@ -184,7 +184,14 @@ func set_manual_advance_enabled(enabled: bool) -> void:
 	continue_button.focus_mode = Control.FOCUS_ALL if enabled else Control.FOCUS_NONE
 	skip_button.focus_mode = Control.FOCUS_ALL if enabled else Control.FOCUS_NONE
 	if enabled and visible:
-		continue_button.call_deferred("grab_focus")
+		_focus_continue.call_deferred()
+
+
+func _focus_continue() -> void:
+	if not is_inside_tree() or is_queued_for_deletion() or not is_visible_in_tree() or _finished or not manual_advance_enabled:
+		return
+	if is_instance_valid(continue_button) and continue_button.is_inside_tree() and not continue_button.is_queued_for_deletion() and continue_button.is_visible_in_tree() and not continue_button.disabled:
+		continue_button.grab_focus()
 
 
 func get_current_step() -> int:

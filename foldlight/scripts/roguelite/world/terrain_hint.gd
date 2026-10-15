@@ -25,9 +25,7 @@ var _panel: StyleBoxFlat
 func _ready() -> void:
 	# Hostile projectiles remain above the label; its anchor avoids the player.
 	z_index = 1
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Segoe UI", "Microsoft YaHei UI", "Noto Sans CJK SC"])
-	_font = font
+	_font = FoldlightTheme.body_font()
 	_panel = StyleBoxFlat.new()
 	_panel.bg_color = Color(Palette.INK, 0.90)
 	_panel.set_corner_radius_all(5)

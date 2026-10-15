@@ -12,6 +12,7 @@ const DASH_COOLDOWN := 2.0
 const MAX_LIVE_ENEMIES := 84
 const BASE_RETURN_DAMAGE := 2.8
 const BASE_RETURN_SPEED := 610.0
+const REWARD_INPUT_GUARD = preload("res://scripts/ui/reward_input_guard.gd")
 
 var run_ended: bool = false
 var _modal_kind: StringName = &""
@@ -23,6 +24,11 @@ var _damage_flash_remaining: float = 0.0
 var _hud_clock: float = 0.0
 var _objective_weapon_clock: float = 0.0
 var _transitioning_to_title: bool = false
+var _web_race_bridge: Node
+var _race_prepared: bool = false
+var _race_started: bool = false
+var _reward_input_guard: Node
+var _reward_entrance_tween: Tween
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var world: FoldlightRogueWorld = $RogueWorld
@@ -48,6 +54,7 @@ var _transitioning_to_title: bool = false
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_apply_shared_theme()
+	_setup_reward_input()
 	controller.enemy_wave_requested.connect(_on_enemy_wave_requested)
 	controller.player_evolution_changed.connect(_on_player_evolution_changed)
 	controller.mission_reward_offered.connect(_on_mission_reward_offered)
@@ -58,10 +65,90 @@ func _ready() -> void:
 	for index in modal_buttons.size():
 		modal_buttons[index].pressed.connect(_activate_modal_choice.bind(index))
 		modal_buttons[index].focus_entered.connect(_on_modal_button_focused.bind(index))
-	call_deferred("start_slice")
+	call_deferred("_start_initial_slice")
+
+
+func _start_initial_slice() -> void:
+	var bridge := get_node_or_null("/root/WebRaceBridge")
+	if bridge != null and bool(bridge.call("is_web_session")):
+		if bool(bridge.call("is_race_session")):
+			prepare_web_race(bridge)
+		else:
+			start_slice(int(bridge.call("get_run_seed")))
+	else:
+		start_slice()
+
+
+func prepare_web_race(bridge: Node) -> bool:
+	if _race_prepared:
+		return false
+	_web_race_bridge = bridge
+	var snapshot := start_slice(int(bridge.call("get_run_seed")))
+	_race_prepared = true
+	_modal_kind = &"race_waiting"
+	_set_combat_suspended(true)
+	modal_title.text = "好友无尽 · 等待出发"
+	modal_body.text = "双方准备完成后，由网页统一倒计时。\n同一种子、相同基础机体；按有效战斗时间比较。"
+	for button in modal_buttons:
+		button.hide()
+	modal_dim.show()
+	_refresh_hud()
+	if snapshot.has("errors"):
+		bridge.call("finish_local", &"abandoned", "scene_load_failed")
+		return false
+	return bool(bridge.call("bind_runtime", self))
+
+
+func begin_web_race() -> void:
+	if not _race_prepared or _race_started or run_ended:
+		return
+	_race_started = true
+	_modal_kind = &""
+	modal_dim.hide()
+	combat_runtime.set_active(true)
+	player.set_play_enabled(true)
+	_refresh_hud()
+
+
+func stop_web_race(reason: String) -> void:
+	_cancel_reward_entry()
+	run_ended = true
+	player.set_play_enabled(false)
+	combat_runtime.set_active(false)
+	controller.exit_mode(StringName(reason))
+	_modal_kind = &"race_finished"
+	_modal_options.clear()
+	modal_title.text = "灯火熄灭" if reason == "player_defeated" else "好友对局已结束"
+	modal_body.text = "有效航行 %s · 击破 %d\n请在网页房间查看成绩。本局不能重新开始。" % [_format_time(controller.evolution.survival_seconds), controller.defeated_total]
+	for button in modal_buttons:
+		button.hide()
+	modal_dim.show()
+
+
+func get_race_stats() -> Dictionary:
+	var pause_reason := ""
+	if run_ended:
+		pause_reason = "finished"
+	elif not _race_started and _web_race_bridge != null:
+		pause_reason = "waiting"
+	elif _modal_kind == &"reward":
+		pause_reason = "reward"
+	elif not _modal_kind.is_empty():
+		pause_reason = "manual"
+	return {
+		"survivalMs": int(floor(controller.evolution.survival_seconds * 1000.0)),
+		"kills": controller.defeated_total,
+		"health": player.health,
+		"maxHealth": player.max_health,
+		"paused": not pause_reason.is_empty(),
+		"pauseReason": pause_reason,
+	}
 
 
 func start_slice(seed: int = 20260728) -> Dictionary:
+	if _web_race_bridge != null and _race_prepared:
+		return {"errors": ["race_attempt_cannot_restart"]}
+	_cancel_reward_entry()
 	if controller.active:
 		controller.exit_mode(&"restart")
 	world.deactivate()
@@ -151,8 +238,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _pause_game() -> void:
+	if _web_race_bridge != null:
+		reward_toast_label.text = "好友竞赛不能手动暂停；奖励选择不计时。弃赛请使用网页房间。"
+		_toast_remaining = 2.8
+		reward_toast.show()
+		return
 	if run_ended or not _modal_kind.is_empty() or not controller.active:
 		return
+	_cancel_reward_entry()
 	_modal_kind = &"pause"
 	_modal_selected = 0
 	modal_title.text = "暂泊纸海"
@@ -176,6 +269,10 @@ func _resume_game() -> void:
 
 
 func _return_to_title() -> void:
+	_cancel_reward_entry()
+	if _web_race_bridge != null:
+		_web_race_bridge.call("finish_local", &"abandoned", "abandoned")
+		return
 	if _transitioning_to_title:
 		return
 	_transitioning_to_title = true
@@ -253,7 +350,12 @@ func _on_mission_reward_offered(options: Array[Dictionary], objective_snapshot: 
 			]
 	modal_dim.show()
 	_set_combat_suspended(true)
-	_update_modal_focus()
+	_reward_input_guard.begin(modal_dim)
+	if _reward_entrance_tween != null and _reward_entrance_tween.is_valid():
+		_reward_entrance_tween.kill()
+	modal_dim.modulate.a = 0.0
+	_reward_entrance_tween = create_tween()
+	_reward_entrance_tween.tween_property(modal_dim, "modulate:a", 1.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _on_mission_reward_claimed(reward: Dictionary) -> void:
@@ -272,6 +374,8 @@ func _on_mission_reward_claimed(reward: Dictionary) -> void:
 
 
 func _move_modal_selection(direction: int) -> void:
+	if _modal_kind == &"reward" and not _reward_input_guard.can_select():
+		return
 	var visible_count := 0
 	for button in modal_buttons:
 		if button.visible:
@@ -283,7 +387,7 @@ func _move_modal_selection(direction: int) -> void:
 
 
 func _update_modal_focus() -> void:
-	if _modal_selected >= 0 and _modal_selected < modal_buttons.size() and modal_buttons[_modal_selected].visible:
+	if _modal_selected >= 0 and _modal_selected < modal_buttons.size() and modal_buttons[_modal_selected].visible and not modal_buttons[_modal_selected].disabled:
 		modal_buttons[_modal_selected].grab_focus()
 
 
@@ -298,10 +402,13 @@ func _activate_modal_choice(index: int) -> void:
 		elif index == 1:
 			_return_to_title()
 	elif _modal_kind == &"reward":
-		if index < 0 or index >= _modal_options.size():
+		if not _reward_input_guard.can_select() or index < 0 or index >= _modal_options.size():
 			return
+		# Lock before the controller emits synchronous reward signals.
+		_reward_input_guard.cancel()
 		var reward_id := StringName(_modal_options[index].get("id", &""))
 		if controller.claim_mission_reward(reward_id).is_empty():
+			_reward_input_guard.begin(modal_dim)
 			return
 		_modal_kind = &""
 		_modal_options.clear()
@@ -314,13 +421,52 @@ func _activate_modal_choice(index: int) -> void:
 			_return_to_title()
 
 
+func _setup_reward_input() -> void:
+	_reward_input_guard = REWARD_INPUT_GUARD.new()
+	_reward_input_guard.name = "RewardInputGuard"
+	add_child(_reward_input_guard)
+	_reward_input_guard.state_changed.connect(_on_reward_input_state_changed)
+	modal_dim.visibility_changed.connect(_on_reward_visibility_changed)
+
+
+func _on_reward_input_state_changed() -> void:
+	if _modal_kind != &"reward":
+		return
+	var available: bool = _reward_input_guard.can_select()
+	for button in modal_buttons:
+		button.disabled = not available
+	($HUD/ModalDim/ModalPanel/ModalHint as Label).text = "方向键 / WASD 选择    空格 / A 确认" if available else _reward_input_guard.get_hint()
+	if available:
+		_update_modal_focus()
+
+
+func _cancel_reward_entry() -> void:
+	if _reward_input_guard != null:
+		_reward_input_guard.cancel()
+	if _reward_entrance_tween != null and _reward_entrance_tween.is_valid():
+		_reward_entrance_tween.kill()
+	modal_dim.modulate = Color.WHITE
+	for button in modal_buttons:
+		button.disabled = false
+	($HUD/ModalDim/ModalPanel/ModalHint as Label).text = "方向键 / WASD 选择    空格 / A 确认"
+
+
+func _on_reward_visibility_changed() -> void:
+	if not modal_dim.is_visible_in_tree():
+		_cancel_reward_entry()
+
+
 func _finish_run() -> void:
+	_cancel_reward_entry()
 	if run_ended:
 		return
 	run_ended = true
 	player.set_play_enabled(false)
 	combat_runtime.set_active(false)
 	controller.exit_mode(&"player_defeated")
+	if _web_race_bridge != null:
+		_web_race_bridge.call("finish_local", &"dead", "player_defeated")
+		return
 	_modal_kind = &"game_over"
 	_modal_options.clear()
 	_modal_selected = 0
@@ -424,6 +570,8 @@ func _refresh_hud() -> void:
 		int(ceil(float(objective.get("time_remaining", 0.0)))),
 	]
 	help_label.text = "左摇杆移动    A 折域    B 冲刺    X 主动道具    Start 暂停" if not Input.get_connected_joypads().is_empty() else "WASD / 方向键移动    空格折域    Shift 冲刺    Q 主动道具    Esc 暂停"
+	if _web_race_bridge != null:
+		help_label.text = "好友竞赛 · 同一种子 / 基础机体    奖励选择不计时    竞赛不可手动暂停    弃赛请使用网页房间"
 
 
 func _apply_shared_theme() -> void:

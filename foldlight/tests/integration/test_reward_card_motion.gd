@@ -36,6 +36,7 @@ func _run() -> void:
 	_check(float(first.get_presentation_snapshot()["reveal"]) > float(third.get_presentation_snapshot()["reveal"]), "reward cards enter in a staggered sequence")
 	await create_timer(0.46).timeout
 	_check(is_equal_approx(float(third.get_presentation_snapshot()["reveal"]), 1.0), "all reward cards finish their entrance")
+	await _wait_for_selection(ui)
 	second.grab_focus()
 	await create_timer(0.22).timeout
 	_check(float(second.get_presentation_snapshot()["attention"]) > 0.99 and float(first.get_presentation_snapshot()["attention"]) < 0.01, "controller focus transfers the lifted highlight")
@@ -53,24 +54,25 @@ func _run() -> void:
 	_check(_chosen == [&"tiny_silhouette"], "rapid repeated and cross-card presses apply exactly one reward")
 
 	ui.show_reward(choices, "下一道折痕")
-	await process_frame
+	await _wait_for_selection(ui)
 	second.pressed.emit()
 	ui.show_title({"prologue_complete": true})
 	await create_timer(0.28).timeout
 	_check(_chosen.size() == 1 and not second.is_processing(), "leaving the reward screen cancels pending confirmation and ambient animation")
 
 	ui.show_reward(choices, "重新选择")
-	await process_frame
+	await _wait_for_selection(ui)
 	third.pressed.emit()
 	ui.show_reward([choices[1]], "替换选择")
 	await create_timer(0.28).timeout
 	_check(_chosen.size() == 1, "replacing a draft cancels the previous pending reward")
+	await _wait_for_selection(ui)
 	_check(not second.visible and not third.visible and not first.disabled, "a new draft resets locking and hides unused cards")
 	first.pressed.emit()
 	await create_timer(0.28).timeout
 	_check(_chosen == [&"tiny_silhouette", &"double_step"], "the following reward stage remains independently selectable")
 	ui.show_reward(choices, "隐藏界面")
-	await process_frame
+	await _wait_for_selection(ui)
 	first.pressed.emit()
 	ui.hide()
 	await create_timer(0.28).timeout
@@ -100,6 +102,13 @@ func _run() -> void:
 	ui.queue_free()
 	await process_frame
 	_finish()
+
+
+func _wait_for_selection(ui: FoldlightRoguePresentation) -> void:
+	for frame in 180:
+		if not ui._reward_buttons[0].disabled:
+			return
+		await create_timer(0.02).timeout
 
 
 func _check(condition: bool, description: String) -> void:

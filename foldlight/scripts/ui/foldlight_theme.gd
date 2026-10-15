@@ -11,14 +11,13 @@ const MUTED := Color("91a6a7")
 const FOLD := Color("77d5c6")
 const GOLD := Color("d7af70")
 const DANGER := Color("e08072")
+const WEB_FONT: FontFile = preload("res://assets/fonts/FoldlightSansSC.woff2")
 
 
 static func build() -> Theme:
 	var result := Theme.new()
 	result.default_font_size = 22
-	var body := SystemFont.new()
-	body.font_names = PackedStringArray(["Segoe UI", "Microsoft YaHei UI", "Noto Sans CJK SC"])
-	result.default_font = body
+	result.default_font = body_font()
 	result.set_color("font_color", "Label", PAPER)
 	result.set_color("font_color", "Button", PAPER)
 	result.set_color("font_hover_color", "Button", PAPER)
@@ -60,7 +59,19 @@ static func build() -> Theme:
 	return result
 
 
+static func body_font() -> Font:
+	# Browsers cannot enumerate or load installed system fonts. Ship Chinese
+	# glyphs with the game while retaining the existing native desktop face.
+	if OS.has_feature("web"):
+		return WEB_FONT
+	var body := SystemFont.new()
+	body.font_names = PackedStringArray(["Segoe UI", "Microsoft YaHei UI", "Noto Sans CJK SC"])
+	return body
+
+
 static func display_font() -> Font:
+	if OS.has_feature("web"):
+		return WEB_FONT
 	var face := SystemFont.new()
 	face.font_names = PackedStringArray(["Bahnschrift", "Aptos Display", "Segoe UI"])
 	face.font_weight = 300

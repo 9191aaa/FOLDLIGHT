@@ -26,6 +26,7 @@ const MUTED := FoldlightRogueUITheme.MUTED
 const SURFACE := FoldlightRogueUITheme.SURFACE
 const SHARED_THEME = preload("res://scripts/ui/foldlight_theme.gd")
 const REWARD_CARD = preload("res://scripts/roguelite/ui/reward_card.gd")
+const REWARD_INPUT_GUARD = preload("res://scripts/ui/reward_input_guard.gd")
 const TITLE_SCREEN = preload("res://scripts/roguelite/ui/rogue_title_screen.gd")
 const QUICK_TUTORIAL_SCENE: PackedScene = preload("res://scenes/roguelite/ui/quick_tutorial_overlay.tscn")
 const MECHANIC_PREVIEW_SCENE := preload("res://scripts/roguelite/ui/mechanic_preview_canvas.gd")
@@ -35,6 +36,7 @@ var screen_kind: StringName = &"title"
 var _screens: Dictionary = {}
 var _focus_groups: Dictionary = {}
 var _focus_index: int = 0
+var _focus_request_revision: int = 0
 var _mechanic_remaining: float = 0.0
 var _title_screen: Control
 var _title_primary: Button
@@ -80,6 +82,8 @@ var _mechanic_intro_attack_caption: Label
 var _pause_browse_status: Label
 var _browse_mode_enabled: bool = false
 var _reward_title: Label
+var _reward_hint: Label
+var _reward_input_guard: Node
 var _reward_buttons: Array[Button] = []
 var _reward_content: Array[Dictionary] = []
 var _reward_selection_locked: bool = false
@@ -127,6 +131,8 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or not event.is_pressed() or event.is_echo():
+		return
+	if screen_kind == &"reward" and not _reward_input_guard.can_select():
 		return
 	if screen_kind == &"settings" and (event.is_action_pressed(&"move_left") or event.is_action_pressed(&"move_right")):
 		var owner := get_viewport().gui_get_focus_owner()
@@ -266,8 +272,10 @@ func show_reward(choices: Array[Dictionary], room_title: String) -> void:
 		choice["display_rarity"] = rarity_text
 		button.show()
 		button.configure(choice, index)
+		button.set_selection_available(false)
 		button.reveal(float(index) * 0.085)
-	_set_focus_group(_visible_buttons(_reward_buttons))
+	_set_focus_group([])
+	_reward_input_guard.begin(_screens[&"reward"])
 
 
 func show_route(region_snapshot: Dictionary, current_id: StringName, exits: Array[String]) -> void:
@@ -668,9 +676,13 @@ func _build_reward() -> void:
 		button.focus_entered.connect(_on_reward_focused.bind(button))
 		_reward_buttons.append(button)
 		_reward_content.append({"title": button.title_label, "description": button.description_label, "rarity": button.rarity_label, "level": button.level_label})
-	var hint := _label(_t(&"ROGUE_REWARD_HINT", "左右选择   ·   空格 / A 刻下折痕"), 18, MUTED)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stack.add_child(hint)
+	_reward_hint = _label("", 18, MUTED)
+	_reward_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(_reward_hint)
+	_reward_input_guard = REWARD_INPUT_GUARD.new()
+	_reward_input_guard.name = "RewardInputGuard"
+	add_child(_reward_input_guard)
+	_reward_input_guard.state_changed.connect(_on_reward_input_state_changed)
 
 
 func _build_route() -> void:
@@ -1046,8 +1058,23 @@ func _show_only(kind: StringName) -> void:
 func _set_focus_group(group: Array) -> void:
 	_focus_groups[&"active"] = group
 	_focus_index = 0
+	_focus_request_revision += 1
 	if not group.is_empty() and group[0] is Control:
-		(group[0] as Control).call_deferred("grab_focus")
+		_focus_current_control.call_deferred(weakref(group[0]), _focus_request_revision)
+
+
+func _focus_current_control(reference: WeakRef, revision: int) -> void:
+	# A scene change removes the old UI before its deferred calls are drained.
+	# Also reject requests superseded by another screen in the same frame.
+	if revision != _focus_request_revision or not is_inside_tree() or is_queued_for_deletion() or not visible:
+		return
+	var target := reference.get_ref() as Control
+	if target == null or not target.is_inside_tree() or target.is_queued_for_deletion() or not target.is_visible_in_tree():
+		return
+	if target is BaseButton and target.disabled:
+		return
+	if (_focus_groups.get(&"active", []) as Array).has(target):
+		target.grab_focus()
 
 
 func _move_focus(direction: int) -> void:
@@ -1077,7 +1104,7 @@ func _visible_buttons(source: Variant) -> Array:
 
 
 func _on_reward_pressed(button: Button) -> void:
-	if screen_kind != &"reward" or _reward_selection_locked or button.disabled or not button.is_visible_in_tree():
+	if screen_kind != &"reward" or _reward_selection_locked or not _reward_input_guard.can_select() or button.disabled or not button.is_visible_in_tree():
 		return
 	if not button.confirm_selection():
 		return
@@ -1086,6 +1113,7 @@ func _on_reward_pressed(button: Button) -> void:
 	for card in _reward_buttons:
 		card.lock_choice(card == button)
 	_set_focus_group([])
+	_reward_hint.text = "折痕已刻下"
 	audio_director.play_sfx(&"act", 1.08, -3.0)
 
 
@@ -1100,8 +1128,20 @@ func _on_reward_confirmed(upgrade_id: StringName) -> void:
 func _cancel_reward_motion() -> void:
 	_reward_selection_locked = true
 	_pending_reward_id = &""
+	_reward_input_guard.cancel()
 	for card in _reward_buttons:
 		card.cancel_motion()
+
+
+func _on_reward_input_state_changed() -> void:
+	if screen_kind != &"reward" or _reward_selection_locked:
+		return
+	var available: bool = _reward_input_guard.can_select()
+	for card in _reward_buttons:
+		card.set_selection_available(available)
+	_reward_hint.text = _t(&"ROGUE_REWARD_HINT", "左右选择   ·   空格 / A 刻下折痕") if available else _reward_input_guard.get_hint()
+	if available:
+		_set_focus_group(_visible_buttons(_reward_buttons))
 
 
 func _on_reward_focused(button: Button) -> void:

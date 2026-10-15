@@ -29,13 +29,13 @@ func _run() -> void:
 	slice.set_physics_process(false)
 
 	_test_rotation_determinism_and_card_copy(slice)
-	_test_surge_return_effect(slice)
-	_test_wide_fold_effect(slice)
-	_test_steady_lantern_effect(slice)
-	_test_crosswind_real_pierce(slice)
-	_test_kinetic_paper_effect(slice)
-	_test_clear_current_real_fold_mobility(slice)
-	_test_reward_modal_freezes_combat(slice)
+	await _test_surge_return_effect(slice)
+	await _test_wide_fold_effect(slice)
+	await _test_steady_lantern_effect(slice)
+	await _test_crosswind_real_pierce(slice)
+	await _test_kinetic_paper_effect(slice)
+	await _test_clear_current_real_fold_mobility(slice)
+	await _test_reward_modal_freezes_combat(slice)
 	_test_restart_resets_mission_rewards(slice)
 	_test_absorb_return_chain(slice)
 
@@ -85,7 +85,7 @@ func _test_surge_return_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39010)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 0, &"surge_return"), "surge_return can be chosen from the power lane")
+	_check(await _offer_and_choose(slice, 0, &"surge_return"), "surge_return can be chosen from the power lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("return_damage", 0.0)) > float(before.get("return_damage", INF)), "surge_return increases live return-light damage")
 	_check(float(after.get("return_speed", 0.0)) > float(before.get("return_speed", INF)), "surge_return increases live return-light speed")
@@ -103,7 +103,7 @@ func _test_wide_fold_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39020)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 0, &"wide_fold"), "wide_fold can be chosen from the fold-mobility lane")
+	_check(await _offer_and_choose(slice, 0, &"wide_fold"), "wide_fold can be chosen from the fold-mobility lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("fold_radius", 0.0)) > float(before.get("fold_radius", INF)), "wide_fold expands the live fold radius")
 	_check(int(after.get("capture_capacity", 0)) == int(before.get("capture_capacity", 0)) + 1, "wide_fold adds one real capture slot")
@@ -121,7 +121,7 @@ func _test_steady_lantern_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	var health_before := slice.player.health
 	var maximum_before := slice.player.max_health
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 0, &"steady_lantern"), "steady_lantern can be chosen from the sustain lane")
+	_check(await _offer_and_choose(slice, 0, &"steady_lantern"), "steady_lantern can be chosen from the sustain lane")
 	_check(slice.player.max_health == maximum_before + 1, "steady_lantern raises the real maximum health by one")
 	_check(slice.player.health == health_before + 1, "steady_lantern immediately heals one real health")
 	_check(_isolation_unchanged(slice, isolation), "steady_lantern does not advance waves, absorption, or Profile")
@@ -141,7 +141,7 @@ func _test_crosswind_real_pierce(slice: FoldlightEndlessSliceRuntime) -> void:
 	targets = _spawn_test_enemies(slice, [210.0, 430.0], 10.0)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 1, &"crosswind"), "crosswind can be chosen from the power lane")
+	_check(await _offer_and_choose(slice, 1, &"crosswind"), "crosswind can be chosen from the power lane")
 	var after := slice.get_effective_combat_stats()
 	_check(int(after.get("weapon_pierce", 0)) == int(before.get("weapon_pierce", 0)) + 1, "crosswind grants one live automatic-weapon pierce")
 	_check(float(after.get("auto_fire_interval", INF)) < float(before.get("auto_fire_interval", 0.0)), "crosswind shortens the live automatic-fire interval")
@@ -161,7 +161,7 @@ func _test_kinetic_paper_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39050)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 1, &"kinetic_paper"), "kinetic_paper can be chosen from the fold-mobility lane")
+	_check(await _offer_and_choose(slice, 1, &"kinetic_paper"), "kinetic_paper can be chosen from the fold-mobility lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("move_speed", 0.0)) > float(before.get("move_speed", INF)), "kinetic_paper raises live movement speed")
 	_check(float(after.get("dash_cooldown", INF)) < float(before.get("dash_cooldown", 0.0)), "kinetic_paper lowers live dash cooldown")
@@ -175,7 +175,7 @@ func _test_clear_current_real_fold_mobility(slice: FoldlightEndlessSliceRuntime)
 	_prepare_effect_case(slice, 39060)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 1, &"clear_current"), "clear_current can be chosen from the sustain lane")
+	_check(await _offer_and_choose(slice, 1, &"clear_current"), "clear_current can be chosen from the sustain lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("fold_move_speed", 0.0)) > float(before.get("fold_move_speed", INF)), "clear_current increases the live expanded-fold movement speed")
 	_check(float(after.get("damage_grace", 0.0)) > float(before.get("damage_grace", INF)), "clear_current increases live post-hit protection")
@@ -218,6 +218,7 @@ func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> v
 	_check(slice.combat_runtime.projectiles.size() == 1 and hostile.global_position == projectile_position and is_equal_approx(hostile.lifetime, projectile_lifetime), "an open reward modal freezes hostile position and lifetime")
 	_check(targets[0].get_combat_snapshot() == enemy_before, "an open reward modal freezes the shared enemy state")
 
+	await _wait_for_reward_input(slice)
 	slice._activate_modal_choice(0)
 	_check(slice._modal_kind.is_empty() and not slice.modal_dim.visible, "choosing a reward closes the blocking modal")
 	_check(slice.player.play_enabled and slice.combat_runtime.active and slice.player.invulnerability >= 0.75, "selection restores shared combat with the overlay safety window")
@@ -339,12 +340,20 @@ func _place_projectile_on_target(slice: FoldlightEndlessSliceRuntime, projectile
 
 func _offer_and_choose(slice: FoldlightEndlessSliceRuntime, completion_index: int, reward_id: StringName) -> bool:
 	slice.controller._on_objective_completed({"completion_count": completion_index + 1, "title": "奖励契约"})
+	await _wait_for_reward_input(slice)
 	var options := slice.controller.get_pending_mission_rewards()
 	for index in options.size():
 		if StringName(options[index].get("id", &"")) == reward_id:
 			slice._activate_modal_choice(index)
 			return int((slice.controller.evolution.get_mission_snapshot().get("reward_levels", {}) as Dictionary).get(reward_id, 0)) == 1
 	return false
+
+
+func _wait_for_reward_input(slice: FoldlightEndlessSliceRuntime) -> void:
+	for frame in 180:
+		if not slice.modal_buttons[0].disabled:
+			return
+		await create_timer(0.02).timeout
 
 
 func _capture_isolation_snapshot(slice: FoldlightEndlessSliceRuntime) -> Dictionary:

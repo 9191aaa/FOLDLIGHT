@@ -19,6 +19,9 @@ var _steam: Object
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	if OS.has_feature("web"):
+		# Procedural world labels draw with ThemeDB directly, outside UI themes.
+		ThemeDB.fallback_font = FoldlightTheme.body_font()
 	steam_available = Engine.has_singleton("Steam")
 	if steam_available:
 		_steam = Engine.get_singleton("Steam")

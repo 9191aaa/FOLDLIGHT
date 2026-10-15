@@ -20,6 +20,7 @@ boot_splash/show_image=false
 
 [autoload]
 
+WebRaceBridge="*res://scripts/autoloads/web_race_bridge.gd"
 ProfileManager="*res://scripts/autoloads/profile_manager.gd"
 PlatformBridge="*res://scripts/autoloads/platform_bridge.gd"
 AudioDirector="*res://scripts/audio_director.gd"
@@ -121,6 +122,10 @@ open_tutorial={
 , Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"button_index":9,"pressure":0.0,"pressed":false,"script":null)
 ]
 }
+
+[gui]
+
+theme/custom_font.web="res://assets/fonts/FoldlightSansSC.woff2"
 
 [internationalization]
 

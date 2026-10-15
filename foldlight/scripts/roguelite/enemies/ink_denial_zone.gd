@@ -30,9 +30,7 @@ func _ready() -> void:
 	z_index = -4
 	body_entered.connect(_on_body_entered)
 	body_exited.connect(_on_body_exited)
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Segoe UI", "Microsoft YaHei UI", "Noto Sans CJK SC"])
-	_font = font
+	_font = FoldlightTheme.body_font()
 	_label_width = _font.get_string_size(EFFECT_LABEL, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
 	_label_panel = StyleBoxFlat.new()
 	_label_panel.bg_color = Color(BIND_SHADOW, 0.78)
