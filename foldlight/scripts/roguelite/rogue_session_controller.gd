@@ -567,6 +567,14 @@ func _on_reward_chosen(upgrade_id: StringName) -> void:
 func _route_view_snapshot() -> Dictionary:
 	var snapshot := current_region_snapshot.duplicate(true)
 	snapshot["cleared_node_ids"] = run_controller.run_state.cleared_node_ids.duplicate()
+	var state := run_controller.run_state
+	snapshot["context"] = {
+		"health": state.health, "max_health": state.max_health, "glimmer": state.glimmer,
+		"room_count": state.room_count, "elapsed": state.elapsed,
+		"active_item_id": String(state.active_item_id),
+		"region_count": FoldlightRogueContentCatalog.REGIONS.size(),
+		"motion_scale": float(profile_manager.get_setting(&"screen_shake", 1.0)),
+	}
 	return snapshot
 
 

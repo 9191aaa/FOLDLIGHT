@@ -46,6 +46,7 @@ func configure_room(new_room_id: StringName, world_size: Vector2, placements: Ar
 	room_id = new_room_id
 	room_bounds = Rect2(Vector2.ZERO, world_size)
 	backdrop.configure(room_id, world_size, accent, backdrop_style)
+	backdrop.configure_ground(placements)
 	_clear_terrain()
 	_clear_doors()
 	_clear_beacons()
@@ -157,6 +158,7 @@ func validate_layout(world_size: Vector2, placements: Array[Dictionary]) -> Arra
 
 
 func bind_player(player: FoldlightPlayer) -> void:
+	backdrop.bind_observer(player)
 	player.play_bounds = room_bounds.grow(-WALL_MARGIN)
 	encounter_runtime.set_spawn_safety(player, room_bounds.grow(-80.0), get_solid_terrain_bounds(22.0))
 	for piece in get_terrain_pieces():

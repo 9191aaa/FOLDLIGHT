@@ -70,6 +70,7 @@ try {
         'test_endless_mission_reward_lanes_3_9',
         'test_endless_2_0_runtime_reuse',
         'test_interactive_route_atlas',
+        'test_route_destination_context',
         'test_reward_card_motion',
         'test_tide_beacon_exploration',
         'test_rogue_checkpoint_stages_3_0',

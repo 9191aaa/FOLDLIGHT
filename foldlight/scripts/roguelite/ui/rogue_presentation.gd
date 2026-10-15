@@ -31,6 +31,7 @@ const TITLE_SCREEN = preload("res://scripts/roguelite/ui/rogue_title_screen.gd")
 const QUICK_TUTORIAL_SCENE: PackedScene = preload("res://scenes/roguelite/ui/quick_tutorial_overlay.tscn")
 const MECHANIC_PREVIEW_SCENE := preload("res://scripts/roguelite/ui/mechanic_preview_canvas.gd")
 const ROUTE_ATLAS := preload("res://scripts/roguelite/ui/route_atlas.gd")
+const ROUTE_PANEL := preload("res://scripts/roguelite/ui/route_destination_panel.gd")
 
 var screen_kind: StringName = &"title"
 var _screens: Dictionary = {}
@@ -96,6 +97,11 @@ var _route_preview_body: Label
 var _route_nodes: Dictionary = {}
 var _route_allowed: Array[String] = []
 var _route_pending: bool = false
+var _route_panel: Control
+var _route_context: Dictionary = {}
+var _route_progress: Label
+var _route_hint: Label
+var _route_input_guard: Node
 var _result_title: Label
 var _result_body: Label
 var _settings_return: StringName = &"title"
@@ -282,10 +288,13 @@ func show_route(region_snapshot: Dictionary, current_id: StringName, exits: Arra
 	_show_only(&"route")
 	_route_pending = false
 	_route_allowed = exits.duplicate()
+	_route_context = (region_snapshot.get("context", {}) as Dictionary).duplicate(true)
 	var region_accent := _region_accent(StringName(region_snapshot.get("id", &"")))
 	visual_canvas.configure(&"route", region_accent)
 	_route_atlas.configure(region_snapshot, current_id, exits)
 	_route_title.text = str(region_snapshot.get("title", "无名海域"))
+	var journey: Dictionary = _route_atlas.get_journey_snapshot()
+	_route_progress.text = "海域 %d / %d   ·   第 %d / %d 折点   ·   距终潮 %d 航段" % [int(region_snapshot.get("index", 0)) + 1, int(_route_context.get("region_count", 3)), int(journey["current_step"]), int(journey["total_steps"]), int(journey["remaining_steps"])]
 	_route_nodes.clear()
 	for node_variant: Variant in region_snapshot.get("nodes", []):
 		if node_variant is Dictionary:
@@ -298,10 +307,13 @@ func show_route(region_snapshot: Dictionary, current_id: StringName, exits: Arra
 		var destination_id := exits[index]
 		var node: Dictionary = _route_nodes.get(destination_id, {})
 		button.show()
+		button.disabled = true
 		button.set_meta("destination_id", StringName(destination_id))
-		button.text = "前往%s\n%s" % [_category_title(StringName(node.get("category", &"combat"))), _risk_title(int(node.get("risk", 1)))]
-	_set_focus_group(_visible_buttons(_route_buttons))
+		var preview: Dictionary = _route_atlas.get_node_preview(StringName(destination_id))
+		button.text = "前往%s  →\n%s · %s" % [_category_title(StringName(node.get("category", &"combat"))), _risk_title(int(node.get("risk", 1))), str(preview.get("pressure", "敌潮"))]
+	_set_focus_group([])
 	_preview_route_node(StringName(exits[0]) if not exits.is_empty() else current_id)
+	_route_input_guard.begin(_screens[&"route"])
 
 
 func show_result(result: Dictionary, prologue: bool = false) -> void:
@@ -687,27 +699,29 @@ func _build_reward() -> void:
 
 func _build_route() -> void:
 	var screen := _new_screen(&"route")
-	var margin := _full_margin(screen, 56, 42, 56, 36)
+	var margin := _full_margin(screen, 48, 34, 48, 30)
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 20)
 	margin.add_child(stack)
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 16)
+	header.add_theme_constant_override("separation", 12)
 	stack.add_child(header)
 	var heading := VBoxContainer.new()
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(heading)
-	heading.add_child(_label("纸海航图  /  CHART OF THE TIDES", 18, FOLD))
-	_route_title = _label("", 38, PAPER)
+	heading.add_child(_label("纸海航图  /  下一段航程", 17, FOLD))
+	_route_title = _label("", 36, PAPER)
 	heading.add_child(_route_title)
+	_route_progress = _label("", 18, MUTED)
+	heading.add_child(_route_progress)
 	_route_atlas = ROUTE_ATLAS.new()
 	_route_atlas.name = "RouteAtlas"
 	_route_atlas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_route_atlas.custom_minimum_size.y = 460
 	_route_atlas.node_selected.connect(_on_atlas_node_selected)
-	for control_name in ["−", "+", "航图全览"]:
+	for control_name in ["−", "+", "前方航路", "航图全览"]:
 		var action := _button(control_name, 52)
-		action.custom_minimum_size.x = 60 if control_name != "航图全览" else 200
+		action.custom_minimum_size.x = 56 if control_name in ["−", "+"] else 152
 		action.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		action.focus_mode = Control.FOCUS_NONE
 		action.theme_type_variation = &"QuietButton"
@@ -715,53 +729,90 @@ func _build_route() -> void:
 			action.pressed.connect(func() -> void: _route_atlas.zoom_by(1.0 / 1.18))
 		elif control_name == "+":
 			action.pressed.connect(func() -> void: _route_atlas.zoom_by(1.18))
+		elif control_name == "前方航路":
+			action.pressed.connect(func() -> void: _route_atlas.focus_ahead())
 		else:
 			action.pressed.connect(func() -> void: _route_atlas.recenter())
 		header.add_child(action)
-	stack.add_child(_route_atlas)
-	var legend := HBoxContainer.new()
-	stack.add_child(legend)
-	var guide := _label("拖拽探索  ·  滚轮缩放  ·  点击折岛查看", 18, MUTED)
-	guide.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	legend.add_child(guide)
-	legend.add_child(_label("青光  可前往     金光  终潮     微光  远方", 18, MUTED))
-	var footer := HBoxContainer.new()
-	footer.custom_minimum_size.y = 142
-	footer.add_theme_constant_override("separation", 32)
-	stack.add_child(footer)
-	var preview := VBoxContainer.new()
-	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	preview.add_theme_constant_override("separation", 10)
-	footer.add_child(preview)
-	_route_preview_title = _label("", 27, PAPER)
-	preview.add_child(_route_preview_title)
-	_route_preview_body = _label("", 20, MUTED)
-	_route_preview_body.custom_minimum_size.x = 420
-	_route_preview_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	preview.add_child(_route_preview_body)
-	var choices := HBoxContainer.new()
-	choices.alignment = BoxContainer.ALIGNMENT_CENTER
-	choices.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	choices.add_theme_constant_override("separation", 18)
-	footer.add_child(choices)
+	var content := HBoxContainer.new()
+	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 28)
+	stack.add_child(content)
+	var chart_column := VBoxContainer.new()
+	chart_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chart_column.add_theme_constant_override("separation", 10)
+	content.add_child(chart_column)
+	chart_column.add_child(_route_atlas)
+	chart_column.add_child(_label("拖拽阅图  ·  滚轮缩放  ·  点选折岛或下方航迹，仅查看目的地", 16, MUTED))
+	var note := PanelContainer.new()
+	note.custom_minimum_size.x = 438
+	var paper := StyleBoxFlat.new()
+	paper.bg_color = Color(SURFACE, 0.76)
+	paper.border_color = Color(FOLD, 0.30)
+	paper.border_width_left = 2
+	paper.content_margin_left = 24
+	paper.content_margin_right = 24
+	paper.content_margin_top = 22
+	paper.content_margin_bottom = 22
+	note.add_theme_stylebox_override("panel", paper)
+	content.add_child(note)
+	var note_stack := VBoxContainer.new()
+	note_stack.add_theme_constant_override("separation", 12)
+	note.add_child(note_stack)
+	note_stack.add_child(_label("航路手记", 17, FOLD))
+	_route_panel = ROUTE_PANEL.new()
+	note_stack.add_child(_route_panel)
+	_route_preview_title = _route_panel.title_label
+	_route_preview_body = _route_panel.body_label
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	note_stack.add_child(spacer)
+	var choices := VBoxContainer.new()
+	choices.add_theme_constant_override("separation", 10)
+	note_stack.add_child(choices)
 	for index in 3:
-		var button := _button("", 84)
-		button.custom_minimum_size.x = 310
-		button.add_theme_font_size_override("font_size", 23)
+		var button := _button("", 76)
+		button.custom_minimum_size.x = 370
+		button.add_theme_font_size_override("font_size", 20)
 		button.pressed.connect(_on_route_pressed.bind(button))
 		button.focus_entered.connect(func() -> void: _preview_route_node(StringName(button.get_meta("destination_id", &""))))
 		choices.add_child(button)
 		_route_buttons.append(button)
-	var hint := _label("方向键 / 摇杆选择可达折岛   ·   空格 / A 出发", 17, MUTED)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	stack.add_child(hint)
+	_route_hint = _label("", 17, MUTED)
+	_route_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	stack.add_child(_route_hint)
+	_route_input_guard = REWARD_INPUT_GUARD.new()
+	_route_input_guard.name = "RouteInputGuard"
+	add_child(_route_input_guard)
+	_route_input_guard.state_changed.connect(_on_route_input_state_changed)
+
+
+func _on_route_input_state_changed() -> void:
+	if screen_kind != &"route" or _route_pending:
+		return
+	var available: bool = _route_input_guard.can_select()
+	for button in _route_buttons:
+		button.disabled = not available
+	_route_hint.text = "方向键 / 摇杆选择航路   ·   空格 / A 确认出发" if available else "航图正在展开 · 松开按键后再启航"
+	if available:
+		# Arming may follow programmatic inspection. Keep the selected island;
+		# a distant preview must not silently focus a different launch action.
+		_set_focus_group([])
+		var group := _visible_buttons(_route_buttons)
+		_focus_groups[&"active"] = group
+		for button: Button in group:
+			if StringName(button.get_meta("destination_id", &"")) == _route_atlas.selected_node_id:
+				_focus_current_control.call_deferred(weakref(button), _focus_request_revision)
+				return
+		var owner := get_viewport().gui_get_focus_owner()
+		if owner != null: owner.release_focus()
 
 
 func _on_atlas_node_selected(node_id: StringName) -> void:
 	if screen_kind != &"route" or _route_pending:
 		return
 	_preview_route_node(node_id)
-	if _route_allowed.has(String(node_id)):
+	if _route_allowed.has(String(node_id)) and _route_input_guard.can_select():
 		for button in _route_buttons:
 			if button.visible and StringName(button.get_meta("destination_id", &"")) == node_id:
 				button.grab_focus()
@@ -778,15 +829,8 @@ func _preview_route_node(node_id: StringName) -> void:
 	if node.is_empty():
 		return
 	_route_atlas.focus_destination(node_id)
-	var category := StringName(node.get("category", &"combat"))
-	var reachable := _route_allowed.has(String(node_id))
-	_route_preview_title.text = "%s  ·  %s" % [_category_title(category), "可前往" if reachable else "航图预览"]
-	_route_preview_title.add_theme_color_override("font_color", FOLD if reachable else PAPER)
 	var preview: Dictionary = _route_atlas.get_node_preview(node_id)
-	_route_preview_body.text = str(preview.get("description", "查看这座折岛，规划接下来的航行。"))
-	if not reachable:
-		_route_preview_body.text += "\n" + str(preview.get("status", "目前仅可查看。"))
-
+	_route_panel.configure(preview, _route_context)
 
 
 func _build_result() -> void:
@@ -1154,9 +1198,12 @@ func _on_reward_focused(button: Button) -> void:
 
 func _on_route_pressed(button: Button) -> void:
 	var destination_id := StringName(button.get_meta("destination_id", &""))
-	if screen_kind != &"route" or _route_pending or not button.visible or not _route_allowed.has(String(destination_id)):
+	if screen_kind != &"route" or _route_pending or button.disabled or not button.is_visible_in_tree() or not _route_input_guard.can_select() or not _route_allowed.has(String(destination_id)):
 		return
 	_route_pending = true
+	_route_input_guard.cancel()
+	for choice in _route_buttons:
+		choice.disabled = true
 	audio_director.play_sfx(&"start", 1.12, -5.0)
 	route_chosen.emit(destination_id)
 

@@ -8,12 +8,25 @@ signal node_hovered(id: StringName)
 
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
 const PaperArt = preload("res://scripts/visuals/paper_art.gd")
+const PreviewData = preload("res://scripts/roguelite/ui/route_preview_data.gd")
+const Landmark = preload("res://scripts/roguelite/ui/route_landmark.gd")
+const Seascape = preload("res://scripts/visuals/paper_seascape.gd")
 const MIN_ZOOM := 0.38
 const MAX_ZOOM := 1.85
-const COLUMN_SPACING := 258.0
-const BRANCH_SPACING := 210.0
-const PICK_RADIUS := 64.0
+const COLUMN_SPACING := 308.0
+const BRANCH_SPACING := 270.0
+const PICK_RADIUS := 82.0
 const DRAG_THRESHOLD := 7.0
+
+class Seafloor extends Control:
+	var region_id: StringName = &"paper_reef"
+	var route_mark: int = 0
+	var draw_count: int = 0
+
+	func _draw() -> void:
+		draw_count += 1
+		draw_rect(Rect2(Vector2.ZERO, size), Palette.INK)
+		Seascape.draw_region(self, Rect2(Vector2.ZERO, Vector2(size.x, maxf(1, size.y - 112))), region_id, route_mark)
 
 var selected_node_id: StringName = &""
 var current_node_id: StringName = &""
@@ -44,6 +57,12 @@ var _hover_strength: Dictionary = {}
 var _needs_initial_fit: bool = false
 var _font: Font
 var _preview_box := StyleBoxFlat.new()
+var _view_mode: StringName = &"ahead"
+var _motion_scale: float = 1.0
+var _context: Dictionary = {}
+var _seafloor: Seafloor
+var _redraw_elapsed: float = 0.0
+var _draw_count: int = 0
 
 
 func _init() -> void:
@@ -60,11 +79,17 @@ func _init() -> void:
 
 func _ready() -> void:
 	_font = get_theme_default_font()
+	_seafloor = Seafloor.new()
+	_seafloor.name = "StaticSeafloor"
+	_seafloor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_seafloor.show_behind_parent = true
+	add_child(_seafloor)
+	_refresh_seafloor()
 	resized.connect(_on_resized)
 	mouse_exited.connect(_on_mouse_exited)
 	visibility_changed.connect(_on_visibility_changed)
 	if _needs_initial_fit:
-		recenter()
+		_fit_view()
 		_play_entrance()
 
 
@@ -80,6 +105,9 @@ func _notification(what: int) -> void:
 ## The caller-provided exits array is the sole authority for reachability.
 func configure(snapshot: Dictionary, current_id: StringName, exits: Array[String]) -> void:
 	_snapshot = snapshot.duplicate(true)
+	_context = (_snapshot.get("context", {}) as Dictionary).duplicate(true)
+	_motion_scale = clampf(float(_context.get("motion_scale", 1.0)), 0.0, 1.0)
+	_view_mode = &"ahead"
 	current_node_id = current_id
 	_available = exits.duplicate()
 	_cleared.clear()
@@ -120,8 +148,11 @@ func configure(snapshot: Dictionary, current_id: StringName, exits: Array[String
 			break
 	_needs_initial_fit = true
 	if is_inside_tree():
-		recenter()
+		_refresh_seafloor()
+		_fit_view()
 		_play_entrance()
+	set_process(is_visible_in_tree() and _motion_scale > 0.0)
+	_refresh_static_hover()
 	queue_redraw()
 
 
@@ -131,22 +162,44 @@ func focus_destination(id: StringName) -> void:
 	if not _by_id.has(id):
 		return
 	selected_node_id = id
+	_refresh_static_hover()
 	if is_inside_tree() and size.x > 1.0 and size.y > 1.0:
 		var screen := get_node_screen_position(id)
-		var safe_rect := Rect2(Vector2(130, 110), Vector2(maxf(1, size.x - 260), maxf(1, size.y - 220)))
+		var safe_rect := Rect2(Vector2(130, 110), Vector2(maxf(1, size.x - 260), maxf(1, size.y - 270)))
 		if not safe_rect.has_point(screen):
-			_animate_pan(size * 0.5 - (_positions[id] as Vector2) * zoom)
+			_animate_pan(Vector2(size.x * 0.5, (size.y - 110) * 0.5) - (_positions[id] as Vector2) * zoom)
 	queue_redraw()
 
 
 func recenter() -> void:
+	_view_mode = &"overview"
+	_fit_view()
+
+
+func focus_ahead() -> void:
+	_view_mode = &"ahead"
+	_fit_view()
+
+
+func _fit_view() -> void:
 	if size.x < 1.0 or size.y < 1.0:
 		_needs_initial_fit = true
 		return
 	_stop_focus_motion()
-	var available_size := Vector2(maxf(120, size.x - 160), maxf(130, size.y - 135))
-	zoom = clampf(minf(available_size.x / maxf(1, _world_bounds.size.x), available_size.y / maxf(1, _world_bounds.size.y)), MIN_ZOOM, 1.05)
-	pan = size * 0.5 - _world_bounds.get_center() * zoom
+	var bounds := _world_bounds
+	if _view_mode == &"ahead":
+		var first := true
+		var start_depth := maxi(0, mini(_current_depth - 1, _max_depth - 2))
+		var end_depth := mini(_max_depth, maxi(_current_depth + 2, 2))
+		for node in _nodes:
+			var depth := int(node.get("depth", 0))
+			if depth < start_depth or depth > end_depth: continue
+			var rect := Rect2((_positions[StringName(node["id"])] as Vector2) - Vector2(120, 115), Vector2(240, 245))
+			bounds = rect if first else bounds.merge(rect)
+			first = false
+	var available_size := Vector2(maxf(120, size.x - 132), maxf(130, size.y - 240))
+	zoom = clampf(minf(available_size.x / maxf(1, bounds.size.x), available_size.y / maxf(1, bounds.size.y)), MIN_ZOOM, 1.30 if _view_mode == &"ahead" else 1.05)
+	pan = Vector2(size.x * 0.5, (size.y - 110) * 0.5 + 12) - bounds.get_center() * zoom
 	_needs_initial_fit = false
 	queue_redraw()
 
@@ -173,7 +226,7 @@ func get_node_preview(id: StringName = &"") -> Dictionary:
 		return {}
 	var node: Dictionary = _by_id[id]
 	var category := StringName(node.get("category", &"combat"))
-	var state := "可启航 · 在下方确认目的地" if is_destination_reachable(id) else "远方折点 · 目前仅可查看"
+	var state := "可前往 · 在手记下方确认出发" if is_destination_reachable(id) else "远方折点 · 目前仅可查看"
 	if id == current_node_id:
 		state = "当前位置 · 此处已澄清"
 	elif id in _cleared:
@@ -182,23 +235,30 @@ func get_node_preview(id: StringName = &"") -> Dictionary:
 		state = "早期折点 · 本次无法返回"
 	elif int(node.get("depth", 0)) == _current_depth:
 		state = "另一支航路 · 目前无法抵达"
-	return {
+	var result := PreviewData.describe(node, _context, is_destination_reachable(id), int(_snapshot.get("index", 0)))
+	result.merge({
 		"id": id,
 		"category": category,
-		"category_title": _category_title(category),
-		"title": String(node.get("title", _category_title(category))),
-		"description": _category_description(category),
 		"depth": int(node.get("depth", 0)),
 		"risk": int(node.get("risk", 1)),
 		"reachable": is_destination_reachable(id),
 		"current": id == current_node_id,
 		"cleared": id in _cleared,
 		"status": state,
-	}
+	}, true)
+	return result
 
 
 func get_view_state() -> Dictionary:
-	return {"zoom": zoom, "pan": pan, "selected_node_id": selected_node_id, "hovered_node_id": hovered_node_id, "node_count": _nodes.size(), "dragging": _drag_started, "unfold": _unfold}
+	return {"zoom": zoom, "pan": pan, "selected_node_id": selected_node_id, "hovered_node_id": hovered_node_id, "node_count": _nodes.size(), "dragging": _drag_started, "unfold": _unfold, "view_mode": _view_mode, "motion_scale": _motion_scale, "clock": _time, "current_depth": _current_depth, "max_depth": _max_depth, "draw_count": _draw_count, "seafloor_draw_count": _seafloor.draw_count if is_instance_valid(_seafloor) else 0}
+
+
+func get_journey_snapshot() -> Dictionary:
+	var sailed_edges: Array[Dictionary] = []
+	for edge in _edges:
+		if StringName(edge["from"]) in _cleared and StringName(edge["to"]) in _cleared:
+			sailed_edges.append({"from": edge["from"], "to": edge["to"]})
+	return {"current_step": _current_depth + 1, "total_steps": _max_depth + 1, "remaining_steps": maxi(0, _max_depth - _current_depth), "sailed_edges": sailed_edges, "context": _context.duplicate(true)}
 
 
 func _layout_nodes() -> void:
@@ -216,10 +276,10 @@ func _layout_nodes() -> void:
 			var node: Dictionary = siblings[index]
 			var id := StringName(node.get("id", &""))
 			var branch := float(index) - float(siblings.size() - 1) * 0.5
-			var y := branch * BRANCH_SPACING + sin(float(depth) * 1.18) * 29.0
+			var y := branch * BRANCH_SPACING + sin(float(depth) * 1.18) * 65.0
 			var position := Vector2(float(depth) * COLUMN_SPACING, y)
 			_positions[id] = position
-			var rect := Rect2(position - Vector2(104, 92), Vector2(208, 200))
+			var rect := Rect2(position - Vector2(120, 115), Vector2(240, 245))
 			_world_bounds = rect if first else _world_bounds.merge(rect)
 			first = false
 	if first:
@@ -246,14 +306,37 @@ func _build_edges() -> void:
 
 
 func _process(delta: float) -> void:
-	if not is_visible_in_tree():
+	if not is_visible_in_tree() or _motion_scale <= 0.0:
 		return
-	_time += minf(delta, 0.1)
+	_time += minf(delta, 0.1) * _motion_scale
 	for node in _nodes:
 		var id := StringName(node.get("id", &""))
 		var target := 1.0 if id == hovered_node_id or id == selected_node_id else 0.0
-		_hover_strength[id] = move_toward(float(_hover_strength.get(id, 0.0)), target, delta * 6.0)
-	queue_redraw()
+		_hover_strength[id] = move_toward(float(_hover_strength.get(id, 0.0)), target, delta * 6.0) if _motion_scale > 0.0 else target
+	_redraw_elapsed += delta
+	if _redraw_elapsed >= 1.0 / 30.0:
+		_redraw_elapsed = fmod(_redraw_elapsed, 1.0 / 30.0)
+		queue_redraw()
+
+
+func _refresh_static_hover() -> void:
+	if _motion_scale > 0.0:
+		return
+	for node in _nodes:
+		var id := StringName(node.get("id", &""))
+		_hover_strength[id] = 1.0 if id == hovered_node_id or id == selected_node_id else 0.0
+
+
+func _refresh_seafloor() -> void:
+	if not is_instance_valid(_seafloor): return
+	var region_id := StringName(_snapshot.get("id", &"paper_reef"))
+	var route_mark := int(_snapshot.get("route_mark", 0))
+	if _seafloor.size == size and _seafloor.region_id == region_id and _seafloor.route_mark == route_mark:
+		return
+	_seafloor.size = size
+	_seafloor.region_id = region_id
+	_seafloor.route_mark = route_mark
+	_seafloor.queue_redraw()
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -275,6 +358,8 @@ func _gui_input(event: InputEvent) -> void:
 					var id := _node_at(mouse.position)
 					if not id.is_empty():
 						selected_node_id = id
+						_refresh_static_hover()
+						queue_redraw()
 						node_selected.emit(id)
 				_pointer_down = false
 				_drag_started = false
@@ -288,8 +373,10 @@ func _gui_input(event: InputEvent) -> void:
 			if motion.position.distance_to(_pressed_position) >= DRAG_THRESHOLD:
 				_drag_started = true
 			if _drag_started:
+				_view_mode = &"manual"
 				pan += motion.relative
 				_clamp_pan()
+				queue_redraw()
 				_set_hover(&"")
 				mouse_default_cursor_shape = Control.CURSOR_DRAG
 			accept_event()
@@ -302,6 +389,8 @@ func _gui_input(event: InputEvent) -> void:
 		_stop_focus_motion()
 		pan -= (event as InputEventPanGesture).delta * 24.0
 		_clamp_pan()
+		_view_mode = &"manual"
+		queue_redraw()
 		accept_event()
 
 
@@ -309,6 +398,7 @@ func _zoom_at(factor: float, anchor: Vector2) -> void:
 	if not is_finite(factor) or factor <= 0.0:
 		return
 	_stop_focus_motion()
+	_view_mode = &"manual"
 	var world_point := (anchor - pan) / zoom
 	zoom = clampf(zoom * factor, MIN_ZOOM, MAX_ZOOM)
 	pan = anchor - world_point * zoom
@@ -325,6 +415,8 @@ func _clamp_pan() -> void:
 
 
 func _node_at(point: Vector2) -> StringName:
+	if point.y >= size.y - 112:
+		return _minimap_node_at(point)
 	var nearest: StringName = &""
 	var distance := maxf(28.0, PICK_RADIUS * zoom)
 	for node in _nodes:
@@ -346,15 +438,20 @@ func _set_hover(id: StringName) -> void:
 	if hovered_node_id == id:
 		return
 	hovered_node_id = id
+	_refresh_static_hover()
+	queue_redraw()
 	node_hovered.emit(id)
 
 
 func _map_to_screen(point: Vector2) -> Vector2:
-	return pan + point * zoom + Vector2(0, (1.0 - _unfold) * 24.0)
+	return pan + point * zoom + Vector2(0, (1.0 - _unfold) * 24.0 * _motion_scale)
 
 
 func _animate_pan(destination: Vector2) -> void:
 	_stop_focus_motion()
+	if _motion_scale <= 0.0:
+		pan = destination
+		return
 	_focus_motion = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_focus_motion.tween_property(self, "pan", destination, 0.38)
 
@@ -367,14 +464,18 @@ func _stop_focus_motion() -> void:
 func _play_entrance() -> void:
 	if _entrance != null and _entrance.is_valid():
 		_entrance.kill()
+	if _motion_scale <= 0.0:
+		_unfold = 1.0
+		return
 	_unfold = 0.0
 	_entrance = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_entrance.tween_property(self, "_unfold", 1.0, 0.62)
 
 
 func _on_resized() -> void:
-	if _needs_initial_fit:
-		recenter()
+	_refresh_seafloor()
+	if _needs_initial_fit or _view_mode in [&"ahead", &"overview"]:
+		_fit_view()
 	else:
 		_clamp_pan()
 	queue_redraw()
@@ -385,7 +486,11 @@ func _on_mouse_exited() -> void:
 
 
 func _on_visibility_changed() -> void:
+	set_process(is_visible_in_tree() and _motion_scale > 0.0)
 	if not is_visible_in_tree():
+		_stop_focus_motion()
+		if _entrance != null and _entrance.is_valid(): _entrance.kill()
+		_unfold = 1.0
 		_pointer_down = false
 		_drag_started = false
 		_set_hover(&"")
@@ -394,9 +499,9 @@ func _on_visibility_changed() -> void:
 func _draw() -> void:
 	if size.x < 1.0 or size.y < 1.0:
 		return
+	_draw_count += 1
 	if _font == null:
 		_font = get_theme_default_font()
-	draw_rect(Rect2(Vector2.ZERO, size), Palette.INK, true)
 	PaperArt.draw_tide(self, size, _time * 0.4, 5, 0.62)
 	_draw_chart_details()
 	if _nodes.is_empty():
@@ -407,6 +512,8 @@ func _draw() -> void:
 	for node in _nodes:
 		_draw_island(node)
 	_draw_compass()
+	_draw_chart_caption()
+	_draw_minimap()
 	if not hovered_node_id.is_empty() and not _drag_started:
 		_draw_preview(hovered_node_id, true)
 	draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2), Color(Palette.FOLD, 0.19), false, 1.0, true)
@@ -423,6 +530,17 @@ func _draw_chart_details() -> void:
 		var x := fposmod(float(mark * 179 + 71) + pan.x * 0.12, maxf(1, size.x))
 		var y := fposmod(float(mark * 137 + 53) + pan.y * 0.12, maxf(1, size.y))
 		draw_line(Vector2(x, y), Vector2(x + 8, y - 1), Color(Palette.FOLD, 0.045), 1.0, true)
+	# Sounding lines follow the authored island positions. They describe the
+	# shoals around real destinations, not additional selectable locations.
+	for node in _nodes:
+		var center := get_node_screen_position(StringName(node["id"]))
+		for ring in 3:
+			var contour := PackedVector2Array()
+			for step in 41:
+				var angle := float(step) * TAU / 40.0
+				var radius := (103.0 + float(ring) * 29.0 + sin(angle * 3.0 + float(node.get("depth", 0))) * 12.0) * zoom
+				contour.append(center + Vector2(cos(angle) * radius, sin(angle) * radius * 0.54 + 19.0 * zoom))
+			draw_polyline(contour, Color(Palette.FOLD, 0.065 - float(ring) * 0.012), 1.0, true)
 
 
 func _draw_edge(edge: Dictionary) -> void:
@@ -431,13 +549,16 @@ func _draw_edge(edge: Dictionary) -> void:
 	var reachable := from_id == current_node_id and is_destination_reachable(to_id)
 	var selected := reachable and to_id == selected_node_id
 	var sailed := from_id in _cleared and (to_id in _cleared or to_id == current_node_id)
-	var alpha := (0.54 if reachable else (0.34 if sailed else 0.16)) * _unfold
-	var color := Palette.GOLD if selected or sailed else Palette.FOLD
+	var alpha := (0.82 if reachable else (0.65 if sailed else 0.22)) * _unfold
+	var color := Palette.GOLD if sailed else Palette.FOLD
 	var path := PackedVector2Array()
 	for point: Vector2 in edge["path"]:
 		path.append(_map_to_screen(point))
 	draw_polyline(path, Color(Palette.INK, 0.60 * _unfold), 8.0 if selected else 5.0, true)
-	draw_polyline(path, Color(color, alpha), 2.0 if reachable else 1.0, true)
+	var visible_path := PackedVector2Array()
+	for index in maxi(2, int(ceil(float(path.size()) * _unfold))):
+		visible_path.append(path[mini(index, path.size() - 1)])
+	draw_polyline(visible_path, Color(color, alpha), (3.0 if selected else 2.2) if reachable else (2.0 if sailed else 1.0), true)
 	if reachable:
 		for mote in 2:
 			var progress := fposmod(_time * 0.16 + float(mote) * 0.5, 1.0)
@@ -458,10 +579,10 @@ func _draw_island(node: Dictionary) -> void:
 	var reachable := is_destination_reachable(id)
 	var current := id == current_node_id
 	var color := _category_color(category)
-	var radius := (60.0 if category == &"boss" else 48.0) * zoom * lerpf(0.78, 1.0, _unfold)
-	center.y -= hovered * 7.0
+	var radius := (80.0 if category == &"boss" else 66.0) * zoom * lerpf(0.86, 1.0, _unfold)
+	center.y -= hovered * 5.0 * _motion_scale
 	var base := Palette.SURFACE_SOFT.lerp(color, 0.16 if reachable or current else 0.06)
-	var opacity := (0.88 if reachable or current else 0.62) * _unfold
+	var opacity := (1.0 if reachable or current else 0.72) * _unfold
 	var island := PackedVector2Array([
 		center + Vector2(-1.10, 0.03) * radius, center + Vector2(-0.63, -0.40) * radius,
 		center + Vector2(0.02, -0.55) * radius, center + Vector2(0.88, -0.21) * radius,
@@ -484,10 +605,13 @@ func _draw_island(node: Dictionary) -> void:
 	if selected_node_id == id:
 		draw_arc(center, radius * 1.28, -PI * 0.88, -PI * 0.15, 24, Color(Palette.GOLD, 0.72 * _unfold), 1.5, true)
 		draw_arc(center, radius * 1.28, PI * 0.12, PI * 0.85, 24, Color(Palette.GOLD, 0.72 * _unfold), 1.5, true)
-	_draw_landmark(center - Vector2(0, radius * 0.25), category, maxf(0.45, zoom), Color(color, opacity))
+	Landmark.draw(self, center - Vector2(0, radius * 0.25), category, maxf(0.50, zoom * 1.08), opacity)
 	if current:
-		PaperArt.draw_moth(self, center - Vector2(0, radius * 1.06 + sin(_time * 1.5) * 3.0), 0.24 + zoom * 0.11, 1.0)
-	var font_size := int(clampf(19.0 * zoom, 13.0, 23.0))
+		PaperArt.draw_moth(self, center - Vector2(0, radius * 1.18 + sin(_time * 1.5) * 3.0 * _motion_scale), 0.28 + zoom * 0.14, 1.0)
+	elif id in _cleared:
+		draw_line(center + Vector2(-9, -1) * zoom, center + Vector2(-2, 6) * zoom, Palette.GOLD, 2.0, true)
+		draw_line(center + Vector2(-2, 6) * zoom, center + Vector2(12, -10) * zoom, Palette.GOLD, 2.0, true)
+	var font_size := int(clampf(21.0 * zoom, 15.0, 25.0))
 	var title := _category_title(category)
 	var width := _font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 	_draw_text(title, center + Vector2(-width * 0.5, radius + 22.0), font_size, Color(Palette.PAPER, (0.96 if reachable or current else 0.62) * _unfold))
@@ -495,58 +619,12 @@ func _draw_island(node: Dictionary) -> void:
 		var tag := "此刻" if current else ("可抵达" if reachable else "已澄清")
 		var tag_width := _font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 		_draw_text(tag, center + Vector2(-tag_width * 0.5, radius + 39), 12, Color(Palette.FOLD if current else Palette.GOLD, _unfold))
-
-
-func _draw_landmark(center: Vector2, category: StringName, unit: float, color: Color) -> void:
-	match category:
-		&"combat", &"elite":
-			for spike in (3 if category == &"elite" else 2):
-				var x := (float(spike) - (1.0 if category == &"elite" else 0.5)) * 18.0 * unit
-				var height := (42.0 if spike == 1 else 30.0) * unit
-				var root := center + Vector2(x, 12.0 * unit)
-				draw_colored_polygon(PackedVector2Array([root + Vector2(-10, 0) * unit, root + Vector2(2.0 * unit, -height), root + Vector2(11, 0) * unit]), Color(color, color.a * 0.45))
-				draw_line(root + Vector2(2.0 * unit, -height), root, color, 1.3, true)
-		&"boss":
-			var radius := 28.0 * unit
-			draw_circle(center - Vector2(0, 10) * unit, radius, Palette.INK)
-			draw_arc(center - Vector2(0, 10) * unit, radius, 0, TAU, 40, color, 1.5, true)
-			for ray in 8:
-				var direction := Vector2.from_angle(float(ray) * TAU / 8.0)
-				draw_line(center - Vector2(0, 10) * unit + direction * radius * 1.20, center - Vector2(0, 10) * unit + direction * radius * 1.46, Color(color, color.a * 0.60), 1.2, true)
-		&"shop", &"forge":
-			var roof := PackedVector2Array([center + Vector2(-28, -4) * unit, center + Vector2(0, -34) * unit, center + Vector2(28, -4) * unit])
-			draw_colored_polygon(roof, Color(color, color.a * 0.28))
-			draw_polyline(roof, color, 1.5, true)
-			draw_line(center + Vector2(-20, -4) * unit, center + Vector2(-20, 18) * unit, color, 1.2, true)
-			draw_line(center + Vector2(20, -4) * unit, center + Vector2(20, 18) * unit, color, 1.2, true)
-			if category == &"forge":
-				draw_line(center + Vector2(-10, 6) * unit, center + Vector2(10, 6) * unit, color, 3.0, true)
-				draw_line(center + Vector2(0, 6) * unit, center + Vector2(0, 18) * unit, color, 2.0, true)
-			else:
-				draw_line(center + Vector2(-12, -8) * unit, center + Vector2(12, -8) * unit, color, 1.0, true)
-		&"cache":
-			var box := PackedVector2Array([center + Vector2(-22, -11) * unit, center + Vector2(0, -23) * unit, center + Vector2(22, -11) * unit, center + Vector2(22, 12) * unit, center + Vector2(0, 24) * unit, center + Vector2(-22, 12) * unit])
-			draw_colored_polygon(box, Color(color, color.a * 0.20))
-			var outline := box.duplicate()
-			outline.append(box[0])
-			draw_polyline(outline, color, 1.4, true)
-			draw_line(box[0], center, color, 1.0, true)
-			draw_line(center, box[2], color, 1.0, true)
-			draw_line(center, box[4], color, 1.0, true)
-		&"event":
-			var point := center - Vector2(0, 9) * unit
-			draw_arc(point, 23.0 * unit, -PI * 0.86, PI * 0.56, 32, color, 1.5, true)
-			draw_line(point + Vector2(14, -15) * unit, point + Vector2(-14, 15) * unit, color, 1.3, true)
-			draw_circle(point, 3.0 * unit, Palette.PAPER)
-		_:
-			# Rest and entry islands use a folded lantern, echoed by combat terrain.
-			var lamp := PackedVector2Array([center + Vector2(0, -38) * unit, center + Vector2(15, -16) * unit, center + Vector2(10, 8) * unit, center + Vector2(0, 19) * unit, center + Vector2(-10, 8) * unit, center + Vector2(-15, -16) * unit])
-			draw_colored_polygon(lamp, Color(color, color.a * 0.12))
-			var outline := lamp.duplicate()
-			outline.append(lamp[0])
-			draw_polyline(outline, color, 1.5, true)
-			draw_line(lamp[0], lamp[3], Color(color, color.a * 0.6), 1.0, true)
-			draw_circle(center - Vector2(0, 8) * unit, 3.0 * unit, Palette.PAPER)
+	if reachable and zoom >= 0.7:
+		var info := get_node_preview(id)
+		var reward_text := "武器" if info.get("reward_kind") == &"weapon" else ("主动道具" if info.get("reward_kind") == &"active" else ("强化＋主动" if info.get("reward_kind") == &"first_active" else ("终潮" if category == &"boss" else "强化")))
+		var caption := "威胁 %d  /  %s" % [int(node.get("risk", 1)), reward_text]
+		var caption_width := _font.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		_draw_text(caption, center + Vector2(-caption_width * 0.5, radius + 61), 15, Color(Palette.MUTED, _unfold))
 
 
 func _draw_compass() -> void:
@@ -556,6 +634,56 @@ func _draw_compass() -> void:
 	draw_line(center + Vector2(-23, 0), center + Vector2(23, 0), color, 1.0, true)
 	draw_colored_polygon(PackedVector2Array([center + Vector2(0, -21), center + Vector2(4, 5), center, center + Vector2(-4, 5)]), color)
 	draw_arc(center, 16, 0, TAU, 32, Color(Palette.GOLD, 0.12), 1.0, true)
+
+
+func _draw_chart_caption() -> void:
+	var chapter := int(_snapshot.get("index", 0)) + 1
+	_draw_text("海域 %02d  /  %s" % [chapter, "前方航路" if _view_mode == &"ahead" else ("完整航图" if _view_mode == &"overview" else "自由阅图")], Vector2(28, 37), 17, Palette.FOLD)
+	_draw_text("第 %d / %d 折点  ·  距终潮 %d 航段" % [_current_depth + 1, _max_depth + 1, maxi(0, _max_depth - _current_depth)], Vector2(28, 66), 17, Palette.MUTED)
+
+
+func _minimap_rect() -> Rect2:
+	return Rect2(Vector2(28, size.y - 82), Vector2(maxf(1, size.x - 56), 57))
+
+
+func _minimap_position(id: StringName) -> Vector2:
+	var rect := _minimap_rect()
+	var point: Vector2 = _positions.get(id, Vector2.ZERO)
+	return rect.position + Vector2((point.x - _world_bounds.position.x) / maxf(1, _world_bounds.size.x) * rect.size.x, (point.y - _world_bounds.position.y) / maxf(1, _world_bounds.size.y) * rect.size.y)
+
+
+func _minimap_node_at(point: Vector2) -> StringName:
+	var nearest: StringName = &""
+	var distance := 18.0
+	for node in _nodes:
+		var id := StringName(node["id"])
+		var candidate := point.distance_to(_minimap_position(id))
+		if candidate < distance:
+			distance = candidate
+			nearest = id
+	return nearest
+
+
+func _draw_minimap() -> void:
+	var top := size.y - 112
+	draw_rect(Rect2(Vector2(0, top), Vector2(size.x, 112)), Color(Palette.INK, 0.96))
+	draw_line(Vector2(24, top), Vector2(size.x - 24, top), Color(Palette.FOLD, 0.18), 1.0)
+	_draw_text("全程航迹", Vector2(28, top + 23), 14, Palette.MUTED)
+	_draw_text("金线 已航行   ·   青线 可前往", Vector2(maxf(190, size.x - 290), top + 23), 14, Palette.MUTED)
+	for edge in _edges:
+		var from_id := StringName(edge["from"])
+		var to_id := StringName(edge["to"])
+		var sailed := from_id in _cleared and to_id in _cleared
+		var reachable := from_id == current_node_id and is_destination_reachable(to_id)
+		draw_line(_minimap_position(from_id), _minimap_position(to_id), Color(Palette.GOLD if sailed else Palette.FOLD, 0.75 if sailed or reachable else 0.24), 2 if sailed or reachable else 1, true)
+	for node in _nodes:
+		var id := StringName(node["id"])
+		var point := _minimap_position(id)
+		var active := id == current_node_id or is_destination_reachable(id)
+		var color := Palette.GOLD if id in _cleared or node.get("category") == "boss" else Palette.FOLD
+		draw_circle(point, 4 if active else 3, Color(color, 1 if active or id in _cleared else 0.43))
+		if id == current_node_id: draw_arc(point, 8, 0, TAU, 20, Palette.PAPER, 1.4, true)
+		if id == selected_node_id: draw_arc(point, 10, -PI * 0.75, PI * 0.75, 20, Palette.GOLD, 1.0, true)
 
 
 func _draw_preview(id: StringName, is_hover: bool) -> void:
@@ -570,13 +698,13 @@ func _draw_preview(id: StringName, is_hover: bool) -> void:
 		if position.x + width > size.x - 14:
 			position.x = get_node_screen_position(id).x - width - 55
 		position.x = clampf(position.x, 12, maxf(12, size.x - width - 12))
-		position.y = clampf(position.y, 12, maxf(12, size.y - height - 42))
+		position.y = clampf(position.y, 12, maxf(12, size.y - height - 125))
 	var rect := Rect2(position, Vector2(width, height))
 	_preview_box.border_color = Color(_category_color(preview["category"]), 0.42)
 	draw_style_box(_preview_box, rect)
 	_draw_text(String(preview["title"]), position + Vector2(16, 28), 21, Palette.PAPER)
 	_draw_text("第 %d 折点  ·  威胁 %d" % [int(preview["depth"]) + 1, int(preview["risk"])], position + Vector2(16, 52), 14, Palette.GOLD)
-	_draw_text(String(preview["description"]), position + Vector2(16, 79), 15, Palette.MUTED)
+	_draw_text(String(preview["reward"]), position + Vector2(16, 79), 15, Palette.MUTED)
 	_draw_text(String(preview["status"]), position + Vector2(16, 109), 14, Palette.FOLD if bool(preview["reachable"]) else Palette.MUTED)
 
 
@@ -604,17 +732,3 @@ func _category_title(category: StringName) -> String:
 		&"cache": return "藏光室"
 		&"event": return "异潮室"
 		_: return "无名折点"
-
-
-func _category_description(category: StringName) -> String:
-	match category:
-		&"combat": return "澄清敌潮，收下一道新的折痕。"
-		&"elite": return "更强的敌潮，也藏着更深的折光。"
-		&"boss": return "本片海域的终潮守候在此。"
-		&"rest": return "在纸灯下歇息，准备下一段航行。"
-		&"shop": return "漂流的灯火，带来新的交换。"
-		&"forge": return "整理折翼，磨出新的锋面。"
-		&"cache": return "打开漂来的纸匣，拾回遗落微光。"
-		&"event": return "听一段回声，作一次未知的选择。"
-		&"entry": return "从这一盏纸灯，驶入折叠的海。"
-		_: return "循着折痕，探索下一处海面。"

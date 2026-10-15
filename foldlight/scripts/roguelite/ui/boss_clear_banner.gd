@@ -62,8 +62,12 @@ func present(boss_title: String, next_region_title: String) -> void:
 
 
 func dismiss() -> void:
-	_input_guard.cancel()
-	_continue_button.release_focus()
+	if is_instance_valid(_input_guard):
+		_input_guard.cancel()
+	# Scene replacement may detach this banner before the session resets it.
+	# Detached Controls cannot use the viewport's focus API.
+	if is_instance_valid(_continue_button) and _continue_button.is_inside_tree() and _continue_button.has_focus():
+		_continue_button.release_focus()
 	hide()
 
 

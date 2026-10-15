@@ -60,10 +60,49 @@ func _run() -> void:
 	await process_frame
 	_check(root.gui_get_focus_owner() == next_scene_button, "dismissed tutorial cannot steal focus after its deferred request")
 	tutorial.queue_free()
+	await _test_boss_banner_lifecycle(next_scene_button)
 	next_scene_button.queue_free()
 	await process_frame
 	print("FOLDLIGHT_DEFERRED_UI_FOCUS: %s" % ("PASS" if _failures.is_empty() else "FAIL"))
 	quit(0 if _failures.is_empty() else 1)
+
+
+func _test_boss_banner_lifecycle(next_scene_button: Button) -> void:
+	var banner := (load("res://scripts/roguelite/ui/boss_clear_banner.gd") as Script).new() as Control
+	var continuations: Array[int] = [0]
+	banner.continue_requested.connect(func() -> void: continuations[0] += 1)
+	root.add_child(banner)
+	banner.present("礁冠炮城", "倒悬墨城")
+	for step in 24:
+		banner._input_guard._process(0.1)
+	# Web's direct endless entry removes the old scene before its reset calls.
+	# Leave a deferred Continue focus queued as that old banner is detached.
+	root.remove_child(banner)
+	next_scene_button.grab_focus()
+	banner.dismiss()
+	banner.dismiss()
+	await process_frame
+	await process_frame
+	_check(root.gui_get_focus_owner() == next_scene_button, "detached boss dismissal cannot release or steal the new scene focus")
+	_check(not banner.visible and not banner._input_guard._active and not banner.can_continue(), "detached boss dismissal is repeatable and cancels its input gate")
+	banner._confirm()
+	_check(continuations[0] == 0, "detached boss acknowledgement cannot advance the voyage")
+	root.add_child(banner)
+	banner.present("礁冠炮城", "倒悬墨城")
+	_check(not banner.can_continue(), "reattached boss banner starts a fresh reading period")
+	for step in 24:
+		banner._input_guard._process(0.1)
+	await process_frame
+	await process_frame
+	_check(banner.can_continue() and root.gui_get_focus_owner() == banner._continue_button, "reattached boss banner can arm and focus Continue normally")
+	banner._confirm()
+	banner._confirm()
+	_check(continuations[0] == 1, "reattached boss confirmation advances exactly once")
+	next_scene_button.grab_focus()
+	banner.dismiss()
+	_check(root.gui_get_focus_owner() == next_scene_button, "live boss dismissal preserves another control's focus")
+	banner.queue_free()
+	await process_frame
 
 
 func _check(condition: bool, label: String) -> void:

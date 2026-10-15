@@ -24,15 +24,22 @@ func _run() -> void:
 		],
 	}
 	var exits: Array[String] = ["reef", "haven"]
+	Input.action_press(&"fold")
 	ui.show_route(region, &"start", exits)
 	await process_frame
 	await process_frame
-	await create_timer(0.5).timeout
+	await create_timer(1.18).timeout
+	ui._on_route_pressed(ui._route_buttons[0])
+	_check(_departures.is_empty() and ui._route_buttons[0].disabled, "held input across entry and direct signals cannot skip chart reading")
+	Input.action_release(&"fold")
+	await _wait_ready(ui)
 	var atlas: Control = ui._route_atlas
 	_check(atlas.is_visible_in_tree() and atlas.size.y >= 460.0, "route atlas has a dedicated exploration viewport")
 	_check(root.gui_get_focus_owner() == ui._route_buttons[0], "opening the atlas retains controller launch focus")
 	_check(ui._route_preview_title.text.contains("交锋房"), "focused destination updates its preview")
 	_check(not ui._route_buttons[2].visible, "unused launch actions stay hidden")
+	var journey: Dictionary = atlas.get_journey_snapshot()
+	_check(int(journey["total_steps"]) == 3 and int(journey["current_step"]) == 1 and int(journey["remaining_steps"]) == 2, "progress counts real route depths instead of optional branch islands")
 
 	# Real viewport mouse events exercise Control clipping and hit testing.
 	var haven: Vector2 = atlas.get_node_screen_position(&"haven")
@@ -44,7 +51,7 @@ func _run() -> void:
 	_check(root.gui_get_focus_owner() == ui._route_buttons[1], "mouse island selection and controller action stay synchronized")
 
 	ui._on_atlas_node_selected(&"boss")
-	_check(ui._route_preview_body.text.contains("仅可查看"), "a future island explains that it is only a preview")
+	_check(ui._route_panel.status_label.text.contains("仅可查看") and not ui._route_preview_body.text.contains("仅可查看"), "a future island explains preview-only status once, beside its description")
 	_check(root.gui_get_focus_owner() == null, "future inspection removes unrelated launch focus")
 	_press(ui, &"fold")
 	_check(_departures.is_empty(), "confirming a future preview cannot launch another destination")
@@ -56,6 +63,7 @@ func _run() -> void:
 	await create_timer(0.3).timeout
 	var after: Dictionary = atlas.get_view_state()
 	_check(float(after.get("zoom", 1.0)) > float(before.get("zoom", 1.0)), "wheel input zooms the map")
+	_check(after["seafloor_draw_count"] == before["seafloor_draw_count"], "ambient motion and chart zoom reuse the static seafloor drawing")
 	var drag_start := atlas.global_position + Vector2(100, 100)
 	_mouse_button(drag_start, MOUSE_BUTTON_LEFT, true)
 	var motion := InputEventMouseMotion.new()
@@ -77,17 +85,50 @@ func _run() -> void:
 	ui._on_route_pressed(ui._route_buttons[0])
 	_check(_departures == [&"reef"], "rapid repeated confirmation emits one departure")
 	ui.show_route(region, &"start", exits)
-	await process_frame
+	await _wait_ready(ui)
 	ui._on_route_pressed(ui._route_buttons[1])
 	_check(_departures == [&"reef", &"haven"], "reopening the route resets its confirmation guard")
 	ui.show_hud()
 	ui._on_route_pressed(ui._route_buttons[0])
 	_check(_departures.size() == 2, "hidden route controls cannot emit departures")
+	# Inspecting a future island before entry finishes must survive focus arming.
+	ui.show_route(region, &"start", exits)
+	ui._on_atlas_node_selected(&"boss")
+	await _wait_ready(ui, false)
+	_check(atlas.selected_node_id == &"boss" and root.gui_get_focus_owner() == null, "entry arming preserves a future preview without focusing an unrelated departure")
+	_press(ui, &"fold")
+	_check(_departures.size() == 2, "future preview remains safe when the reading guard opens")
+	ui.show_hud()
+	var hidden_clock: float = atlas.get_view_state()["clock"]
+	await create_timer(0.18).timeout
+	_check(is_equal_approx(float(atlas.get_view_state()["clock"]), hidden_clock), "hidden chart stops its ambient motion")
+	var still := region.duplicate(true)
+	still["context"] = {"motion_scale": 0.0}
+	ui.show_route(still, &"start", exits)
+	var still_clock: float = atlas.get_view_state()["clock"]
+	await create_timer(0.18).timeout
+	_check(is_equal_approx(float(atlas.get_view_state()["clock"]), still_clock) and is_equal_approx(float(atlas.get_view_state()["unfold"]), 1.0), "zero-motion chart keeps full static route information without entrance movement")
+	var still_draw_count: int = atlas.get_view_state()["draw_count"]
+	await create_timer(0.15).timeout
+	_check(not atlas.is_processing() and int(atlas.get_view_state()["draw_count"]) == still_draw_count, "zero-motion chart stops continuous drawing after layout settles")
+	atlas.focus_destination(&"haven")
+	await process_frame
+	await process_frame
+	_check(atlas.selected_node_id == &"haven" and int(atlas.get_view_state()["draw_count"]) > still_draw_count, "zero-motion selection still updates the drawn destination")
 	ui.queue_free()
 	await process_frame
 	(root.get_node("AudioDirector") as FoldlightAudioDirector).shutdown()
 	print("Interactive route atlas: %d failure(s)" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+
+func _wait_ready(ui: FoldlightRoguePresentation, require_focus: bool = true) -> void:
+	var deadline := Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline:
+		if not ui._route_buttons[0].disabled and (not require_focus or root.gui_get_focus_owner() in ui._route_buttons):
+			return
+		await process_frame
+	_check(false, "chart reaches an enabled, stable input state before the deadline")
 
 
 func _mouse_button(at: Vector2, button: MouseButton, pressed: bool) -> void:

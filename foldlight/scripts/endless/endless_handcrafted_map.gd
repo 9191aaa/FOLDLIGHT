@@ -2,6 +2,7 @@ class_name FoldlightEndlessHandcraftedMap
 extends Node2D
 
 const PaperArt = preload("res://scripts/visuals/paper_art.gd")
+const Seascape = preload("res://scripts/visuals/paper_seascape.gd")
 
 const WALL_COLLISION_LAYER := 1
 const WALL_COLLISION_MASK := 0
@@ -15,6 +16,8 @@ const ROUTE_CELL_SIZE := 96.0
 var _active_objective: Dictionary = {}
 var _wall_container: Node2D
 var _route_grid: AStarGrid2D
+var _ground_canvas: Node2D
+var _static_draw_count: int = 0
 
 
 func _ready() -> void:
@@ -37,6 +40,13 @@ func configure(definition: FoldlightEndlessMapDefinition) -> Array[String]:
 		remove_child(_wall_container)
 		_wall_container.queue_free()
 		_wall_container = null
+	if not is_instance_valid(_ground_canvas):
+		_ground_canvas = Node2D.new()
+		_ground_canvas.name = "CachedPaperGround"
+		_ground_canvas.show_behind_parent = true
+		_ground_canvas.draw.connect(_draw_static_ground)
+		add_child(_ground_canvas)
+	_ground_canvas.queue_redraw()
 	queue_redraw()
 	return errors
 
@@ -50,6 +60,8 @@ func get_map_contract() -> Dictionary:
 	if map_definition == null:
 		return {}
 	var contract := map_definition.get_contract()
+	contract["cached_ground"] = true
+	contract["static_draw_count"] = _static_draw_count
 	contract["cover_routing"] = true
 	contract["fixed_objective_sites"] = true
 	contract["fixed_spawn_sites"] = true
@@ -248,71 +260,69 @@ func _segment_hits_rect(from: Vector2, to: Vector2, rect: Rect2) -> bool:
 
 
 func _draw() -> void:
-	if map_definition == null:
+	if map_definition != null:
+		_draw_active_objective()
+
+
+func _draw_static_ground() -> void:
+	if map_definition == null or not is_instance_valid(_ground_canvas):
 		return
+	_static_draw_count += 1
+	var canvas := _ground_canvas
 	var bounds := map_definition.bounds
-	draw_rect(bounds, PaperArt.INK, true)
-	_draw_water_grid(bounds)
+	Seascape.draw_region(canvas, bounds, &"paper_reef", 6144)
+	var styles: Array[StringName] = [&"paper_reef", &"paper_reef", &"sun_court", &"paper_reef", &"ink_city", &"paper_reef"]
 	for index in map_definition.district_rects.size():
 		var district := map_definition.district_rects[index]
-		var color := PaperArt.SEA.lerp(map_definition.district_colors[index], 0.07)
-		draw_rect(district, Color(color, 0.42), true)
-		draw_rect(district.grow(-12.0), Color(PaperArt.PAPER, 0.045), false, 1.0, true)
-		draw_string(ThemeDB.fallback_font, district.position + Vector2(42.0, 70.0), map_definition.district_names[index], HORIZONTAL_ALIGNMENT_LEFT, -1.0, 30, Color(PaperArt.PAPER, 0.32))
-	_draw_authored_paths()
-	if draw_cover_visuals:
-		for index in map_definition.walls.size():
-			_draw_cover(map_definition.walls[index], index)
-	for index in map_definition.capture_points.size():
-		var point := map_definition.capture_points[index]
-		draw_circle(point, 84.0, Color(PaperArt.FOLD, 0.035))
-		draw_arc(point, 84.0, 0.0, TAU, 48, Color(PaperArt.FOLD, 0.38), 2.0, true)
-		draw_circle(point, 13.0, Color(PaperArt.GOLD, 0.76))
-	for index in map_definition.flag_positions.size():
-		_draw_flag(map_definition.flag_positions[index], index)
-	_draw_active_objective()
-	draw_rect(bounds, Color(PaperArt.FOLD, 0.22), false, 3.0)
-
-
-func _draw_water_grid(bounds: Rect2) -> void:
-	# Match the paper sea in the main voyage. This is only a drawing transform;
-	# district contracts, navigation, cover and objective geometry stay intact.
-	draw_set_transform(bounds.position)
-	PaperArt.draw_tide(self, bounds.size, 0.0, 7, 0.74)
-	draw_set_transform(Vector2.ZERO)
-
-
-func _draw_authored_paths() -> void:
+		var style := styles[index % styles.size()]
+		Seascape.draw_district(canvas, district, style, 104 + index * 23)
+		canvas.draw_string(ThemeDB.fallback_font, district.position + Vector2(68, 94), map_definition.district_names[index], HORIZONTAL_ALIGNMENT_LEFT, -1.0, 30, Color(PaperArt.PAPER, 0.24))
+	# Narrow inlaid waymarks are pass-through floor marks, never raised walls.
 	var hubs := map_definition.rally_positions
-	if hubs.size() < 2:
-		return
 	for index in hubs.size():
 		var a := hubs[index]
 		var b := hubs[(index + 1) % hubs.size()]
-		draw_line(a, b, Color(PaperArt.FOLD, 0.025), 54.0, true)
-		draw_line(a, b, Color(PaperArt.GOLD, 0.14), 1.6, true)
+		canvas.draw_line(a, b, Color(PaperArt.INK, 0.16), 36.0, true)
+		canvas.draw_dashed_line(a, b, Color(PaperArt.GOLD, 0.12), 1.4, 23.0, true)
+	var foundations: Array[Dictionary] = []
+	for index in map_definition.walls.size():
+		var wall := map_definition.walls[index]
+		foundations.append({"kind": 0, "position": wall.get_center(), "size": wall.size})
+		if draw_cover_visuals:
+			_draw_cover(canvas, wall, index)
+	Seascape.draw_foundations(canvas, foundations, &"paper_reef")
+	for point in map_definition.capture_points:
+		# A quiet engraved anchor; the active capture boundary is drawn separately.
+		for side in 4:
+			var direction := Vector2.from_angle(float(side) * PI * 0.5)
+			var at := point + direction * 58.0
+			var tangent := direction.orthogonal()
+			canvas.draw_polyline(PackedVector2Array([at + tangent * 12, at + direction * 9, at - tangent * 12]), Color(PaperArt.FOLD, 0.26), 2.0, true)
+		canvas.draw_circle(point, 6.0, Color(PaperArt.GOLD, 0.48))
+	for index in map_definition.flag_positions.size():
+		_draw_flag(canvas, map_definition.flag_positions[index], index)
 
 
-func _draw_cover(rect: Rect2, index: int) -> void:
-	draw_rect(Rect2(rect.position + Vector2(15.0, 19.0), rect.size), Color(PaperArt.INK, 0.62), true)
+func _draw_cover(canvas: CanvasItem, rect: Rect2, index: int) -> void:
+	canvas.draw_rect(Rect2(rect.position + Vector2(7, 9), rect.size), Color(PaperArt.INK, 0.62))
 	var base := Color("354b49") if index % 3 != 1 else Color("46534d")
-	draw_rect(rect, base, true)
-	draw_rect(rect.grow(-8.0), Color(base.lightened(0.12), 0.72), false, 2.0)
-	var ridge_y := rect.position.y + rect.size.y * 0.34
-	draw_line(Vector2(rect.position.x + 12.0, ridge_y), Vector2(rect.end.x - 12.0, ridge_y + 6.0), Color(PaperArt.GOLD, 0.26), 1.4, true)
-	for notch in range(1, maxi(2, int(rect.size.x / 120.0))):
-		var px := rect.position.x + rect.size.x * float(notch) / float(maxi(2, int(rect.size.x / 120.0)))
-		draw_line(Vector2(px, rect.position.y + 10.0), Vector2(px - 18.0, rect.end.y - 10.0), Color(PaperArt.INK, 0.38), 3.0)
+	canvas.draw_rect(rect, base)
+	canvas.draw_rect(rect.grow(-5.0), Color(base.lightened(0.15), 0.66), false, 1.5)
+	var vertical := rect.size.y > rect.size.x
+	var length := rect.size.y if vertical else rect.size.x
+	var units := maxi(1, int(length / 110.0))
+	for unit in units:
+		var u := (float(unit) + 0.5) / float(units)
+		var center := rect.position + rect.size * (Vector2(0.5, u) if vertical else Vector2(u, 0.5))
+		var delta := Vector2(rect.size.x * 0.35, length / float(units) * 0.28) if vertical else Vector2(length / float(units) * 0.28, rect.size.y * 0.35)
+		canvas.draw_line(center - delta, center + delta, Color(PaperArt.PAPER, 0.19), 1.2, true)
+		canvas.draw_line(center, center + Vector2(-delta.x, delta.y), Color(PaperArt.INK, 0.38), 2.0, true)
 
 
-func _draw_flag(position: Vector2, index: int) -> void:
-	draw_line(position + Vector2(0.0, 48.0), position - Vector2(0.0, 60.0), Color(PaperArt.GOLD, 0.52), 3.0, true)
+func _draw_flag(canvas: CanvasItem, position: Vector2, index: int) -> void:
+	canvas.draw_line(position + Vector2(0, 48), position - Vector2(0, 60), Color(PaperArt.GOLD, 0.52), 3.0, true)
 	var sway := 12.0 if index % 2 == 0 else -8.0
-	draw_colored_polygon(PackedVector2Array([
-		position - Vector2(0.0, 58.0),
-		position + Vector2(68.0 + sway, -39.0),
-		position + Vector2(14.0, -10.0),
-	]), Color(PaperArt.DANGER, 0.42))
+	canvas.draw_colored_polygon(PackedVector2Array([position - Vector2(0, 58), position + Vector2(68 + sway, -39), position + Vector2(14, -10)]), Color(PaperArt.DANGER, 0.42))
 
 
 func _draw_active_objective() -> void:
@@ -321,7 +331,7 @@ func _draw_active_objective() -> void:
 	var position := Vector2(_active_objective.get("target_position", Vector2.ZERO))
 	var kind := StringName(_active_objective.get("kind", &""))
 	var color := PaperArt.GOLD
-	var radius := 122.0 if kind == &"capture_point" else 94.0
+	var radius := float(_active_objective.get("capture_radius", 170.0)) if kind == &"capture_point" else 94.0
 	draw_circle(position, radius, Color(color, 0.08))
 	draw_arc(position, radius, -PI * 0.5, PI * 1.5, 64, Color(color, 0.86), 3.5, true)
 	draw_arc(position, radius + 21.0, 0.0, TAU, 48, Color(PaperArt.FOLD, 0.30), 1.5, true)
