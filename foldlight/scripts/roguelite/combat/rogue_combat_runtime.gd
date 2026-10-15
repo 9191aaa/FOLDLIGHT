@@ -162,6 +162,7 @@ func get_glimmer_gain_multiplier() -> float:
 func clear_combat() -> void:
 	last_boss_defeat.clear()
 	_boss_aftermath_active = false
+	_clear_transient_nodes()
 	for enemy in enemies:
 		if is_instance_valid(enemy):
 			enemy.queue_free()
@@ -196,6 +197,21 @@ func clear_combat() -> void:
 	queue_redraw()
 
 
+func _clear_transient_nodes() -> void:
+	if not is_instance_valid(room):
+		return
+	# Warnings and denial zones are not registered in the projectile array.
+	# Retire them at the same boundary as actors so a new room/attempt cannot
+	# inherit their geometry or remaining lifetime before deferred frees run.
+	for container in [room.projectile_container, room]:
+		for child in container.get_children():
+			if child is FoldlightRogueProjectile or child is FoldlightInkDenialZone or child is FoldlightSpawnTelegraph or child is FoldlightBossAttackTelegraph:
+				if child.has_method("set_simulation_active"):
+					child.set_simulation_active(false)
+				child.hide()
+				child.queue_free()
+
+
 func begin_boss_aftermath(origin: Vector2, motion_scale: float = 1.0) -> void:
 	# Only the roguelite session calls this; endless boss waves keep running.
 	_boss_aftermath_active = true
@@ -206,12 +222,7 @@ func begin_boss_aftermath(origin: Vector2, motion_scale: float = 1.0) -> void:
 			enemy.queue_free()
 	enemies.clear()
 	projectiles.clear()
-	if room != null:
-		for container in [room.projectile_container, room]:
-			for child in container.get_children():
-				if child is FoldlightRogueProjectile or child is FoldlightInkDenialZone or child is FoldlightSpawnTelegraph or child is FoldlightBossAttackTelegraph:
-					child.hide()
-					child.queue_free()
+	_clear_transient_nodes()
 	_active_flashes.clear()
 	if motion_scale > 0.0:
 		_add_active_flash(origin, FoldlightTheme.GOLD, lerpf(110.0, 390.0, clampf(motion_scale, 0.0, 1.0)), 1.8)
@@ -897,7 +908,7 @@ func _update_denial_zones() -> void:
 	if room == null:
 		return
 	for child in room.projectile_container.get_children():
-		if child is FoldlightInkDenialZone:
+		if child is FoldlightInkDenialZone and not child.is_queued_for_deletion():
 			var zone := child as FoldlightInkDenialZone
 			if zone.global_position.distance_to(player.global_position) <= zone.radius + player.get_hit_radius():
 				player.apply_status(&"bound_crease", 0.3)

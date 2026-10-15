@@ -288,7 +288,7 @@ func _on_setting_adjust_requested(setting_key: StringName, direction: int) -> vo
 
 
 func _abandon_run() -> void:
-	if _modal_kind == &"pause" and _web_race_bridge == null:
+	if _modal_kind == &"pause" and presentation.screen_kind == &"leave_confirmation" and _web_race_bridge == null:
 		_finish_run(&"abandoned")
 
 

@@ -20,6 +20,7 @@ func _run() -> void:
 	_check(_has_joy_button(&"move_up", JOY_BUTTON_DPAD_UP) and _has_joy_button(&"move_down", JOY_BUTTON_DPAD_DOWN) and _has_joy_button(&"move_left", JOY_BUTTON_DPAD_LEFT) and _has_joy_button(&"move_right", JOY_BUTTON_DPAD_RIGHT), "D-pad movement belongs to the same combat actions as the left stick")
 	_check(_has_physical_key(&"fold", KEY_SPACE) and _has_physical_key(&"dash", KEY_SHIFT) and _has_physical_key(&"active_item", KEY_Q), "combat actions stay under one left hand")
 	_check(_has_joy_button(&"fold", JOY_BUTTON_A) and _has_joy_button(&"dash", JOY_BUTTON_B) and _has_joy_button(&"active_item", JOY_BUTTON_X) and _has_joy_button(&"pause_game", JOY_BUTTON_START), "controller actions use A Fold, B dash, X active, Start pause")
+	_check(_has_joy_button(&"ui_cancel", JOY_BUTTON_B), "the menu cancel action explicitly supports controller B")
 
 	var player_scene := load("res://scenes/player.tscn") as PackedScene
 	var player := player_scene.instantiate() as FoldlightPlayer if player_scene != null else null
@@ -61,6 +62,25 @@ func _run() -> void:
 		_check(session._paused and session.presentation.screen_kind == &"pause", "pause input freezes the live run and opens the pause screen")
 		session._unhandled_input(_action_event(&"pause_game", true))
 		_check(not session._paused and session.presentation.screen_kind == &"hud", "the same input resumes safely")
+		var dashes: Array[int] = [0]
+		game.player.dash_started.connect(func(_direction: Vector2, _duration: float) -> void: dashes[0] += 1)
+		_joy(JOY_BUTTON_B)
+		game.player._physics_process(0.02)
+		_check(dashes[0] == 1 and not session._paused, "real controller B still dashes in combat without pausing or returning to title")
+		_joy(JOY_BUTTON_START)
+		_check(session.is_paused(), "real controller Start opens the pause menu")
+		_joy(JOY_BUTTON_B)
+		_check(not session._paused and session.presentation.screen_kind == &"hud" and dashes[0] == 1 and is_zero_approx(game.player._dash_buffer_timer), "real controller B resumes pause once without leaking a dash")
+		_joy(JOY_BUTTON_START)
+		session.presentation.settings_requested.emit()
+		_joy(JOY_BUTTON_B)
+		_check(session.is_paused(), "real controller B returns settings to pause without resuming combat")
+		_joy(JOY_BUTTON_B)
+		_check(not session._paused and dashes[0] == 1, "a fresh B returns from pause without a second combat action")
+		_key(KEY_ESCAPE)
+		_check(session.is_paused(), "explicit cancel mapping preserves physical Escape pause")
+		_key(KEY_ESCAPE)
+		_check(not session._paused, "physical Escape still resumes after the B mapping is added")
 		game.queue_free()
 		await process_frame
 
@@ -73,6 +93,26 @@ func _action_event(action: StringName, pressed: bool) -> InputEventAction:
 	event.pressed = pressed
 	event.strength = 1.0 if pressed else 0.0
 	return event
+
+
+func _joy(code: JoyButton) -> void:
+	for down in [true, false]:
+		var event := InputEventJoypadButton.new()
+		event.device = 2
+		event.button_index = code
+		event.pressed = down
+		Input.parse_input_event(event)
+		Input.flush_buffered_events()
+
+
+func _key(code: Key) -> void:
+	for down in [true, false]:
+		var event := InputEventKey.new()
+		event.keycode = code
+		event.physical_keycode = code
+		event.pressed = down
+		Input.parse_input_event(event)
+		Input.flush_buffered_events()
 
 
 func _has_event_type(action: StringName, class_name_value: String) -> bool:

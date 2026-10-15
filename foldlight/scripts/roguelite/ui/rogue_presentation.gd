@@ -111,6 +111,12 @@ var _route_hint: Label
 var _route_input_guard: Node
 var _result_title: Label
 var _result_body: Label
+var _result_hint: Label
+var _result_input_guard: Node
+var _result_action_locked: bool = true
+var _leave_hint: Label
+var _leave_input_guard: Node
+var _leave_action_locked: bool = true
 var _settings_return: StringName = &"title"
 var _settings_buttons: Array[Button] = []
 var _settings_keys: Array[StringName] = [&"master_volume", &"music_volume", &"sfx_volume", &"screen_shake", &"vibration", &"high_contrast", &"fullscreen"]
@@ -129,6 +135,7 @@ func _ready() -> void:
 	_build_route()
 	_build_result()
 	_build_pause()
+	_build_leave_confirmation()
 	_build_settings()
 	_build_mechanic_toast()
 	_build_mechanic_briefing()
@@ -165,8 +172,14 @@ func _handle_menu_input(event: InputEvent) -> void:
 		return
 	if screen_kind == &"reward" and not _reward_input_guard.can_select():
 		return
+	if screen_kind == &"result" and not event.is_action_pressed(&"mute_audio") and not is_result_ready():
+		viewport.set_input_as_handled()
+		return
 	if event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"pause_game"):
-		if screen_kind == &"settings":
+		if screen_kind == &"leave_confirmation":
+			viewport.set_input_as_handled()
+			_on_leave_action(false)
+		elif screen_kind == &"settings":
 			viewport.set_input_as_handled()
 			settings_back_requested.emit(_settings_return)
 		elif screen_kind == &"pause":
@@ -174,9 +187,10 @@ func _handle_menu_input(event: InputEvent) -> void:
 			resume_requested.emit()
 		elif screen_kind == &"result":
 			viewport.set_input_as_handled()
-			var actions: Array = _focus_groups.get(&"result", [])
-			if actions.size() > 1 and (actions[1] as Button).is_visible_in_tree():
-				title_requested.emit()
+			_on_result_action(&"title")
+		return
+	if screen_kind == &"leave_confirmation" and (_leave_action_locked or not _leave_input_guard.can_select()) and not event.is_action_pressed(&"mute_audio"):
+		viewport.set_input_as_handled()
 		return
 	if screen_kind == &"hud" or event.is_action_pressed(&"pause_game") or event.is_action_pressed(&"mute_audio"):
 		return
@@ -368,7 +382,9 @@ func show_route(region_snapshot: Dictionary, current_id: StringName, exits: Arra
 
 
 func show_result(result: Dictionary, prologue: bool = false) -> void:
+	_result_input_guard.cancel()
 	_show_only(&"result")
+	_result_action_locked = false
 	visual_canvas.configure(&"prologue_result" if prologue else &"result", GOLD if bool(result.get("won", false)) else SHARED_THEME.DANGER)
 	if prologue:
 		_result_title.text = "准备好，驶入纸海"
@@ -388,7 +404,46 @@ func show_result(result: Dictionary, prologue: bool = false) -> void:
 	(actions[0] as Button).text = str(result.get("retry_label", "再次迷航"))
 	(actions[0] as Button).visible = bool(result.get("allow_retry", true))
 	(actions[1] as Button).visible = bool(result.get("allow_title", true))
-	_set_focus_group(_visible_buttons(_focus_groups.get(&"result", [])))
+	for button: Button in actions:
+		button.disabled = true
+	_set_focus_group([])
+	_result_hint.visible = (actions[0] as Button).visible or (actions[1] as Button).visible
+	if _result_hint.visible:
+		_result_input_guard.begin(_screens[&"result"])
+
+
+func is_result_ready() -> bool:
+	return screen_kind == &"result" and not _result_action_locked and _result_input_guard.can_select()
+
+
+func _on_result_input_state_changed() -> void:
+	if screen_kind != &"result" or _result_action_locked:
+		return
+	var ready: bool = _result_input_guard.can_select()
+	for button: Button in _focus_groups[&"result"]:
+		button.disabled = not ready
+	_result_hint.text = INPUT_CONTRACT.menu_hint(_input_device == &"gamepad") if ready else "先看一眼航行记录 · 松开按键后再选择"
+	if ready:
+		_set_focus_group(_visible_buttons(_focus_groups[&"result"]))
+
+
+func _on_result_action(action: StringName) -> void:
+	if not is_inside_tree() or not is_result_ready():
+		return
+	var actions: Array = _focus_groups[&"result"]
+	var button: Button = actions[0] if action == &"retry" else actions[1]
+	if button.disabled or not button.is_visible_in_tree():
+		return
+	_result_action_locked = true
+	_result_input_guard.cancel()
+	for entry: Button in actions:
+		entry.disabled = true
+	_set_focus_group([])
+	# Listeners may detach this scene or open another result synchronously.
+	if action == &"retry":
+		retry_requested.emit()
+	else:
+		title_requested.emit()
 
 
 func show_notice(title: String, body: String, seconds: float = 2.8) -> void:
@@ -435,6 +490,46 @@ func show_pause() -> void:
 	if _pause_browse_status != null:
 		_pause_browse_status.visible = _browse_mode_enabled
 	_set_focus_group(_visible_buttons(_focus_groups.get(&"pause", [])))
+
+
+func show_leave_confirmation() -> void:
+	if screen_kind != &"pause":
+		return
+	_show_only(&"leave_confirmation")
+	visual_canvas.configure(&"pause", GOLD)
+	_leave_action_locked = false
+	for button: Button in _focus_groups[&"leave_confirmation"]:
+		button.disabled = true
+	_set_focus_group([])
+	_leave_input_guard.begin(_screens[&"leave_confirmation"])
+
+
+func _on_leave_input_state_changed() -> void:
+	if screen_kind != &"leave_confirmation" or _leave_action_locked:
+		return
+	var ready: bool = _leave_input_guard.can_select()
+	for button: Button in _focus_groups[&"leave_confirmation"]:
+		button.disabled = not ready
+	_leave_hint.text = "默认取消 · 选择结束后才会离开本次航行" if ready else "请松开按键，再作选择 · Esc / B / Start 可取消"
+	if ready:
+		_set_focus_group(_visible_buttons(_focus_groups[&"leave_confirmation"]))
+
+
+func _on_leave_action(confirmed: bool) -> void:
+	if not is_inside_tree() or not visible or screen_kind != &"leave_confirmation" or _leave_action_locked:
+		return
+	if confirmed and not _leave_input_guard.can_select():
+		return
+	_leave_action_locked = true
+	_leave_input_guard.cancel()
+	_set_focus_group([])
+	if not confirmed:
+		show_pause()
+		return
+	for button: Button in _focus_groups[&"leave_confirmation"]:
+		button.disabled = true
+	# Keep the confirmation screen active until the owner accepts this action.
+	abandon_requested.emit()
 
 
 func set_browse_mode_enabled(enabled: bool) -> void:
@@ -966,13 +1061,19 @@ func _build_result() -> void:
 	stack.add_child(action_row)
 	var retry := _button(_t(&"ROGUE_RESULT_RETRY", "再次迷航"), 70)
 	retry.custom_minimum_size.x = 280
-	retry.pressed.connect(func() -> void: retry_requested.emit())
+	retry.pressed.connect(_on_result_action.bind(&"retry"))
 	action_row.add_child(retry)
 	var title := _button(_t(&"ROGUE_RESULT_TITLE", "返回主菜单"), 70)
 	title.custom_minimum_size.x = 280
-	title.pressed.connect(func() -> void: title_requested.emit())
+	title.pressed.connect(_on_result_action.bind(&"title"))
 	action_row.add_child(title)
 	_focus_groups[&"result"] = [retry, title]
+	_result_hint = _label("", 18, MUTED)
+	stack.add_child(_result_hint)
+	_result_input_guard = REWARD_INPUT_GUARD.new()
+	_result_input_guard.name = "ResultInputGuard"
+	add_child(_result_input_guard)
+	_result_input_guard.state_changed.connect(_on_result_input_state_changed)
 
 
 func _build_pause() -> void:
@@ -1002,10 +1103,43 @@ func _build_pause() -> void:
 	settings.pressed.connect(func() -> void: settings_requested.emit())
 	stack.add_child(settings)
 	var abandon := _button("结束本次航行", 64)
-	abandon.pressed.connect(func() -> void: abandon_requested.emit())
+	abandon.pressed.connect(show_leave_confirmation)
 	stack.add_child(abandon)
 	stack.add_child(_label("Esc / Start 继续", 17, MUTED))
 	_focus_groups[&"pause"] = [resume, settings, abandon]
+
+
+func _build_leave_confirmation() -> void:
+	var screen := _new_screen(&"leave_confirmation")
+	var margin := _full_margin(screen, 570, 280, 570, 260)
+	var panel := PanelContainer.new()
+	margin.add_child(panel)
+	var stack := VBoxContainer.new()
+	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_theme_constant_override("separation", 22)
+	panel.add_child(stack)
+	var title := _label("结束本次航行？", 42, PAPER)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(title)
+	var body := _label("本次航行会结束。\n如果只是想歇一会儿，留在暂停即可。", 23, MUTED)
+	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(body)
+	var cancel := _button("取消 · 留在暂停", 72)
+	cancel.theme_type_variation = "PrimaryButton"
+	cancel.pressed.connect(_on_leave_action.bind(false))
+	stack.add_child(cancel)
+	var confirm := _button("确认结束本次航行", 64)
+	confirm.pressed.connect(_on_leave_action.bind(true))
+	stack.add_child(confirm)
+	_leave_hint = _label("", 17, MUTED)
+	_leave_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_leave_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(_leave_hint)
+	_focus_groups[&"leave_confirmation"] = [cancel, confirm]
+	_leave_input_guard = REWARD_INPUT_GUARD.new()
+	_leave_input_guard.name = "LeaveInputGuard"
+	add_child(_leave_input_guard)
+	_leave_input_guard.state_changed.connect(_on_leave_input_state_changed)
 
 
 func _build_settings() -> void:
@@ -1207,6 +1341,12 @@ func _button(text_value: String, minimum_height: float) -> Button:
 func _show_only(kind: StringName) -> void:
 	if screen_kind == &"reward" and kind != &"reward":
 		_cancel_reward_motion()
+	if screen_kind == &"result" and kind != &"result":
+		_result_input_guard.cancel()
+		_result_action_locked = true
+	if screen_kind == &"leave_confirmation" and kind != &"leave_confirmation":
+		_leave_input_guard.cancel()
+		_leave_action_locked = true
 	screen_kind = kind
 	for key_variant: Variant in _screens.keys():
 		(_screens[key_variant] as Control).visible = StringName(key_variant) == kind

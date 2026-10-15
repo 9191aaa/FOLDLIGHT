@@ -49,6 +49,7 @@ var _kill_combo_timer: float = 0.0
 var _kill_shake_cooldown: float = 0.0
 var _boss_clear_banner: Control
 var _boss_clear_snapshot: Dictionary = {}
+var _scene_transitioning: bool = false
 
 @onready var player: FoldlightPlayer = get_parent().get_node("Player")
 @onready var run_controller: FoldlightRogueRunController = get_parent().get_node("RogueRunController")
@@ -83,7 +84,7 @@ func _ready() -> void:
 	presentation.prologue_requested.connect(start_prologue)
 	presentation.prologue_skip_requested.connect(_on_prologue_skip_requested)
 	presentation.endless_requested.connect(_on_endless_requested)
-	presentation.quit_requested.connect(func() -> void: get_tree().quit())
+	presentation.quit_requested.connect(_on_quit_requested)
 	presentation.settings_requested.connect(_on_settings_requested)
 	presentation.resume_requested.connect(_resume_game)
 	presentation.abandon_requested.connect(_on_abandon_requested)
@@ -92,7 +93,7 @@ func _ready() -> void:
 	presentation.reward_chosen.connect(_on_reward_chosen)
 	presentation.route_chosen.connect(_on_route_chosen)
 	presentation.retry_requested.connect(start_new_run)
-	presentation.title_requested.connect(enter_title)
+	presentation.title_requested.connect(_on_result_title_requested)
 	player.dash_started.connect(_on_player_dash_started)
 	player.fold_started.connect(_on_player_fold_started)
 	player.fold_released.connect(_on_player_fold_released)
@@ -104,6 +105,8 @@ func _ready() -> void:
 
 
 func _setup_boss_clear_banner() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	# Presentation is a later sibling, so its onready Interface exists only
 	# after the scene has finished entering the tree.
 	_boss_clear_banner = BOSS_CLEAR_BANNER.new()
@@ -166,6 +169,8 @@ func _process(delta: float) -> void:
 
 
 func enter_title() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	_reset_boss_clear()
 	_active = true
 	_paused = false
@@ -184,15 +189,33 @@ func _on_endless_requested() -> void:
 	# The survival slice owns a much larger authored world and its own camera.
 	# Changing scenes keeps two combat worlds from processing in
 	# parallel and gives the mode a clean, deterministic return path to title.
+	if not is_inside_tree() or _scene_transitioning or mode != SessionMode.TITLE or presentation.screen_kind != &"title":
+		return
+	_scene_transitioning = true
+	_active = false
+	var scene_tree := get_tree()
 	_enter_modal_safety()
-	var error := get_tree().change_scene_to_file(ENDLESS_SURVIVAL_SCENE)
+	var error := scene_tree.change_scene_to_file(ENDLESS_SURVIVAL_SCENE)
 	if error != OK:
+		_scene_transitioning = false
 		push_error("Unable to open endless survival scene: %s" % error_string(error))
-		player.resume_from_overlay(0.35)
-		presentation.show_title(profile_manager.get_roguelite_snapshot())
+		enter_title()
+
+
+func _on_quit_requested() -> void:
+	if is_inside_tree() and not _scene_transitioning and not OS.has_feature("web") and mode == SessionMode.TITLE and presentation.screen_kind == &"title":
+		_scene_transitioning = true
+		get_tree().quit()
+
+
+func _on_result_title_requested() -> void:
+	if is_inside_tree() and not _scene_transitioning and mode == SessionMode.RESULT and presentation.screen_kind == &"result":
+		enter_title()
 
 
 func start_new_run() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	_activate_gameplay()
 	mode = SessionMode.RUN
 	_result_committed = false
@@ -205,6 +228,8 @@ func start_new_run() -> void:
 
 
 func continue_run() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	var rogue := profile_manager.get_roguelite_snapshot()
 	var checkpoint_variant: Variant = rogue.get("active_run", {})
 	if not checkpoint_variant is Dictionary or (checkpoint_variant as Dictionary).is_empty():
@@ -223,6 +248,8 @@ func continue_run() -> void:
 
 
 func start_prologue() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	_activate_gameplay()
 	mode = SessionMode.PROLOGUE
 	_result_committed = false
@@ -266,6 +293,8 @@ func _activate_gameplay() -> void:
 
 
 func _on_new_run_requested() -> void:
+	if not is_inside_tree() or _scene_transitioning or mode != SessionMode.TITLE or presentation.screen_kind != &"title":
+		return
 	var rogue := profile_manager.get_roguelite_snapshot()
 	if not bool(rogue.get("prologue_complete", false)):
 		start_prologue()
@@ -1219,7 +1248,7 @@ func _resume_game() -> void:
 
 
 func _on_abandon_requested() -> void:
-	if not _paused:
+	if not is_inside_tree() or _scene_transitioning or not _paused or presentation.screen_kind != &"leave_confirmation":
 		return
 	_paused = false
 	if mode == SessionMode.RUN:

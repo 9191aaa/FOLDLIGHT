@@ -6,6 +6,7 @@ signal action_requested(action: StringName)
 
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
 const INPUT_CONTRACT = preload("res://scripts/ui/input_contract.gd")
+const QUIT_CONFIRMATION = preload("res://scripts/ui/quit_confirmation.gd")
 
 var primary_button: Button
 var continue_button: Button
@@ -16,6 +17,7 @@ var input_label: Label
 var focus_buttons: Array[Button] = []
 var _content: VBoxContainer
 var _entrance: Tween
+var _quit_confirmation: Control
 
 
 func build(button_factory: Callable) -> void:
@@ -84,9 +86,15 @@ func build(button_factory: Callable) -> void:
 	input_label = _label(INPUT_CONTRACT.menu_hint(), 17, Color(Palette.MUTED, 0.78))
 	_content.add_child(input_label)
 	focus_buttons = [continue_button, primary_button, endless, tutorial_button, settings, quit]
+	_quit_confirmation = QUIT_CONFIRMATION.new()
+	_quit_confirmation.name = "QuitConfirmation"
+	add_child(_quit_confirmation)
+	_quit_confirmation.confirmed.connect(func() -> void: action_requested.emit(&"quit"))
+	_quit_confirmation.cancelled.connect(_restore_title_focus)
 
 
 func present(profile: Dictionary) -> void:
+	_quit_confirmation.dismiss()
 	var active: Variant = profile.get("active_run", {})
 	var has_continue := active is Dictionary and not (active as Dictionary).is_empty()
 	var learned := bool(profile.get("prologue_complete", false))
@@ -117,8 +125,27 @@ func _action(factory: Callable, text_value: String, action: StringName, variatio
 	button.name = String(action).to_pascal_case() + "Button"
 	button.theme_type_variation = variation
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	button.pressed.connect(func() -> void: action_requested.emit(action))
+	button.pressed.connect(_request_action.bind(action))
 	return button
+
+
+func _request_action(action: StringName) -> void:
+	if not is_inside_tree() or not is_visible_in_tree() or _quit_confirmation.visible:
+		return
+	if action == &"quit":
+		request_quit()
+	else:
+		action_requested.emit(action)
+
+
+func request_quit() -> void:
+	if not OS.has_feature("web") and is_inside_tree() and is_visible_in_tree():
+		_quit_confirmation.present()
+
+
+func _restore_title_focus() -> void:
+	if is_inside_tree() and is_visible_in_tree() and not is_queued_for_deletion():
+		primary_button.grab_focus()
 
 
 func _add_caption(button: Button, text_value: String) -> void:

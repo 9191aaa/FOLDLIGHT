@@ -30,10 +30,11 @@ func _run() -> void:
 	_test_voice_pool(audio)
 	_test_shutdown(audio)
 	audio.sfx_requested.disconnect(_record_cue)
-	# Let stopped playback handles leave the audio server before exiting.
+	# The audio server retires stopped playback handles on its own mix thread.
+	# Allow its cleanup window even with the headless dummy driver's scheduling.
 	await process_frame
 	await process_frame
-	await create_timer(0.20).timeout
+	await create_timer(1.0).timeout
 	print("FOLDLIGHT_AUDIO_QUALITY: " + ("PASS" if failures.is_empty() else "FAIL"))
 	quit(0 if failures.is_empty() else 1)
 

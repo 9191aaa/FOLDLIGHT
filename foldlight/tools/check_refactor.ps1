@@ -42,6 +42,9 @@ try {
     if (-not $results[0].Passed) { throw 'Godot import failed; see build/refactor-checks/import.errors.log.' }
     $testNames = @(
         'test_reward_input_guard',
+        'test_result_input_guard',
+        'test_title_exit_safety',
+        'test_ui_lifecycle_stress',
         'test_web_endless_race_bridge',
         'test_deferred_ui_focus',
         'test_unified_endless_pause',
@@ -80,7 +83,8 @@ try {
         'test_boss_clear_transition',
         'test_weapon_volley_accuracy',
         'test_terrain_context_hint',
-        'test_temporary_hazard_pause'
+        'test_temporary_hazard_pause',
+        'test_combat_transient_cleanup'
     )
     if ($SelectedTests.Count -gt 0) {
         foreach ($selected in $SelectedTests) {
