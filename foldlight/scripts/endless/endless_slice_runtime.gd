@@ -12,13 +12,20 @@ const DASH_COOLDOWN := 2.0
 const MAX_LIVE_ENEMIES := 84
 const BASE_RETURN_DAMAGE := 2.8
 const BASE_RETURN_SPEED := 610.0
+const ObjectiveTarget = preload("res://scripts/endless/endless_objective_target.gd")
 
 var run_ended: bool = false
 var _modal_kind: StringName = &""
 var _modal_options: Array[Dictionary] = []
 var _combined_modifiers: Dictionary = {}
 var _hud_clock: float = 0.0
-var _objective_weapon_clock: float = 0.0
+var _objective_target: Node2D
+var _zone_exposure := FoldlightEndlessZoneExposure.new()
+var _navigation: Control
+var _safe_route_clock: float = 0.0
+var _safe_route_position := Vector2.ZERO
+var _storm_support_count: int = 0
+var _storm_support_clock: float = 0.0
 var _transitioning_to_title: bool = false
 var _web_race_bridge: Node
 var _race_prepared: bool = false
@@ -44,6 +51,8 @@ var _barrage_elite_introduced: bool = false
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	presentation.show_hud()
+	_navigation = preload("res://scripts/endless/navigation_overlay.gd").new()
+	presentation.attach_navigation_overlay(_navigation)
 	presentation.reward_chosen.connect(_on_reward_chosen)
 	presentation.resume_requested.connect(_resume_game)
 	presentation.pause_requested.connect(_pause_game)
@@ -57,6 +66,8 @@ func _ready() -> void:
 	controller.player_evolution_changed.connect(_on_player_evolution_changed)
 	controller.mission_reward_offered.connect(_on_mission_reward_offered)
 	controller.mission_reward_claimed.connect(_on_mission_reward_claimed)
+	controller.objective_started.connect(_on_objective_started)
+	controller.objective_failed.connect(_on_objective_failed)
 	combat_runtime.projectile_captured.connect(_on_projectile_captured)
 	combat_runtime.player_hit.connect(_on_player_hit)
 	combat_runtime.enemy_defeated_detailed.connect(_on_enemy_defeated_detailed)
@@ -75,7 +86,10 @@ func _start_initial_slice() -> void:
 		else:
 			start_slice(int(bridge.call("get_run_seed")))
 	else:
-		start_slice()
+		var seed := int(get_tree().get_meta("next_endless_seed", 20260728))
+		if get_tree().has_meta("next_endless_seed"):
+			get_tree().remove_meta("next_endless_seed")
+		start_slice(seed)
 
 
 func prepare_web_race(bridge: Node) -> bool:
@@ -164,9 +178,13 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	player.set_debug_invincible(false)
 	controller.map_runtime.build_physics_walls = false
 	controller.map_runtime.draw_cover_visuals = false
+	controller.select_map_for_seed(seed)
+	_objective_target = null
+	_zone_exposure.reset()
+	_safe_route_clock = 0.0
 	var room_errors := world.load_room(
 		player,
-		&"endless_folded_delta",
+		StringName("endless_%s" % controller.map_definition.map_id),
 		controller.map_definition.bounds.size,
 		_build_room_terrain(),
 		Color("55b8a8"),
@@ -188,7 +206,6 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	_claiming_reward = false
 	presentation.reset_feedback()
 	presentation.show_hud()
-	_objective_weapon_clock = 0.0
 	_transitioning_to_title = false
 	var snapshot := controller.enter_mode(seed, player)
 	_refresh_combined_modifiers()
@@ -201,7 +218,14 @@ func _physics_process(delta: float) -> void:
 	if run_ended or not _modal_kind.is_empty() or not controller.active:
 		return
 	controller.advance_simulation(delta, player.global_position)
-	_update_flag_objective(delta)
+	# Completing a mission synchronously opens a reward modal. Do not apply
+	# environmental damage after that modal has suspended combat this frame.
+	if run_ended or not _modal_kind.is_empty() or not controller.active:
+		return
+	_update_zone_exposure(delta)
+	if run_ended:
+		return
+	_ensure_storm_support(delta)
 	_hud_clock -= delta
 	if _hud_clock <= 0.0:
 		_hud_clock = 0.10
@@ -343,6 +367,10 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 			if not entry_variant is Dictionary:
 				continue
 			var entry := (entry_variant as Dictionary).duplicate(true)
+			# Keep the final actor slot available for a task captain. Its ID is
+			# acknowledged only after the shared factory actually creates it.
+			if not bool(entry.get("is_captain", false)) and directed.size() >= maxi(0, open_slots - 1):
+				continue
 			if StringName(entry.get("enemy_id", &"")) == &"shutter_seraph":
 				if has_barrage_elite:
 					continue
@@ -352,7 +380,11 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 					presentation.show_notice("精英 · 暴雨折翼", "闭翼时无敌；张翼扫射时核心暴露。收纳弹幕，趁它开火返光！")
 			entry["spawn_position"] = Vector2(entry.get("position", Vector2.ZERO))
 			directed.append(entry)
-	combat_runtime.spawn_directed_wave(directed)
+	var spawned := combat_runtime.spawn_directed_wave(directed)
+	for actor: Node2D in spawned:
+		var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+		if bool(entry.get("is_captain", false)):
+			controller.confirm_captain_spawned(StringName(entry.get("captain_id", &"")))
 
 
 func _on_projectile_captured(captured_count: int, _position: Vector2) -> void:
@@ -363,6 +395,8 @@ func _on_projectile_captured(captured_count: int, _position: Vector2) -> void:
 
 
 func _on_enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary) -> void:
+	if bool(entry.get("is_objective_target", false)):
+		return
 	var report := entry.duplicate(true)
 	report["enemy_id"] = enemy_id
 	controller.report_enemy_defeated(report)
@@ -555,17 +589,80 @@ func _refresh_combined_modifiers() -> void:
 	combat_runtime.apply_build_stats(resolved)
 
 
-func _update_flag_objective(delta: float) -> void:
+func _on_objective_started(objective: Dictionary) -> void:
+	_retire_objective_target()
+	_storm_support_count = 0
+	_storm_support_clock = 0.0
+	if StringName(objective.get("kind", &"")) == &"destroy_flag":
+		var target := ObjectiveTarget.new()
+		target.configure(objective)
+		target.damage_reported.connect(controller.report_flag_damage)
+		combat_runtime.register_objective_target(target, {
+			"objective_id": objective.get("id", &""),
+			"target_id": objective.get("target_id", &""),
+			"is_objective_target": true,
+		})
+		_objective_target = target
+
+
+func _on_objective_failed(_objective: Dictionary) -> void:
+	_retire_objective_target()
+	if not run_ended:
+		presentation.show_notice("任务超时", "本次没有任务奖励，稍后出现新目标；航行继续。")
+
+
+func _retire_objective_target() -> void:
+	if is_instance_valid(_objective_target) and not _objective_target.is_queued_for_deletion():
+		combat_runtime.unregister_objective_target(_objective_target)
+	_objective_target = null
+
+
+func _update_zone_exposure(delta: float) -> void:
+	var closed := controller.zones.is_point_closed(player.global_position)
+	var hits := _zone_exposure.advance(delta, closed)
+	_safe_route_clock = maxf(0.0, _safe_route_clock - delta)
+	if hits > 0 and player.take_hit():
+		# Use the same health, invulnerability and feedback as ordinary hits.
+		_on_player_hit(player.health)
+
+
+func _ensure_storm_support(delta: float) -> void:
+	_storm_support_clock -= delta
+	if _storm_support_clock > 0.0:
+		return
+	_storm_support_clock = 4.0
 	var objective := controller.objectives.get_snapshot()
-	if StringName(objective.get("kind", &"")) != &"destroy_flag" or bool(objective.get("completed", false)):
+	if StringName(objective.get("kind", &"")) != &"capture_storm" or not bool(objective.get("target_active", false)):
 		return
-	_objective_weapon_clock -= delta
-	if _objective_weapon_clock > 0.0:
+	var center := Vector2(objective.get("target_position", Vector2.ZERO))
+	if player.global_position.distance_to(center) > 800.0:
 		return
-	_objective_weapon_clock = 0.55 * float(player.rogue_build_stats.get("weapon_interval_multiplier", 1.0))
-	var flag_position := Vector2(objective.get("target_position", Vector2.ZERO))
-	if player.global_position.distance_to(flag_position) <= 920.0 and controller.map_runtime.has_line_of_sight(player.global_position, flag_position, 8.0):
-		controller.report_flag_damage(StringName(objective.get("target_id", &"")), 1.0)
+	_storm_support_count = 0
+	for actor: Node2D in combat_runtime.enemies:
+		if is_instance_valid(actor) and not actor.is_queued_for_deletion() and float(actor.get("health")) > 0.0:
+			var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+			if entry.get("objective_support", &"") == objective.id:
+				_storm_support_count += 1
+	# Real shared shooters supply absorbable bullets even in a distant district.
+	# Keep at most two alive, replacing defeated shooters on a four-second cadence
+	# so automatic weapons cannot permanently exhaust the task's bullet supply.
+	# Actual captured projectiles remain the sole progress source.
+	var slots := mini(2 - _storm_support_count, maxi(0, MAX_LIVE_ENEMIES - 1 - combat_runtime.enemies.size()))
+	var entries: Array[Dictionary] = []
+	for index in 32:
+		if entries.size() >= slots:
+			break
+		var angle := TAU * float(posmod(controller.run_seed + index + _storm_support_count * 13, 32)) / 32.0
+		var candidate := center + Vector2.from_angle(angle) * 540.0
+		if controller.map_runtime.is_point_blocked(candidate, 48.0) or controller.zones.is_point_reserved(candidate, 48.0):
+			continue
+		if player.global_position.distance_to(candidate) < 360.0 or not controller.map_runtime.has_line_of_sight(candidate, center, 12.0):
+			continue
+		if not entries.is_empty() and candidate.distance_to(Vector2(entries[0].spawn_position)) < 420.0:
+			continue
+		var health_scale := maxf(3.0, float(controller.evolution.get_enemy_snapshot().get("health_multiplier", 1.0)) * 3.0)
+		entries.append({"enemy_id": &"fan", "spawn_position": candidate, "objective_support": objective.id, "health_multiplier": health_scale, "is_captain": false})
+	_storm_support_count += combat_runtime.spawn_directed_wave(entries).size()
 
 
 func _build_room_terrain() -> Array[Dictionary]:
@@ -586,19 +683,72 @@ func _build_room_terrain() -> Array[Dictionary]:
 
 
 func _refresh_hud() -> void:
+	_update_live_objective_position()
 	var enemy_state := controller.evolution.get_enemy_snapshot()
 	var player_state := controller.evolution.get_player_snapshot()
 	var objective := controller.objectives.get_snapshot()
 	var context := {
-		"region_text": "好友无尽" if _web_race_bridge != null else "无尽挑战 / 纸海深处",
+		"region_text": ("好友无尽" if _web_race_bridge != null else "无尽挑战") + " / " + controller.map_definition.title,
 		"voyage_text": "航行 %s  ·  击破 %d" % [_format_time(float(enemy_state.get("survival_seconds", 0.0))), controller.defeated_total],
 		"objective_title": "%s  ·  %d 秒" % [str(objective.get("title", "任务准备中")), ceili(float(objective.get("time_remaining", 0.0)))],
 		"objective_detail": str(objective.get("instruction", "")),
 		"objective_progress": float(objective.get("progress_ratio", 0.0)),
 		"race": _web_race_bridge != null,
+		"endless_navigation": true,
 	}
 	var pressure := "威胁 %d · 场上 %d\n收纳进化 %d" % [int(enemy_state.get("stage", 0)), combat_runtime.enemies.size(), int(player_state.get("stage", 0))]
 	presentation.update_hud(player, {}, {}, "无尽挑战", pressure, {}, context)
+	if is_instance_valid(_navigation):
+		_navigation.call("update_snapshot", get_navigation_snapshot())
+
+
+func _update_live_objective_position() -> void:
+	var objective := controller.objectives.get_snapshot()
+	if StringName(objective.get("kind", &"")) != &"defeat_captain" or not bool(objective.get("target_active", false)):
+		return
+	var target_id := StringName(objective.get("target_id", &""))
+	for actor: Node2D in combat_runtime.enemies:
+		if not is_instance_valid(actor) or actor.is_queued_for_deletion():
+			continue
+		var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+		if bool(entry.get("is_captain", false)) and StringName(entry.get("captain_id", &"")) == target_id:
+			controller.objectives.update_target_position(target_id, actor.global_position)
+			return
+
+
+func get_navigation_snapshot() -> Dictionary:
+	var map := controller.map_definition
+	var zone_state := controller.zones.get_snapshot()
+	var state := "safe"
+	var message := "中央青色航道始终开放"
+	var remaining := float(zone_state.get("remaining", 0.0))
+	if controller.zones.is_point_closed(player.global_position):
+		state = "closed"
+		remaining = _zone_exposure.seconds_until_damage()
+		message = "关闭区域 · %.1f 秒后扣 1 格血 / 每 2 秒" % remaining
+	elif controller.zones.is_point_reserved(player.global_position):
+		state = "warning"
+		message = "所在区域 %d 秒后关闭 · 沿青色箭头撤离" % ceili(remaining)
+	elif String(zone_state.get("phase", "rest")) == "warning":
+		message = "%d 秒后封区 · 避开地图上的金色预警区" % ceili(remaining)
+	if state != "safe" and _safe_route_clock <= 0.0:
+		_safe_route_clock = 0.5
+		_safe_route_position = controller.map_runtime.get_nearest_safe_position(player.global_position, player.get_hit_radius())
+	var view_size := get_viewport_rect().size / camera.zoom
+	return {
+		"combat_time": controller.evolution.survival_seconds,
+		"motion_scale": _feedback_motion_scale,
+		"map_id": map.map_id, "map_title": map.title,
+		"layout_revision": map.authored_version,
+		"bounds": map.bounds, "obstacles": map.walls,
+		"player_position": player.global_position,
+		"camera_rect": Rect2(camera.get_screen_center_position() - view_size * 0.5, view_size),
+		"zones": zone_state.get("zones", []),
+		"safe_corridors": zone_state.get("safe_corridors", []),
+		"refuges": zone_state.get("refuges", PackedVector2Array()),
+		"objective": controller.objectives.get_snapshot(),
+		"danger": {"state": state, "message": message, "seconds_remaining": remaining, "safe_position": _safe_route_position},
+	}
 
 
 func get_slice_snapshot() -> Dictionary:
@@ -612,13 +762,14 @@ func get_slice_snapshot() -> Dictionary:
 		"run_ended": run_ended,
 		"modal_kind": _modal_kind,
 		"combat_reuse": get_combat_reuse_contract(),
+		"navigation": get_navigation_snapshot(),
 	}
 
 
 func get_combat_reuse_contract() -> Dictionary:
 	var all_enemy_actors := true
 	for enemy in combat_runtime.enemies:
-		if not (enemy is FoldlightRogueEnemyActor or enemy is FoldlightRogueBossActor):
+		if not (enemy is FoldlightRogueEnemyActor or enemy is FoldlightRogueBossActor or enemy is ObjectiveTarget):
 			all_enemy_actors = false
 			break
 	var all_projectiles := true

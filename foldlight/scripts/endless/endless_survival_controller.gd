@@ -27,6 +27,11 @@ const THREAT_COSTS := {
 
 const BARRAGE_ELITE_START_SECONDS := 105.0
 const BARRAGE_ELITE_WAVE_INTERVAL := 4
+const MAP_PATHS := [
+	"res://resources/endless/maps/folded_delta.tres",
+	"res://resources/endless/maps/inverted_canals.tres",
+	"res://resources/endless/maps/solar_archipelago.tres",
+]
 
 @export var config: FoldlightEndlessSurvivalConfig
 @export var map_definition: FoldlightEndlessMapDefinition
@@ -43,6 +48,7 @@ var _last_player_position := Vector2.ZERO
 var _external_player: Node2D
 var _pending_mission_rewards: Array[Dictionary] = []
 var _captain_spawned_for_objective: StringName = &""
+var zones := FoldlightEndlessZoneDirector.new()
 
 @onready var map_runtime: FoldlightEndlessHandcraftedMap = $HandcraftedMap
 @onready var evolution: FoldlightEndlessEvolutionDirector = $EvolutionDirector
@@ -80,6 +86,15 @@ func enter_mode(seed: int = 1, player: Node2D = null) -> Dictionary:
 	return start_run(seed)
 
 
+func select_map_for_seed(seed: int) -> void:
+	map_definition = load(MAP_PATHS[posmod(seed, MAP_PATHS.size())]) as FoldlightEndlessMapDefinition
+
+
+func confirm_captain_spawned(target_id: StringName) -> void:
+	if target_id == StringName(objectives.get_snapshot().get("target_id", &"")):
+		_captain_spawned_for_objective = target_id
+
+
 func exit_mode(reason: StringName = &"mode_switch") -> Dictionary:
 	return stop_run(reason)
 
@@ -102,6 +117,8 @@ func start_run(seed: int = 1) -> Dictionary:
 	_pending_mission_rewards.clear()
 	_captain_spawned_for_objective = &""
 	evolution.reset(config)
+	zones.reset(map_definition, seed)
+	objectives.set_district_access(zones.get_snapshot())
 	objectives.reset(config, map_definition, seed)
 	active = true
 	show()
@@ -131,8 +148,15 @@ func advance_simulation(delta: float, player_position: Vector2) -> void:
 		return
 	_last_player_position = player_position
 	evolution.advance_survival(delta)
+	var protected_points: PackedVector2Array = objectives.get_snapshot().get("protected_points", PackedVector2Array())
+	zones.advance_to(evolution.survival_seconds, protected_points)
+	var zone_snapshot := zones.get_snapshot()
+	objectives.set_district_access(zone_snapshot)
+	map_runtime.set_zone_snapshot(zone_snapshot)
 	objectives.advance(delta, player_position)
 	map_runtime.set_active_objective(objectives.get_snapshot())
+	if not active or not _pending_mission_rewards.is_empty():
+		return
 	_spawn_clock -= delta
 	if _spawn_clock <= 0.0:
 		_emit_next_wave()
@@ -143,14 +167,16 @@ func report_projectiles_absorbed(projectile_count: int) -> void:
 	if not active or projectile_count <= 0:
 		return
 	evolution.record_absorbed(projectile_count)
+	objectives.report_projectiles_absorbed(projectile_count, _external_player.global_position if is_instance_valid(_external_player) else _last_player_position)
 
 
 func report_enemy_defeated(enemy_snapshot: Dictionary) -> void:
-	if not active:
+	if not active or bool(enemy_snapshot.get("is_objective_target", false)):
 		return
 	defeated_total += 1
-	if bool(enemy_snapshot.get("is_captain", false)):
-		report_captain_defeated(StringName(enemy_snapshot.get("captain_id", &"")))
+	var is_captain := bool(enemy_snapshot.get("is_captain", false))
+	var identity := StringName(enemy_snapshot.get("captain_id" if is_captain else "actor_id", &""))
+	objectives.report_enemy_defeated(identity, is_captain)
 
 
 func report_captain_defeated(captain_id: StringName = &"") -> bool:
@@ -200,7 +226,7 @@ func force_next_wave() -> Dictionary:
 func get_snapshot() -> Dictionary:
 	return {
 		"mode_id": config.mode_id if config != null else &"classic_2_0_endless",
-		"rules_version": config.rules_version if config != null else &"endless_1_0",
+		"rules_version": config.rules_version if config != null else &"endless_2_0",
 		"active": active,
 		"seed": run_seed,
 		"wave_sequence": wave_sequence,
@@ -208,6 +234,7 @@ func get_snapshot() -> Dictionary:
 		"map": map_runtime.get_map_contract() if is_instance_valid(map_runtime) else {},
 		"evolution": evolution.get_snapshot() if is_instance_valid(evolution) else {},
 		"objective": objectives.get_snapshot() if is_instance_valid(objectives) else {},
+		"zones": zones.get_snapshot(),
 		"pending_mission_rewards": _pending_mission_rewards.duplicate(true),
 	}
 
@@ -248,9 +275,8 @@ func _emit_next_wave() -> Dictionary:
 	var objective := objectives.get_snapshot()
 	var objective_kind := StringName(objective.get("kind", &""))
 	var objective_id := StringName(objective.get("target_id", &""))
-	if objective_kind == &"defeat_captain" and objective_id != &"" and objective_id != _captain_spawned_for_objective:
+	if objective_kind == &"defeat_captain" and bool(objective.get("target_active", true)) and objective_id != &"" and objective_id != _captain_spawned_for_objective:
 		entries.append(_make_captain_entry(objective, enemy_state))
-		_captain_spawned_for_objective = objective_id
 		budget = maxi(1, budget - 5)
 	if evolution.survival_seconds >= BARRAGE_ELITE_START_SECONDS and wave_sequence % BARRAGE_ELITE_WAVE_INTERVAL == 0 and budget >= 6:
 		entries.append({
@@ -309,6 +335,7 @@ func _make_captain_entry(objective: Dictionary, enemy_state: Dictionary) -> Dict
 		"endless_stage": stage,
 		"is_captain": true,
 		"captain_id": objective.get("target_id", &""),
+		"objective_id": objective.get("id", &""),
 	}
 
 

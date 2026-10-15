@@ -328,6 +328,44 @@ func spawn_hostile_volley(snapshot: Dictionary) -> int:
 ## Adapter entry for modes that add scheduling around the 2.0 combat runtime.
 ## Callers choose when and where a wave appears; the factory, actors, attacks,
 ## projectiles, damage and hit feedback remain the original combat chain.
+func register_objective_target(actor: Node2D, entry: Dictionary = {}) -> bool:
+	if not is_instance_valid(room) or not is_instance_valid(actor) or actor.is_queued_for_deletion() or enemies.has(actor):
+		return false
+	if not actor.has_method("take_damage") or not actor.has_signal("defeated"):
+		return false
+	if actor.get_parent() != null and actor.get_parent() != room.enemy_container:
+		return false
+	if actor.get_parent() == null:
+		room.enemy_container.add_child(actor)
+	actor.global_position = Vector2(entry.get("spawn_position", actor.get("target_position")))
+	var metadata := entry.duplicate(true)
+	metadata["is_objective_target"] = true
+	actor.set_meta("counts_for_room", false)
+	actor.set_meta("directed_spawn_entry", metadata)
+	actor.connect("defeated", _on_enemy_defeated)
+	enemies.append(actor)
+	if actor.has_method("set_simulation_active"):
+		actor.call("set_simulation_active", active)
+	enemy_spawned.emit(actor, metadata.duplicate(true))
+	return true
+
+
+func unregister_objective_target(actor: Node2D) -> bool:
+	if not is_instance_valid(actor) or not enemies.has(actor):
+		return false
+	var metadata: Dictionary = actor.get_meta("directed_spawn_entry", {})
+	if not bool(metadata.get("is_objective_target", false)):
+		return false
+	enemies.erase(actor)
+	if actor.is_connected("defeated", _on_enemy_defeated):
+		actor.disconnect("defeated", _on_enemy_defeated)
+	if actor.has_method("set_simulation_active"):
+		actor.call("set_simulation_active", false)
+	actor.hide()
+	actor.queue_free()
+	return true
+
+
 func spawn_directed_wave(entries: Array[Dictionary]) -> Array[Node2D]:
 	var spawned: Array[Node2D] = []
 	for source_entry in entries:
@@ -857,6 +895,7 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 		last_boss_defeat = {"title": boss.definition.title, "health": 0.0, "maximum_health": boss.definition.base_health, "phase": boss.phase_controller.phase_index + 1, "defeated": true, "position": boss.global_position}
 	var directed_entry_variant: Variant = actor.get_meta("directed_spawn_entry", {})
 	var directed_entry := (directed_entry_variant as Dictionary).duplicate(true) if directed_entry_variant is Dictionary else {}
+	directed_entry["actor_id"] = StringName(actor.get("actor_id"))
 	enemies.erase(actor)
 	enemy_defeated.emit(enemy_id)
 	enemy_defeated_detailed.emit(enemy_id, directed_entry)

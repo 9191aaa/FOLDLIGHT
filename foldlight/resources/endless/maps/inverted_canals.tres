@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="FoldlightEndlessMapDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/endless/endless_map_definition.gd" id="1_map"]
+
+[resource]
+script = ExtResource("1_map")
+map_id = &"inverted_canals"
+title = "倒悬航渠"
+authored_version = &"handcrafted_2_0"
+region_style = &"ink_city"
+bounds = Rect2(0, 0, 6400, 4480)
+player_spawn = Vector2(3200, 3000)
+district_names = PackedStringArray("西卷书港", "悬册北廊", "折桥中庭", "回墨灯泊", "东卷书港", "墨潮南廊")
+district_rects = Array[Rect2]([Rect2(0, 600, 2000, 3300), Rect2(1600, 0, 3200, 1200), Rect2(2000, 1080, 2400, 1400), Rect2(2000, 2420, 2400, 1100), Rect2(4400, 600, 2000, 3300), Rect2(1400, 3420, 3600, 1060)])
+district_colors = PackedColorArray(0.08, 0.14, 0.19, 1, 0.12, 0.14, 0.20, 1, 0.08, 0.19, 0.21, 1, 0.07, 0.18, 0.20, 1, 0.12, 0.14, 0.20, 1, 0.08, 0.14, 0.18, 1)
+district_styles = Array[StringName]([&"ink_city", &"ink_city", &"paper_reef", &"ink_city", &"ink_city", &"ink_city"])
+closure_zone_ids = Array[StringName]([&"west_books", &"west_shelves", &"north_scrolls", &"east_books", &"east_shelves", &"south_ink"])
+closure_zone_names = PackedStringArray("西卷外港", "西岸书架", "悬册北廊", "东卷外港", "东岸书架", "墨潮南廊")
+closure_zone_rects = Array[Rect2]([Rect2(0, 0, 2100, 2060), Rect2(0, 2420, 2100, 2060), Rect2(2100, 0, 2200, 1080), Rect2(4300, 0, 2100, 2060), Rect2(4300, 2420, 2100, 2060), Rect2(2100, 3400, 2200, 1080)])
+safe_corridors = Array[Rect2]([Rect2(2100, 1080, 2200, 2320), Rect2(0, 2060, 6400, 360)])
+refuge_points = PackedVector2Array(2220, 2230, 3200, 2230, 4180, 2230, 3200, 3000)
+walls = Array[Rect2]([
+Rect2(1450, 460, 150, 720), Rect2(1450, 1510, 150, 390), Rect2(1450, 2590, 150, 450), Rect2(1450, 3390, 150, 620),
+Rect2(4800, 460, 150, 720), Rect2(4800, 1510, 150, 390), Rect2(4800, 2590, 150, 450), Rect2(4800, 3390, 150, 620),
+Rect2(390, 740, 730, 140), Rect2(420, 1670, 640, 140), Rect2(460, 2750, 650, 140), Rect2(390, 3650, 730, 140),
+Rect2(5280, 740, 730, 140), Rect2(5340, 1670, 640, 140), Rect2(5290, 2750, 650, 140), Rect2(5280, 3650, 730, 140),
+Rect2(2300, 1340, 550, 140), Rect2(3550, 1340, 550, 140), Rect2(2510, 1750, 140, 260), Rect2(3750, 1750, 140, 260),
+Rect2(2300, 2640, 550, 140), Rect2(3550, 2640, 550, 140), Rect2(2510, 3020, 140, 220), Rect2(3750, 3020, 140, 220),
+Rect2(2360, 440, 550, 140), Rect2(3490, 440, 550, 140), Rect2(2360, 3900, 550, 140), Rect2(3490, 3900, 550, 140),
+Rect2(1820, 1470, 140, 450), Rect2(4440, 1470, 140, 450), Rect2(1820, 2640, 140, 450), Rect2(4440, 2640, 140, 450)
+])
+capture_points = PackedVector2Array(3200, 2230, 900, 2250, 5500, 2250, 3200, 820)
+flag_positions = PackedVector2Array(820, 1310, 5580, 1310, 850, 3250, 5550, 3250)
+captain_spawn_positions = PackedVector2Array(1980, 1200, 3200, 1160, 4420, 1200, 2000, 3260, 4400, 3260, 3200, 3640)
+shooter_spawn_positions = PackedVector2Array(2230, 1800, 2950, 1580, 3450, 1580, 4140, 1800, 2230, 2480, 3000, 2860, 3400, 2860, 4140, 2480, 3200, 1960, 3200, 2520)
+melee_spawn_positions = PackedVector2Array(260, 460, 260, 1380, 260, 2260, 260, 3220, 260, 4150, 2000, 220, 3200, 220, 4400, 220, 6130, 460, 6130, 1380, 6130, 2260, 6130, 3220, 6130, 4150, 2000, 4240, 3200, 4240, 4400, 4240)
+rally_positions = PackedVector2Array(900, 2250, 2220, 2230, 3200, 820, 4180, 2230, 5500, 2250, 3200, 3640, 3200, 3000, 3200, 2230)

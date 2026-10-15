@@ -203,6 +203,7 @@ func _on_endless_requested() -> void:
 func _complete_endless_transition() -> void:
 	if not is_inside_tree() or is_queued_for_deletion() or not _scene_transitioning:
 		return
+	get_tree().set_meta("next_endless_seed", randi_range(1, 2147483647))
 	var error := get_tree().change_scene_to_file(ENDLESS_SURVIVAL_SCENE)
 	if error != OK:
 		_scene_transitioning = false

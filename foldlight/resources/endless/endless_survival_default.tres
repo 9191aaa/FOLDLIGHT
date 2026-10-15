@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_config")
 mode_id = &"classic_2_0_endless"
-rules_version = &"endless_1_0"
+rules_version = &"endless_2_0"
 enemy_stage_times = PackedFloat32Array(45, 105, 180, 270, 375, 495)
 player_absorb_thresholds = PackedInt32Array(24, 60, 112, 184, 280, 400)
 base_spawn_interval = 6.5

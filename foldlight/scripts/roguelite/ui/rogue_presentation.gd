@@ -46,6 +46,7 @@ var _desktop_hud: Control
 var _settings_grid: GridContainer
 var _settings_minus: Array[Button] = []
 var _touch_safe_top: float = -1.0
+var _navigation_overlay: Control
 
 var screen_kind: StringName = &"title"
 var _screens: Dictionary = {}
@@ -174,6 +175,8 @@ func set_touch_layout(enabled: bool) -> void:
 	_route_panel.set_touch_layout(enabled)
 	for card in _reward_buttons:
 		card.set_touch_layout(enabled)
+	if is_instance_valid(_navigation_overlay):
+		_navigation_overlay.set_touch_layout(enabled, MOBILE_LAYOUT.safe_top(self))
 	_refresh_input_hint()
 	_touch_safe_top = MOBILE_LAYOUT.safe_top(self) if enabled else -1.0
 
@@ -182,6 +185,26 @@ func _on_touch_layout_changed() -> void:
 	if _touch_layout and not is_equal_approx(_touch_safe_top, MOBILE_LAYOUT.safe_top(self)):
 		_touch_safe_top = MOBILE_LAYOUT.safe_top(self)
 		_mobile_layout.apply(self, true)
+		if is_instance_valid(_navigation_overlay):
+			_navigation_overlay.set_touch_layout(true, _touch_safe_top)
+
+
+## Modes may attach read-only navigation without depending on private UI nodes.
+## The HUD owns its lifetime; all existing modal screens hide it immediately.
+func attach_navigation_overlay(overlay: Control) -> void:
+	if not is_instance_valid(overlay) or overlay == _navigation_overlay:
+		return
+	if is_instance_valid(_navigation_overlay):
+		_navigation_overlay.hide()
+		_navigation_overlay.queue_free()
+	_navigation_overlay = overlay
+	(_screens[&"hud"] as Control).add_child(overlay)
+	overlay.set_touch_layout(_touch_layout, MOBILE_LAYOUT.safe_top(self))
+	overlay.set_hud_visible(screen_kind == &"hud")
+
+
+func get_endless_navigation_snapshot() -> Dictionary:
+	return _navigation_overlay.get_navigation_snapshot() if is_instance_valid(_navigation_overlay) else {}
 
 
 func get_touch_debug_buttons() -> Array[Dictionary]:
@@ -312,10 +335,10 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 		_hud_region.text = str(context["region_text"])
 	if context.has("voyage_text"):
 		_hud_room.text = str(context["voyage_text"])
-	_hud_objective.visible = context.has("objective_title")
+	_hud_objective.visible = context.has("objective_title") and not bool(context.get("endless_navigation", false))
 	_hud_objective_detail.visible = _hud_objective.visible
 	_hud_objective_bar.visible = _hud_objective.visible
-	if _hud_objective.visible:
+	if context.has("objective_title"):
 		_hud_objective.text = str(context["objective_title"])
 		_hud_objective_detail.text = str(context.get("objective_detail", ""))
 		_hud_objective_bar.value = clampf(float(context.get("objective_progress", 0.0)), 0.0, 1.0) * 100.0
@@ -1452,6 +1475,8 @@ func _show_only(kind: StringName) -> void:
 		_leave_action_locked = true
 	screen_kind = kind
 	_sync_touch_context()
+	if is_instance_valid(_navigation_overlay):
+		_navigation_overlay.set_hud_visible(kind == &"hud")
 	screen_changed.emit(kind)
 	for key_variant: Variant in _screens.keys():
 		(_screens[key_variant] as Control).visible = StringName(key_variant) == kind

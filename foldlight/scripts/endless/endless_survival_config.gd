@@ -3,7 +3,7 @@ extends Resource
 
 @export_group("Identity")
 @export var mode_id: StringName = &"classic_2_0_endless"
-@export var rules_version: StringName = &"endless_1_0"
+@export var rules_version: StringName = &"endless_2_0"
 
 @export_group("Independent Evolution Axes")
 @export var enemy_stage_times := PackedFloat32Array([45.0, 105.0, 180.0, 270.0, 375.0, 495.0])

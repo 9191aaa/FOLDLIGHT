@@ -200,9 +200,10 @@ func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> v
 	slice.player.health = slice.player.max_health
 	slice.player.invulnerability = 0.0
 	var targets := _spawn_test_enemies(slice, [300.0], 99.0)
+	var open_lane := _find_open_weapon_lane(slice)
 	slice.combat_runtime.spawn_hostile_volley({
-		"origin": slice.player.global_position + Vector2(0.0, -80.0),
-		"direction": Vector2.DOWN, "speed": 100.0, "projectile_count": 1,
+		"origin": slice.player.global_position + open_lane * 150.0,
+		"direction": -open_lane, "speed": 100.0, "projectile_count": 1,
 	})
 	var hostile := slice.combat_runtime.projectiles[0]
 	slice.controller._on_objective_completed({"completion_count": 1, "title": "modal freeze contract"})
@@ -224,11 +225,20 @@ func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> v
 	await create_timer(0.28).timeout
 	_check(slice._modal_kind.is_empty() and slice.presentation.screen_kind == &"hud", "choosing a reward closes the blocking modal")
 	_check(slice.player.play_enabled and slice.combat_runtime.active and slice.player.invulnerability >= 0.75, "selection restores shared combat with the overlay safety window")
+	# Resuming re-enables the runtime's scheduled physics. The remainder of this
+	# case advances it explicitly, without depending on the reward tween's tail.
+	slice.combat_runtime.set_physics_process(false)
 	slice.combat_runtime._physics_process(0.1)
 	_check(hostile.global_position != projectile_position and targets[0].get_combat_snapshot() != enemy_before, "hostile projectiles and enemies resume simulation after selection")
 	_check(slice.player.health == health_before, "resuming does not bypass the player safety window")
-	slice.player._physics_process(0.8)
-	slice.combat_runtime._physics_process(0.8)
+	# Use real-sized physics steps: one artificial 0.8 s jump can tunnel this
+	# projectile entirely across the player's small hit circle. The longer clear
+	# lane makes arrival occur after the 0.75 s overlay protection has elapsed.
+	for frame in 120:
+		slice.player._physics_process(1.0 / 60.0)
+		slice.combat_runtime._physics_process(1.0 / 60.0)
+		if slice.player.health < health_before:
+			break
 	_check(slice.player.health == health_before - 1 and not slice.combat_runtime.projectiles.has(hostile), "a waiting hostile projectile can hit after resume protection expires")
 
 

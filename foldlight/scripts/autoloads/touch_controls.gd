@@ -322,6 +322,18 @@ func get_debug_snapshot() -> Dictionary:
 		snapshot["screen_kind"] = owner.get("screen_kind")
 		if owner.has_method("get_touch_debug_buttons"):
 			snapshot["buttons"] = owner.call("get_touch_debug_buttons")
+		if owner.has_method("get_endless_navigation_snapshot"):
+			var navigation: Dictionary = owner.call("get_endless_navigation_snapshot")
+			for key: Variant in navigation:
+				var value: Variant = navigation[key]
+				if value is Rect2:
+					navigation[key] = {"x": value.position.x, "y": value.position.y, "width": value.size.x, "height": value.size.y}
+				elif value is Vector2:
+					navigation[key] = {"x": value.x, "y": value.y}
+			snapshot["navigation"] = navigation
+		var runtime := owner.get_parent()
+		if runtime != null and runtime.has_method("get_race_stats"):
+			snapshot["survival"] = runtime.call("get_race_stats")
 	return snapshot
 
 
