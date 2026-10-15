@@ -2,6 +2,9 @@ class_name FoldlightRogueBossActor
 extends CharacterBody2D
 
 const HitReaction = preload("res://scripts/visuals/paper_hit_reaction.gd")
+const Puppet = preload("res://scripts/visuals/boss_paper_puppet.gd")
+const REMNANT = preload("res://scripts/visuals/boss_paper_remnant.gd")
+const RECOIL_SECONDS: float = 0.30
 
 signal damaged(amount: float, health_remaining: float, source: StringName)
 signal defeated(actor: Node2D)
@@ -27,12 +30,16 @@ var _return_window_budget: float = 0.0
 var _arena_damage_remaining: float = 0.0
 var _hit_reaction := HitReaction.new()
 var _visual_time: float = 0.0
+var _motion_scale: float = 1.0
+var _recoil_remaining: float = 0.0
+var _stagger_pose: float = 0.0
+var _visual_direction := Vector2.DOWN
+var _simulation_active: bool = true
+var _death_remnant_spawned: bool = false
 var _rng := RandomNumberGenerator.new()
 
 @onready var phase_controller: FoldlightBossPhaseController = $PhaseController
 @onready var arena_controller: FoldlightBossArenaController = $ArenaController
-@onready var aura: Polygon2D = $Aura
-@onready var phase_particles: GPUParticles2D = $PhaseParticles
 
 
 func _ready() -> void:
@@ -50,6 +57,13 @@ func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed
 	actor_id = definition.content_id if definition != null else &"boss"
 	health = definition.base_health if definition != null else 1.0
 	_hit_reaction.reset()
+	_visual_time = 0.0
+	_recoil_remaining = 0.0
+	_stagger_pose = 0.0
+	_visual_direction = Vector2.DOWN
+	_simulation_active = true
+	_death_remnant_spawned = false
+	_refresh_motion_setting()
 	_room_bounds = bounds
 	_rng.seed = seed
 	return_meter = 0.0
@@ -59,23 +73,21 @@ func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed
 	global_position = bounds.get_center()
 	phase_controller.configure(definition)
 	arena_controller.configure(definition.arena_rule, bounds)
-	var material := aura.material as ShaderMaterial
-	if material != null:
-		material = material.duplicate() as ShaderMaterial
-		aura.material = material
-		material.set_shader_parameter("accent", definition.accent)
-		material.set_shader_parameter("intensity", 0.42)
 	queue_redraw()
 
 
 func advance_simulation(delta: float, player_position: Vector2, hostile_time_scale: float = 1.0) -> void:
-	if definition == null or health <= 0.0:
+	if definition == null or health <= 0.0 or not _simulation_active:
 		return
+	_refresh_motion_setting()
 	_hit_reaction.advance(maxf(0.0, delta))
 	var safe_delta := maxf(0.0, delta) * clampf(hostile_time_scale, 0.1, 2.0)
 	_visual_time += safe_delta
+	_recoil_remaining = maxf(0.0, _recoil_remaining - safe_delta)
 	_target_position = player_position
 	phase_controller.advance_simulation(safe_delta, health / definition.base_health)
+	var stagger_target := 1.0 if phase_controller.state == FoldlightBossPhaseController.State.STAGGERED else 0.0
+	_stagger_pose = move_toward(_stagger_pose, stagger_target, safe_delta * 6.0)
 	arena_controller.set_pressure_suspended(phase_controller.state in [FoldlightBossPhaseController.State.INTRO, FoldlightBossPhaseController.State.STAGGERED])
 	arena_controller.advance_simulation(safe_delta, player_position)
 	_update_movement(safe_delta)
@@ -116,6 +128,7 @@ func take_damage(amount: float, source: StringName = &"weapon", incoming_velocit
 	damaged.emit(applied, health, source)
 	if health <= 0.0:
 		phase_controller.mark_defeated()
+		_spawn_death_remnant()
 		defeated.emit(self)
 		return true
 	queue_redraw()
@@ -137,6 +150,56 @@ func get_combat_snapshot() -> Dictionary:
 
 func get_hit_feedback_snapshot() -> Dictionary:
 	return _hit_reaction.snapshot()
+
+
+func set_simulation_active(value: bool) -> void:
+	_simulation_active = value
+
+
+func _refresh_motion_setting() -> void:
+	var profile := get_node_or_null("/root/ProfileManager")
+	_motion_scale = clampf(float(profile.call("get_setting", &"screen_shake", 1.0)), 0.0, 1.0) if profile != null else 1.0
+
+
+func get_visual_pose() -> Dictionary:
+	var state := phase_controller.get_presentation_snapshot()
+	var intro := float(state["progress"]) if phase_controller.state == FoldlightBossPhaseController.State.INTRO else 1.0
+	return {
+		"phase": phase_controller.phase_index,
+		"time": _visual_time if _motion_scale > 0.0 else 0.0,
+		"motion_scale": _motion_scale,
+		"intro": intro if _motion_scale > 0.0 else 1.0,
+		"charge": float(state["progress"]) if phase_controller.state == FoldlightBossPhaseController.State.TELEGRAPH else 0.0,
+		"recoil": pow(_recoil_remaining / RECOIL_SECONDS, 2.0),
+		"stagger": _stagger_pose,
+		"transition": float(state["transition"]),
+		"transition_active": bool(state["transition_active"]),
+		"death": 0.0,
+		"direction": _visual_direction,
+		"flash": _hit_reaction.flash,
+		"accent": definition.accent if definition != null else FoldlightTheme.GOLD,
+	}
+
+
+func _spawn_death_remnant() -> void:
+	if _death_remnant_spawned or not is_inside_tree():
+		return
+	_death_remnant_spawned = true
+	var holder: Node = get_parent()
+	var ancestor := holder
+	while ancestor != null:
+		if ancestor is FoldlightRoomRuntime:
+			holder = ancestor
+			break
+		ancestor = ancestor.get_parent()
+	if holder == null:
+		return
+	var remnant := REMNANT.new()
+	remnant.name = "BossPaperRemnant"
+	holder.add_child(remnant)
+	remnant.global_transform = global_transform
+	remnant.configure(actor_id, get_visual_pose())
+	remnant.set_simulation_active(_simulation_active)
 
 
 func _update_movement(delta: float) -> void:
@@ -180,30 +243,30 @@ func _on_phase_changed(new_phase: int) -> void:
 		_request_reef_support()
 	elif definition.content_id == &"inverted_archivist":
 		_request_archivist_support()
-	phase_particles.restart()
-	phase_particles.emitting = true
-	var material := aura.material as ShaderMaterial
-	if material != null:
-		var tween := create_tween()
-		tween.tween_method(func(value: float) -> void: material.set_shader_parameter("intensity", value), 0.9, 0.52 + float(new_phase) * 0.12, 0.42)
+	_recoil_remaining = 0.0
 	phase_changed.emit(new_phase)
 
 
 func _on_telegraph_started(pattern_id: StringName, duration: float) -> void:
 	_locked_attack_origin = global_position
 	_locked_attack_target = _target_position
+	_visual_direction = _locked_attack_origin.direction_to(_locked_attack_target)
+	if _visual_direction.is_zero_approx():
+		_visual_direction = Vector2.DOWN
 	_attack_locked = true
 	telegraph_requested.emit({"pattern_id": pattern_id, "duration": duration, "origin": _locked_attack_origin, "target_position": _locked_attack_target, "accent": definition.accent, "phase": phase_controller.phase_index, "spread_radians": _black_gold_spread(pattern_id), "zone_radius": 165.0 if pattern_id == &"ink_partition" else 0.0})
 
 
 func _on_stagger_started(duration: float) -> void:
 	_attack_locked = false
+	_recoil_remaining = 0.0
 	_return_window_budget = definition.base_health * definition.return_window_fraction
 	arena_controller.set_pressure_suspended(true)
 	stagger_started.emit(duration)
 
 
 func _on_attack_ready(pattern_id: StringName, telegraph_duration: float) -> void:
+	_recoil_remaining = RECOIL_SECONDS
 	match definition.content_id:
 		&"reef_crown_battery":
 			_emit_reef_pattern(pattern_id, telegraph_duration)
@@ -343,80 +406,30 @@ func _volley_snapshot(count: int, speed: float, spread: float, reflectable: bool
 
 
 func _draw() -> void:
-	if definition == null:
+	if definition == null or health <= 0.0:
 		return
-	var accent := definition.accent.lerp(Color.WHITE, _hit_reaction.flash * 0.62)
-	var phase := phase_controller.phase_index
-	var is_reef_crown := definition.content_id == &"reef_crown_battery"
-	var silhouette_radius := 108.0 if is_reef_crown else 66.0
-	var boss_breathe := sin(_visual_time * (2.2 + float(phase) * 0.25))
-	var boss_offset := Vector2(0.0, boss_breathe * (2.0 if is_reef_crown else 4.0)) + _hit_reaction.direction * _hit_reaction.punch * 4.5
-	var boss_scale := Vector2(1.0 + _hit_reaction.punch * 0.055 + boss_breathe * 0.012, 1.0 - _hit_reaction.punch * 0.035 - boss_breathe * 0.018)
-	draw_set_transform(boss_offset, boss_breathe * (0.008 if is_reef_crown else 0.022), boss_scale)
-	for ring in range(4 + phase, 0, -1):
-		draw_circle(Vector2.ZERO, (76.0 if is_reef_crown else 44.0) + float(ring) * 9.0, Color(accent, 0.018 * float(6 - mini(ring, 5))))
-	match definition.content_id:
-		&"reef_crown_battery":
-			# A wide, top-heavy mobile fortress.  Hard blocks and four legs keep
-			# the boss readable above the reef terrain at normal play scale.
-			draw_rect(Rect2(Vector2(-101.0, 48.0), Vector2(202.0, 34.0)), Color("151b1c"), true)
-			var crown := PackedVector2Array([
-				Vector2(-92, 48), Vector2(-82, -45), Vector2(-55, -72),
-				Vector2(-30, -30), Vector2(0, -94), Vector2(30, -30),
-				Vector2(56, -76), Vector2(84, -46), Vector2(92, 48),
-			])
-			var crown_fill := Color("8b7958").lerp(Color.WHITE, _hit_reaction.flash * 0.48)
-			draw_colored_polygon(crown, crown_fill)
-			var crown_inset := PackedVector2Array([
-				Vector2(-72, 34), Vector2(-55, -40), Vector2(-24, 18),
-				Vector2(0, -78), Vector2(25, 18), Vector2(56, -45), Vector2(72, 34),
-			])
-			draw_colored_polygon(crown_inset, Color("d2bd83").lerp(Color.WHITE, _hit_reaction.flash * 0.38))
-			draw_polyline(PackedVector2Array(Array(crown) + [crown[0]]), accent, 7.0, false)
-			# Side batteries foreshadow turret-crown summons.
-			for turret_x in [-72.0, 72.0]:
-				draw_rect(Rect2(Vector2(turret_x - 17.0, -42.0), Vector2(34.0, 47.0)), Color("55433a"), true)
-				draw_rect(Rect2(Vector2(turret_x - 27.0, -52.0), Vector2(54.0, 13.0)), Color("d96c3f"), true)
-				draw_rect(Rect2(Vector2(turret_x - 7.0, -67.0), Vector2(14.0, 18.0)), Color("f4e8c7"), true)
-			# Black-gold core is the break window target.
-			draw_rect(Rect2(Vector2(-32.0, -13.0), Vector2(64.0, 55.0)), Color("190e20"), true)
-			draw_rect(Rect2(Vector2(-22.0, -4.0), Vector2(44.0, 36.0)), Color("713d36"), true)
-			draw_rect(Rect2(Vector2(-13.0, 4.0), Vector2(26.0, 18.0)), Color("f4bd58"), true)
-			draw_rect(Rect2(Vector2(-5.0, 9.0), Vector2(10.0, 8.0)), Color.WHITE, true)
-			for leg_x in [-72.0, -25.0, 25.0, 72.0]:
-				draw_rect(Rect2(Vector2(leg_x - 9.0, 78.0), Vector2(18.0, 25.0 + absf(leg_x) * 0.12)), Color("3c3531"), true)
-			for phase_mark in phase + 1:
-				draw_rect(Rect2(Vector2(-18.0 + phase_mark * 18.0, 58.0), Vector2(10.0, 7.0)), accent, true)
-		&"inverted_archivist":
-			var book := Rect2(Vector2(-50, -42), Vector2(100, 84))
-			draw_rect(book, Color(0.11, 0.06, 0.18, 0.98).lerp(Color.WHITE, _hit_reaction.flash * 0.48), true)
-			draw_rect(book, accent, false, 6.0, true)
-			draw_line(Vector2(0, -40), Vector2(0, 40), Color(0.96, 0.70, 1.0), 4.0, true)
-			for page in 4:
-				var page_angle := _visual_time * 0.36 + float(page) * TAU / 4.0
-				var page_center := Vector2.from_angle(page_angle) * 78.0
-				var page_shape := PackedVector2Array([page_center + Vector2(-13,-7), page_center + Vector2(14,-4), page_center + Vector2(10,8), page_center + Vector2(-11,6)])
-				draw_colored_polygon(page_shape, Color(0.82, 0.54, 0.90, 0.18))
-				draw_polyline(PackedVector2Array(Array(page_shape) + [page_shape[0]]), Color(accent, 0.38), 1.5, true)
-		&"origami_judge":
-			var judge := PackedVector2Array([Vector2(0, -58), Vector2(48, -22), Vector2(38, 48), Vector2(0, 30), Vector2(-38, 48), Vector2(-48, -22)])
-			draw_colored_polygon(judge, Color(0.16, 0.08, 0.08, 0.98).lerp(Color.WHITE, _hit_reaction.flash * 0.48))
-			draw_polyline(PackedVector2Array(Array(judge) + [judge[0]]), accent, 6.0, true)
-			draw_colored_polygon(PackedVector2Array([judge[0], judge[1], judge[3]]), Color(0.96, 0.48, 0.16, 0.26))
-			draw_colored_polygon(PackedVector2Array([judge[0], judge[3], judge[5]]), Color(1.0, 0.78, 0.34, 0.18))
-			draw_line(judge[0], judge[3], Color(1.0, 0.82, 0.48, 0.58), 2.0, true)
-			for seal in 4 + phase:
-				var seal_angle := -_visual_time * 0.42 + float(seal) * TAU / float(4 + phase)
-				var seal_center := Vector2.from_angle(seal_angle) * (78.0 + sin(_visual_time * 2.8 + seal) * 5.0)
-				var seal_shape := PackedVector2Array([seal_center + Vector2(0,-7), seal_center + Vector2(7,0), seal_center + Vector2(0,7), seal_center + Vector2(-7,0)])
-				draw_colored_polygon(seal_shape, Color(0.18, 0.02, 0.03, 0.88))
-				draw_polyline(PackedVector2Array(Array(seal_shape) + [seal_shape[0]]), Color(1.0, 0.62, 0.20, 0.72), 1.8, true)
-	if phase_controller.state == FoldlightBossPhaseController.State.STAGGERED:
-		draw_arc(Vector2.ZERO, 116.0 if is_reef_crown else 70.0, 0.0, TAU, 40, Color(0.52, 1.0, 0.88, 0.96), 8.0, false)
+	var pose := get_visual_pose()
+	var punch := _hit_reaction.punch * _motion_scale
+	var hit_offset := _hit_reaction.direction * punch * 4.5
+	var hit_scale := Vector2(1.0 + punch * 0.055, 1.0 - punch * 0.035)
+	# Pose transforms are visual only: the actual body and 52px hit circle stay
+	# at the authored attack origin throughout charge, recoil and unfolding.
+	draw_set_transform(hit_offset, 0.0, hit_scale)
+	Puppet.draw_puppet(self, actor_id, pose)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	_hit_reaction.draw_details(self, silhouette_radius)
+	if _motion_scale > 0.0:
+		_hit_reaction.draw_details(self, 68.0)
+	var bounds := Puppet.get_visual_bounds(actor_id)
 	var health_ratio := clampf(health / definition.base_health, 0.0, 1.0)
-	var bar_width := 212.0 if is_reef_crown else 144.0
-	var bar_y := -124.0 if is_reef_crown else -82.0
-	draw_rect(Rect2(Vector2(-bar_width * 0.5, bar_y), Vector2(bar_width, 10.0)), Color(0.03, 0.04, 0.08, 0.94), true)
-	draw_rect(Rect2(Vector2(-bar_width * 0.5, bar_y), Vector2(bar_width * health_ratio, 10.0)), accent, true)
+	var accent := definition.accent.lerp(Color.WHITE, _hit_reaction.flash * 0.62)
+	if phase_controller.state == FoldlightBossPhaseController.State.STAGGERED:
+		accent = FoldlightTheme.FOLD
+	var bar_width := minf(212.0, bounds.size.x * 0.72)
+	var bar_origin := Vector2(-bar_width * 0.5, bounds.position.y - 18.0)
+	draw_rect(Rect2(bar_origin, Vector2(bar_width, 8.0)), FoldlightTheme.INK, true)
+	draw_rect(Rect2(bar_origin, Vector2(bar_width * health_ratio, 8.0)), accent, true)
+	# Three small paper tabs communicate the permanent phase even with motion
+	# reduced to zero, without adding a flashing halo around the hurt area.
+	for index in 3:
+		var color := accent if index <= phase_controller.phase_index else Color(accent, 0.22)
+		draw_rect(Rect2(bar_origin + Vector2(float(index) * 12.0, -7.0), Vector2(8.0, 3.0)), color, true)

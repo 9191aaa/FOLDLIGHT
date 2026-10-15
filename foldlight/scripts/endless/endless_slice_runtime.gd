@@ -29,6 +29,7 @@ var _feedback_vibration: bool = true
 var _capture_sfx_cooldown: float = 0.0
 var _kill_shake_cooldown: float = 0.0
 var _return_kick_cooldown: float = 0.0
+var _barrage_elite_introduced: bool = false
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
@@ -158,6 +159,7 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	_capture_sfx_cooldown = 0.0
 	_kill_shake_cooldown = 0.0
 	_return_kick_cooldown = 0.0
+	_barrage_elite_introduced = false
 	player.set_debug_invincible(false)
 	controller.map_runtime.build_physics_walls = false
 	controller.map_runtime.draw_cover_visuals = false
@@ -320,6 +322,10 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 	if open_slots <= 0:
 		return
 	var directed: Array[Dictionary] = []
+	var has_barrage_elite := false
+	for enemy in combat_runtime.enemies:
+		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.definition.content_id == &"shutter_seraph":
+			has_barrage_elite = true
 	var entries_variant: Variant = request.get("entries", [])
 	if entries_variant is Array:
 		for entry_variant: Variant in entries_variant:
@@ -328,6 +334,13 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 			if not entry_variant is Dictionary:
 				continue
 			var entry := (entry_variant as Dictionary).duplicate(true)
+			if StringName(entry.get("enemy_id", &"")) == &"shutter_seraph":
+				if has_barrage_elite:
+					continue
+				has_barrage_elite = true
+				if not _barrage_elite_introduced:
+					_barrage_elite_introduced = true
+					presentation.show_notice("精英 · 暴雨折翼", "闭翼时无敌；张翼扫射时核心暴露。收纳弹幕，趁它开火返光！")
 			entry["spawn_position"] = Vector2(entry.get("position", Vector2.ZERO))
 			directed.append(entry)
 	combat_runtime.spawn_directed_wave(directed)

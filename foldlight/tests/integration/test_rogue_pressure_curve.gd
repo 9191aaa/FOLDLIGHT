@@ -33,7 +33,7 @@ func _run() -> void:
 				var pressure_count := _pressure_count(entries)
 				pressure_met = pressure_met and pressure_count >= int(plan["pressure_target"])
 				if region > 0 or depth >= 4:
-					mechanic_kept = mechanic_kept and entries.any(func(entry: Dictionary) -> bool: return int(entry["role"]) in [3, 4, 5])
+					mechanic_kept = mechanic_kept and entries.any(func(entry: Dictionary) -> bool: return int(entry["role"]) in [3, 4, 5, 6])
 				if region == 0 and depth == 0:
 					first_room_safe = first_room_safe and int(plan["budget"]) == 23 and is_zero_approx(float(plan["reinforcement_interval"])) and entries.all(func(entry: Dictionary) -> bool: return entry["enemy_id"] in [&"drifter", &"fan"])
 				else:

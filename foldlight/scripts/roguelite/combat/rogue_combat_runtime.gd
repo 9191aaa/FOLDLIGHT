@@ -96,6 +96,9 @@ func bind(new_room: FoldlightRoomRuntime, new_player: FoldlightPlayer, run_seed:
 func set_active(value: bool) -> void:
 	active = value
 	set_physics_process(active)
+	for enemy in enemies:
+		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.has_method("set_simulation_active"):
+			enemy.call("set_simulation_active", active)
 	if is_instance_valid(room):
 		room.set_interactions_active(active)
 		# These effects own render-frame clocks, unlike actors advanced by this
@@ -103,6 +106,8 @@ func set_active(value: bool) -> void:
 		for child in room.get_children():
 			if child is FoldlightSpawnTelegraph:
 				child.set_simulation_active(active)
+			elif child.is_in_group(&"boss_remnants") and not child.is_queued_for_deletion() and child.has_method("set_simulation_active"):
+				child.call("set_simulation_active", active)
 		for child in room.projectile_container.get_children():
 			if child is FoldlightInkDenialZone or child is FoldlightBossAttackTelegraph:
 				child.set_simulation_active(active)
@@ -163,6 +168,7 @@ func clear_combat() -> void:
 	last_boss_defeat.clear()
 	_boss_aftermath_active = false
 	_clear_transient_nodes()
+	_clear_boss_remnants()
 	for enemy in enemies:
 		if is_instance_valid(enemy):
 			enemy.queue_free()
@@ -212,6 +218,18 @@ func _clear_transient_nodes() -> void:
 				child.queue_free()
 
 
+func _clear_boss_remnants() -> void:
+	if not is_instance_valid(room):
+		return
+	for child in room.get_children():
+		if child.is_in_group(&"boss_remnants"):
+			if child.has_method("set_simulation_active"):
+				child.call("set_simulation_active", false)
+			if child is CanvasItem:
+				child.hide()
+			child.queue_free()
+
+
 func begin_boss_aftermath(origin: Vector2, motion_scale: float = 1.0) -> void:
 	# Only the roguelite session calls this; endless boss waves keep running.
 	_boss_aftermath_active = true
@@ -232,6 +250,10 @@ func begin_boss_aftermath(origin: Vector2, motion_scale: float = 1.0) -> void:
 func advance_aftermath_feedback(delta: float) -> void:
 	if not active:
 		_update_visual_feedback(maxf(0.0, delta))
+		if _boss_aftermath_active and is_instance_valid(room):
+			for child in room.get_children():
+				if child.is_in_group(&"boss_remnants") and not child.is_queued_for_deletion() and child.has_method("advance_simulation"):
+					child.call("advance_simulation", maxf(0.0, delta))
 
 
 func spawn_hostile_volley(snapshot: Dictionary) -> int:
@@ -405,6 +427,9 @@ func _update_enemies(delta: float) -> void:
 			(enemy as FoldlightRogueBossActor).advance_simulation(delta, player.global_position, _hostile_time_scale)
 		elif enemy is FoldlightRogueEnemyActor:
 			(enemy as FoldlightRogueEnemyActor).advance_simulation(delta, target, _hostile_time_scale)
+		elif enemy.has_method("advance_simulation"):
+			# Independent elite actors use the same target/time-scale contract.
+			enemy.call("advance_simulation", delta, target, _hostile_time_scale)
 		if enemy is CharacterBody2D:
 			var contact_radius := float(enemy.call("get_contact_radius")) if enemy.has_method("get_contact_radius") else 24.0
 			var dangerous := bool(enemy.call("is_contact_dangerous")) if enemy.has_method("is_contact_dangerous") else true
@@ -572,8 +597,9 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		if maximum_health > 0.0 and enemy_health / maximum_health <= 0.30:
 			applied_damage *= projectile.execute_damage_multiplier
 		var target_defeated := false
+		var dealt_damage := 0.0
 		if projectile.style == &"tide_bell":
-			_damage_enemies_in_radius(projectile.global_position, 150.0, applied_damage)
+			dealt_damage = _damage_enemies_in_radius(projectile.global_position, 150.0, applied_damage)
 		elif enemy is FoldlightRogueBossActor:
 			var source: StringName = &"return" if projectile.style == &"return_light" else &"weapon"
 			target_defeated = (enemy as FoldlightRogueBossActor).take_damage(applied_damage, source, projectile.velocity)
@@ -582,11 +608,18 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		else:
 			target_defeated = bool(enemy.call("take_damage", applied_damage))
 		if projectile.style != &"tide_bell":
-			_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, enemy_health - float(enemy.get("health")), &"return" if projectile.style == &"return_light" else &"weapon")
+			dealt_damage = maxf(0.0, enemy_health - float(enemy.get("health")))
+			_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, dealt_damage, &"return" if projectile.style == &"return_light" else &"weapon")
 		# A killing hit can synchronously open a safe victory/reward screen.
 		# Keep its contact feedback, but never mint echoes or relay shots after
 		# that transition has already cleared the projectile collection.
 		if was_active and not active:
+			return
+		# Armor contact consumes the hit, but is not a successful damage event.
+		# Do not roll proc RNG, mint echoes, chain, or award hit feedback for it.
+		if dealt_damage <= 0.0:
+			if projectile.consume_pierce() or projectile.style == &"tide_bell":
+				_remove_projectile(projectile)
 			return
 		if not projectile.is_echo and projectile.echo_chance > 0.0 and _rng.randf() <= projectile.echo_chance:
 			var echo_direction := projectile.velocity.normalized().rotated(0.32 if _rng.randf() > 0.5 else -0.32)
@@ -637,11 +670,12 @@ func _try_activate_return_relay(projectile: FoldlightRogueProjectile, defeated_e
 	return projectile.activate_return_relay(target, route)
 
 
-func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, style: StringName = &"") -> void:
+func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, style: StringName = &"") -> float:
 	var was_active := active
+	var total_damage := 0.0
 	for enemy in enemies.duplicate():
 		if was_active and not active:
-			return
+			return total_damage
 		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or enemy.global_position.distance_to(center) > radius:
 			continue
 		var before := float(enemy.get("health"))
@@ -651,7 +685,10 @@ func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, st
 			enemy.call("take_projectile_damage", amount, Vector2.ZERO, style)
 		elif enemy.has_method("take_damage"):
 			enemy.call("take_damage", amount)
-		_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, enemy.global_position - center, before - float(enemy.get("health")), &"return" if style == &"return_light" else &"weapon")
+		var dealt_damage := maxf(0.0, before - float(enemy.get("health")))
+		total_damage += dealt_damage
+		_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, enemy.global_position - center, dealt_damage, &"return" if style == &"return_light" else &"weapon")
+	return total_damage
 
 
 func _try_hit_player(impact_direction: Vector2 = Vector2.ZERO) -> bool:
@@ -1163,8 +1200,8 @@ func _update_dash_trail(delta: float) -> void:
 	if _dash_trail_remaining > 0.0:
 		return
 	_dash_trail_remaining = 0.09
-	_damage_enemies_in_radius(player.global_position, 58.0, trail_damage)
-	player.feedback_budget.register_impact(0.12, false)
+	if _damage_enemies_in_radius(player.global_position, 58.0, trail_damage) > 0.0:
+		player.feedback_budget.register_impact(0.12, false)
 
 
 func _on_room_cleared(_performance: Dictionary) -> void:

@@ -1505,6 +1505,7 @@ func _attack_demo_title(style: StringName, preview_id: StringName) -> String:
 		}.get(preview_id, &"radial")
 	return {
 		&"aimed_volley": "动态演示 · 红线锁定 → 横向躲开 → 五弹齐射",
+		&"exposure_barrage": "动态演示 · 闭翼免伤 → 蓄光预警 → 开火时返光",
 		&"line_volley": "动态演示 · 红线锁定 → 横向躲开 → 五弹齐射",
 		&"summon": "动态演示 · 外圈蓄满 → 召出两只漂兵",
 		&"brood_summon": "动态演示 · 外圈蓄满 → 召出两只漂兵",

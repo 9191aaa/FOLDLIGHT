@@ -30,6 +30,8 @@ func _run() -> void:
 		var wave_guard := 0
 		while session.run_controller.phase == FoldlightRogueRunController.Phase.COMBAT and wave_guard < 100:
 			wave_guard += 1
+			while session._mechanic_intro_active and not session._mechanic_intro_queue.is_empty():
+				session._on_mechanic_card_dismissed(StringName(session._mechanic_intro_queue[0]["content_id"]))
 			session.world.room_runtime.advance_encounter(2.0)
 			for enemy in session.world.combat_runtime.enemies.duplicate():
 				if not is_instance_valid(enemy):
@@ -38,6 +40,13 @@ func _run() -> void:
 					defeated_bosses.append((enemy as FoldlightRogueBossActor).definition.content_id)
 					(enemy as FoldlightRogueBossActor).take_damage(1000000.0, &"weapon")
 				elif enemy.has_method("take_damage"):
+					# Preserve the elite's real immunity contract in this accelerated
+					# route audit: simulate its warning and wait for a firing window.
+					if enemy.has_method("is_damageable"):
+						for _step in 80:
+							if enemy.call("is_damageable"):
+								break
+							enemy.call("advance_simulation", 0.1, session.player.global_position)
 					enemy.call("take_damage", 1000000.0)
 			await process_frame
 		_check(wave_guard < 100, "room %d combat terminates" % room_guard)

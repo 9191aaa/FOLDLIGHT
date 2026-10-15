@@ -8,6 +8,7 @@ const WARDEN_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/ink_wa
 const PRISM_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/prism_bulwark.tscn")
 const BROOD_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/brood_lantern.tscn")
 const SHEAR_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/shear_scribe.tscn")
+const SERAPH_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/shutter_seraph.tscn")
 
 
 static func create(definition: FoldlightRogueEnemyDefinition, actor_id: StringName) -> Node2D:
@@ -15,6 +16,8 @@ static func create(definition: FoldlightRogueEnemyDefinition, actor_id: StringNa
 		return null
 	var actor: Node2D
 	match definition.content_id:
+		&"shutter_seraph":
+			actor = SERAPH_SCENE.instantiate() as CharacterBody2D
 		&"prism_bulwark":
 			actor = PRISM_SCENE.instantiate() as FoldlightPrismBulwark
 		&"brood_lantern":

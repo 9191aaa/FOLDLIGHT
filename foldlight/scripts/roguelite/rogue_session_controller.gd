@@ -375,6 +375,9 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 	var staged_enemy_ids := _enemy_ids_for_room(current_region_definition.content_id, depth, category)
 	if not staged_enemy_ids.is_empty():
 		definition.enemy_ids = staged_enemy_ids
+	var has_barrage_elite := category == &"elite" and run_controller.run_state.current_region > 0
+	if has_barrage_elite:
+		definition.enemy_ids.append(&"shutter_seraph")
 	var multiplier := {
 		&"entry": 0.82,
 		&"rest": 0.78,
@@ -398,7 +401,8 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 		run_controller.run_state.current_region + 1,
 		_spawn_slots(),
 		player.global_position,
-		world.room_runtime.get_solid_terrain_bounds(22.0)
+		world.room_runtime.get_solid_terrain_bounds(22.0),
+		FoldlightRogueEnemyDefinition.EnemyRole.ELITE if has_barrage_elite else -1
 	)
 	plan["reinforcement_interval"] = pressure["reinforcement_interval"]
 	plan["reinforcement_threshold"] = pressure["reinforcement_threshold"]

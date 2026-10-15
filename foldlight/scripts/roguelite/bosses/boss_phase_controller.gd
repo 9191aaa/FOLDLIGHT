@@ -23,6 +23,8 @@ var _remaining: float = 1.35
 var _attack_cursor: int = 0
 var _last_telegraph_duration: float = 0.9
 var _pending_phase: int = -1
+var _state_duration: float = 1.35
+var _transition_remaining: float = 0.0
 
 
 func configure(new_definition: FoldlightRogueBossDefinition) -> void:
@@ -34,6 +36,8 @@ func configure(new_definition: FoldlightRogueBossDefinition) -> void:
 	_attack_cursor = 0
 	_last_telegraph_duration = 0.9
 	_pending_phase = -1
+	_state_duration = 1.35
+	_transition_remaining = 0.0
 
 
 func advance_simulation(delta: float, health_ratio: float) -> void:
@@ -41,6 +45,7 @@ func advance_simulation(delta: float, health_ratio: float) -> void:
 		return
 	_update_phase(health_ratio)
 	_remaining -= maxf(0.0, delta)
+	_transition_remaining = maxf(0.0, _transition_remaining - maxf(0.0, delta))
 	if _remaining > 0.0:
 		return
 	match state:
@@ -50,6 +55,7 @@ func advance_simulation(delta: float, health_ratio: float) -> void:
 			attack_ready.emit(current_pattern, _last_telegraph_duration)
 			state = State.RECOVERY
 			_remaining = float(RECOVERY_SECONDS[mini(phase_index, 2)])
+			_state_duration = _remaining
 		State.STAGGERED:
 			stagger_ended.emit()
 			if _pending_phase > phase_index:
@@ -57,6 +63,7 @@ func advance_simulation(delta: float, health_ratio: float) -> void:
 			else:
 				state = State.RECOVERY
 				_remaining = float(RECOVERY_SECONDS[mini(phase_index, 2)])
+				_state_duration = _remaining
 
 
 func enter_stagger(duration: float) -> void:
@@ -64,16 +71,30 @@ func enter_stagger(duration: float) -> void:
 		return
 	state = State.STAGGERED
 	_remaining = maxf(0.2, duration)
+	_state_duration = _remaining
+	_transition_remaining = 0.0
 	stagger_started.emit(_remaining)
 
 
 func mark_defeated() -> void:
 	state = State.DEFEATED
 	_remaining = 0.0
+	_transition_remaining = 0.0
 
 
 func get_state_snapshot() -> Dictionary:
 	return {"state": state, "phase": phase_index, "pattern_id": current_pattern, "remaining": maxf(0.0, _remaining), "pending_phase": _pending_phase}
+
+
+func get_presentation_snapshot() -> Dictionary:
+	# Read-only animation progress shares the combat clock. Rendering cannot
+	# advance an attack, shorten its warning or consume the pattern RNG.
+	return {
+		"state": state,
+		"progress": clampf(1.0 - _remaining / maxf(0.001, _state_duration), 0.0, 1.0),
+		"transition_active": _transition_remaining > 0.0,
+		"transition": clampf(1.0 - _transition_remaining / PHASE_TRANSITION_SECONDS, 0.0, 1.0),
+	}
 
 
 func _update_phase(health_ratio: float) -> void:
@@ -96,6 +117,8 @@ func _apply_phase(next_phase: int) -> void:
 	_pending_phase = -1
 	state = State.RECOVERY
 	_remaining = PHASE_TRANSITION_SECONDS
+	_state_duration = _remaining
+	_transition_remaining = _remaining
 	phase_changed.emit(phase_index)
 
 
@@ -113,4 +136,5 @@ func _begin_telegraph() -> void:
 		_last_telegraph_duration += BLACK_GOLD_WARNING_BONUS
 	state = State.TELEGRAPH
 	_remaining = _last_telegraph_duration
+	_state_duration = _remaining
 	telegraph_started.emit(current_pattern, _last_telegraph_duration)

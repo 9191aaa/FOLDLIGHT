@@ -9,7 +9,7 @@ var _introduced_ids: Array[StringName] = []
 func request_introduction(definition: FoldlightRogueEnemyDefinition) -> Dictionary:
 	if definition == null or _introduced_ids.has(definition.content_id):
 		return {}
-	if not definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.TURRET, FoldlightRogueEnemyDefinition.EnemyRole.BUFFER, FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER]:
+	if not definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.TURRET, FoldlightRogueEnemyDefinition.EnemyRole.BUFFER, FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE]:
 		return {}
 	_introduced_ids.append(definition.content_id)
 	var snapshot := {
@@ -78,11 +78,13 @@ func _role_title(role: FoldlightRogueEnemyDefinition.EnemyRole) -> String:
 		FoldlightRogueEnemyDefinition.EnemyRole.TURRET: "阵地单位",
 		FoldlightRogueEnemyDefinition.EnemyRole.BUFFER: "增幅单位",
 		FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER: "控场单位",
+		FoldlightRogueEnemyDefinition.EnemyRole.ELITE: "精英单位",
 	}.get(role, "机制单位")
 
 
 func _enemy_attack_style(definition: FoldlightRogueEnemyDefinition) -> StringName:
 	match definition.content_id:
+		&"shutter_seraph": return &"exposure_barrage"
 		&"paper_turret": return &"aimed_volley"
 		&"brood_lantern": return &"summon"
 		&"bell_binder": return &"tether"

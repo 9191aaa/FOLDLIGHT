@@ -204,6 +204,7 @@ func _mechanic_pool(pool: Array[FoldlightRogueEnemyDefinition]) -> Array[Foldlig
 			FoldlightRogueEnemyDefinition.EnemyRole.TURRET,
 			FoldlightRogueEnemyDefinition.EnemyRole.BUFFER,
 			FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER,
+			FoldlightRogueEnemyDefinition.EnemyRole.ELITE,
 		]:
 			result.append(definition)
 	return result
@@ -289,6 +290,8 @@ func _append_pick(definition: FoldlightRogueEnemyDefinition, picks: Array[Foldli
 func _role_has_capacity(role: int, role_counts: Dictionary, encounter: FoldlightRogueEncounterDefinition, turret_slot_count: int) -> bool:
 	var current := int(role_counts.get(role, 0))
 	match role:
+		FoldlightRogueEnemyDefinition.EnemyRole.ELITE:
+			return current < 1
 		FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER:
 			return current < encounter.controller_quota
 		FoldlightRogueEnemyDefinition.EnemyRole.BUFFER:
@@ -316,7 +319,7 @@ func _assign_spawn_slots(picks: Array[FoldlightRogueEnemyDefinition], wave_count
 		var candidates := ground_slots
 		if definition.role == FoldlightRogueEnemyDefinition.EnemyRole.TURRET:
 			candidates = turret_slots
-		elif definition.role == FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER and not ranged_slots.is_empty():
+		elif definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE] and not ranged_slots.is_empty():
 			# Shooter volleys are easiest to understand when their source is inside
 			# the room composition instead of hidden against a distant screen edge.
 			candidates = ranged_slots
@@ -327,7 +330,7 @@ func _assign_spawn_slots(picks: Array[FoldlightRogueEnemyDefinition], wave_count
 				available.append(slot)
 		# Central ranged markers are a presentation preference, not a hard role
 		# requirement. Dense mixed waves may use an otherwise safe ground slot.
-		if available.is_empty() and definition.role == FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER:
+		if available.is_empty() and definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE]:
 			for slot in ground_slots:
 				var key := "%d:%s" % [wave, String(slot.get("id", &""))]
 				if not used_by_wave.has(key):

@@ -1,6 +1,8 @@
 class_name FoldlightMechanicPreviewCanvas
 extends Control
 
+const BossPaperPuppet = preload("res://scripts/visuals/boss_paper_puppet.gd")
+
 ## A lightweight, deterministic combat vignette used by first-encounter and
 ## boss briefings.  It deliberately redraws the game's authored silhouettes
 ## instead of instantiating live combat actors inside the UI.
@@ -10,6 +12,7 @@ var preview_id: StringName = &"unknown"
 var attack_style: StringName = &"radial"
 var accent: Color = FoldlightRogueUITheme.GOLD
 var _time: float = 0.0
+var _motion_scale: float = 1.0
 
 
 func _ready() -> void:
@@ -33,15 +36,22 @@ func get_preview_snapshot() -> Dictionary:
 		"preview_id": preview_id,
 		"attack_style": attack_style,
 		"animated": is_processing(),
-		"cycle_progress": fmod(_time, 3.6) / 3.6,
+		"cycle_progress": _cycle_progress(),
 		"shows_actor": true,
 		"shows_attack": true,
 	}
 
 
 func _process(delta: float) -> void:
-	_time += maxf(0.0, delta)
+	var profile := get_node_or_null("/root/ProfileManager")
+	_motion_scale = clampf(float(profile.call("get_setting", &"screen_shake", 1.0)), 0.0, 1.0) if profile != null else 1.0
+	_time += maxf(0.0, delta) * _motion_scale
 	queue_redraw()
+
+
+func _cycle_progress() -> float:
+	var duration := 6.0 if preview_id == &"shutter_seraph" else 3.6
+	return fmod(_time, duration) / duration
 
 
 func _draw() -> void:
@@ -57,7 +67,7 @@ func _draw() -> void:
 		draw_line(Vector2(x, 16.0), Vector2(x, size.y - 16.0), Color(0.55, 0.73, 0.72, 0.035), 1.0, true)
 	var actor_center := Vector2(size.x * 0.35, size.y * 0.52)
 	var player_center := Vector2(size.x * 0.79, size.y * 0.62)
-	var cycle := fmod(_time, 3.6) / 3.6
+	var cycle := _cycle_progress()
 	_draw_attack(actor_center, player_center, cycle)
 	_draw_actor(actor_center, cycle)
 	_draw_player_marker(player_center, cycle)
@@ -67,6 +77,8 @@ func _draw() -> void:
 
 func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 	match attack_style:
+		&"exposure_barrage":
+			_draw_exposure_barrage(origin, target, cycle)
 		&"aimed_volley", &"line_volley":
 			_draw_aimed_volley(origin, target, cycle)
 		&"summon", &"brood_summon":
@@ -203,19 +215,29 @@ func _draw_radial(origin: Vector2, cycle: float) -> void:
 
 
 func _draw_actor(center: Vector2, cycle: float) -> void:
+	if preview_kind == &"boss":
+		var bounds: Rect2 = BossPaperPuppet.get_visual_bounds(preview_id)
+		var fit := minf(size.x * 0.46 / bounds.size.x, size.y * 0.66 / bounds.size.y)
+		draw_set_transform(center, 0.0, Vector2.ONE * fit)
+		BossPaperPuppet.draw_puppet(self, preview_id, {
+			"time": _time, "intro": 1.0, "phase": 0,
+			"motion_scale": _motion_scale,
+			"charge": clampf(cycle / 0.42, 0.0, 1.0) if cycle < 0.42 else 0.0,
+			"recoil": clampf(1.0 - (cycle - 0.42) / 0.10, 0.0, 1.0) if cycle >= 0.42 else 0.0,
+		})
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	var breathe := sin(_time * (2.6 if preview_kind == &"boss" else 3.4))
 	var scale_value := (1.25 if preview_kind == &"boss" else 1.0) * (1.0 + breathe * 0.025)
 	draw_set_transform(center + Vector2(0.0, breathe * 3.0), breathe * 0.025, Vector2.ONE * scale_value)
 	match preview_id:
+		&"shutter_seraph": _draw_seraph_body(cycle)
 		&"paper_turret": _draw_turret_body(cycle)
 		&"brood_lantern": _draw_lantern_body()
 		&"bell_binder": _draw_bell_body()
 		&"ink_warden": _draw_warden_body()
 		&"prism_bulwark": _draw_bulwark_body()
 		&"shear_scribe": _draw_scribe_body()
-		&"reef_crown_battery": _draw_reef_boss()
-		&"inverted_archivist": _draw_archivist_boss()
-		&"origami_judge": _draw_judge_boss()
 		_: _draw_generic_body()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -265,28 +287,37 @@ func _draw_scribe_body() -> void:
 	draw_line(Vector2(-11, 0), Vector2(11, 0), Color(0.80, 0.58, 0.34), 3.0, true)
 
 
-func _draw_reef_boss() -> void:
-	var crown := PackedVector2Array([Vector2(-74, 34), Vector2(-65, -35), Vector2(-42, -58), Vector2(-20, -23), Vector2(0, -70), Vector2(20, -23), Vector2(43, -61), Vector2(67, -34), Vector2(74, 34)])
-	draw_colored_polygon(crown, Color(0.42, 0.36, 0.28, 0.98))
-	draw_polyline(crown, Color(0.48, 0.71, 0.68), 6.0, true)
-	draw_rect(Rect2(Vector2(-28, -10), Vector2(56, 43)), Color(0.12, 0.08, 0.12), true)
-	draw_circle(Vector2.ZERO, 10.0, Color(0.77, 0.57, 0.32))
+func _draw_exposure_barrage(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var seconds := cycle * 6.0
+	var direction := origin.direction_to(target)
+	if seconds >= 2.4 and seconds < 3.2:
+		draw_dashed_line(origin + direction * 48.0, target, Color(0.92, 0.66, 0.36, 0.65), 2.0, 9.0, true)
+	if seconds < 3.2 or seconds >= 5.6:
+		return
+	for row in 6:
+		var flight := fmod((seconds - 3.2) * 1.3 + row * 0.16, 1.0)
+		for column in 5:
+			var ray := direction.rotated(float(column - 2) * 0.15)
+			_draw_projectile(origin + ray * lerpf(48.0, origin.distance_to(target) + 42.0, flight), ray.angle(), true)
 
 
-func _draw_archivist_boss() -> void:
-	draw_rect(Rect2(Vector2(-49, -42), Vector2(98, 84)), Color(0.11, 0.08, 0.15, 0.98), true)
-	draw_rect(Rect2(Vector2(-49, -42), Vector2(98, 84)), Color(0.54, 0.43, 0.62), false, 6.0, true)
-	draw_line(Vector2(0, -40), Vector2(0, 40), Color(0.70, 0.57, 0.75), 4.0, true)
-	for page in 4:
-		var point := Vector2.from_angle(_time * 0.5 + page * TAU / 4.0) * 68.0
-		draw_rect(Rect2(point - Vector2(8, 5), Vector2(16, 10)), Color(0.65, 0.54, 0.70, 0.48), true)
-
-
-func _draw_judge_boss() -> void:
-	var judge := PackedVector2Array([Vector2(0, -56), Vector2(48, -21), Vector2(38, 47), Vector2(0, 29), Vector2(-38, 47), Vector2(-48, -21), Vector2(0, -56)])
-	draw_colored_polygon(judge.slice(0, 6), Color(0.16, 0.09, 0.09, 0.98))
-	draw_polyline(judge, Color(0.76, 0.51, 0.29), 6.0, true)
-	draw_line(Vector2(0, -54), Vector2(0, 29), Color(0.82, 0.64, 0.38, 0.72), 3.0, true)
+func _draw_seraph_body(cycle: float) -> void:
+	var seconds := cycle * 6.0
+	var firing := seconds >= 3.2 and seconds < 5.6
+	var opening := 1.0 if firing else (clampf((6.0 - seconds) / 0.4, 0.0, 1.0) if seconds >= 5.6 else 0.0)
+	for side in [-1.0, 1.0]:
+		for layer in 3:
+			var reach := lerpf(19.0, 66.0 + layer * 6.0, opening)
+			var wing := PackedVector2Array([Vector2(side * 4.0, -28.0 + layer * 14.0), Vector2(side * reach, -42.0 + layer * 26.0), Vector2(side * (reach - 10.0), 18.0 + layer * 15.0), Vector2(side * 5.0, 31.0)])
+			draw_colored_polygon(wing, Color(0.13 + layer * 0.03, 0.22 + layer * 0.025, 0.28 + layer * 0.02))
+			wing.append(wing[0])
+			draw_polyline(wing, Color(0.68, 0.71, 0.65), 2.0, true)
+	if firing:
+		draw_circle(Vector2.ZERO, 14.0, Color(0.97, 0.80, 0.48))
+		draw_circle(Vector2.ZERO, 6.0, Color(1.0, 0.95, 0.76))
+	else:
+		draw_line(Vector2(0.0, -24.0), Vector2(0.0, 29.0), Color(0.49, 0.77, 0.80), 4.0, true)
+		draw_arc(Vector2.ZERO, 42.0, -PI * 0.7, PI * 0.7, 26, Color(0.49, 0.77, 0.80, 0.7), 2.0, true)
 
 
 func _draw_generic_body() -> void:
@@ -313,8 +344,10 @@ func _draw_player_marker(center: Vector2, cycle: float) -> void:
 func _draw_timeline(cycle: float) -> void:
 	var rect := Rect2(Vector2(22.0, size.y - 24.0), Vector2(size.x - 44.0, 4.0))
 	draw_rect(rect, Color(0.25, 0.34, 0.38, 0.36), true)
+	if attack_style == &"exposure_barrage":
+		draw_rect(Rect2(rect.position + Vector2(rect.size.x * 3.2 / 6.0, -2.0), Vector2(rect.size.x * 2.4 / 6.0, 8.0)), Color(0.92, 0.67, 0.34, 0.54), true)
 	draw_rect(Rect2(rect.position, Vector2(rect.size.x * cycle, rect.size.y)), accent, true)
-	var marker_x := rect.position.x + rect.size.x * 0.42
+	var marker_x := rect.position.x + rect.size.x * (3.2 / 6.0 if attack_style == &"exposure_barrage" else 0.42)
 	draw_line(Vector2(marker_x, rect.position.y - 5.0), Vector2(marker_x, rect.end.y + 5.0), Color(0.82, 0.62, 0.34, 0.78), 2.0, true)
 
 
@@ -350,6 +383,7 @@ func _infer_preview_kind(id: StringName) -> StringName:
 
 func _default_attack_style(id: StringName) -> StringName:
 	return {
+		&"shutter_seraph": &"exposure_barrage",
 		&"paper_turret": &"aimed_volley",
 		&"brood_lantern": &"summon",
 		&"bell_binder": &"tether",

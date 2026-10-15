@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"shutter_seraph"
+title = "暴雨折翼"
+description = "闭翼时完全免伤，蓄光后张翼倾泻密集纸弹；只有开火期间露出的亮核可以受伤。"
+accent = Color(0.97, 0.81, 0.53, 1)
+tags = Array[StringName]([&"mechanic", &"elite", &"firing_window"])
+role = 6
+threat_cost = 6
+minimum_region = 2
+max_simultaneous = 1
+base_health = 14.0
+move_speed = 92.0
+attack_interval = 0.12
+stationary = false
+quota_group = &"elite"
+mechanic_rule = "闭翼、蓄光和收翼时完全免伤；只有张翼连续开火时可以造成伤害。"
+counterplay = "观察蓄光方向，侧移收纳纸弹；趁亮核暴露时返光，停火后等待下一次开翼。"
