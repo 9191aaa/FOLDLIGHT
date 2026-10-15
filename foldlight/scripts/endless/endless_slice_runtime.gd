@@ -250,6 +250,11 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
+	# Audio remains available while a reward or pause owns the gameplay input.
+	if event.is_action_pressed(&"mute_audio"):
+		get_viewport().set_input_as_handled()
+		audio_director.toggle_mute()
+		return
 	if not _modal_kind.is_empty():
 		if _modal_kind == &"pause" and event.is_action_pressed(&"pause_game"):
 			_resume_game()

@@ -136,32 +136,36 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not visible or not event.is_pressed() or event.is_echo():
+	if not is_inside_tree() or not visible or not event.is_pressed() or event.is_echo():
+		return
+	var viewport := get_viewport()
+	if not is_instance_valid(viewport) or not viewport.is_inside_tree():
 		return
 	if screen_kind == &"reward" and not _reward_input_guard.can_select():
 		return
 	if screen_kind == &"settings" and (event.is_action_pressed(&"move_left") or event.is_action_pressed(&"move_right")):
-		var owner := get_viewport().gui_get_focus_owner()
+		var owner := viewport.gui_get_focus_owner()
 		if owner is Button and owner.has_meta("setting_key"):
+			viewport.set_input_as_handled()
 			setting_adjust_requested.emit(StringName(owner.get_meta("setting_key")), -1 if event.is_action_pressed(&"move_left") else 1)
-			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"move_up") or (event.is_action_pressed(&"move_left") and screen_kind != &"settings"):
+		viewport.set_input_as_handled()
 		_move_focus(-1)
-		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed(&"move_down") or (event.is_action_pressed(&"move_right") and screen_kind != &"settings"):
+		viewport.set_input_as_handled()
 		_move_focus(1)
-		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed(&"fold") and screen_kind in [&"title", &"reward", &"route", &"result", &"mechanic_intro"]:
-		var owner := get_viewport().gui_get_focus_owner()
+		var owner := viewport.gui_get_focus_owner()
 		if owner is BaseButton:
+			# Pressed listeners may synchronously replace and detach this scene.
+			viewport.set_input_as_handled()
 			(owner as BaseButton).pressed.emit()
-			get_viewport().set_input_as_handled()
 	elif event.is_action_pressed(&"fold") and screen_kind == &"settings":
-		var owner := get_viewport().gui_get_focus_owner()
+		var owner := viewport.gui_get_focus_owner()
 		if owner is Button:
+			viewport.set_input_as_handled()
 			(owner as Button).pressed.emit()
-			get_viewport().set_input_as_handled()
 
 
 func show_title(profile_snapshot: Dictionary) -> void:

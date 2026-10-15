@@ -132,6 +132,10 @@ func _run() -> void:
 	audio.set_process(true)
 	slice.queue_free()
 	await process_frame
+	audio.shutdown()
+	# Real pooled playback is exercised above even with the headless driver.
+	# Let its stopped voices leave the audio server before the test exits.
+	await create_timer(0.20).timeout
 	print("FOLDLIGHT_ENDLESS_COMBAT_FEEDBACK: " + ("PASS" if failures.is_empty() else "FAIL"))
 	quit(0 if failures.is_empty() else 1)
 

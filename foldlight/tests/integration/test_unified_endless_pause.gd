@@ -12,6 +12,7 @@ func _run() -> void:
 	root.add_child(slice)
 	await process_frame
 	await process_frame
+	_check_mute_context(slice, "combat")
 	slice.player.set_debug_invincible(true)
 	slice.player.captured = 4
 	slice.player.dash_component.cooldown_remaining = 1.5
@@ -22,6 +23,7 @@ func _run() -> void:
 	pause_event.pressed = true
 	slice._unhandled_input(pause_event)
 	_check(slice.get_slice_snapshot().modal_kind == &"pause", "Esc opens pause instead of ending the run")
+	_check_mute_context(slice, "pause")
 	_check(slice.controller.active and not slice.combat_runtime.active, "pause keeps the run and suspends combat")
 	_check(not slice.player.play_enabled and slice.player.captured == 4, "pause preserves captured light and freezes player controls")
 	var before_time := slice.controller.evolution.survival_seconds
@@ -49,6 +51,7 @@ func _run() -> void:
 	_check(slice.get_slice_snapshot().modal_kind == &"", "continue button resumes the same run")
 	var options := slice.controller.evolution.get_mission_reward_options(0)
 	slice._on_mission_reward_offered(options, {"title": "折光任务"})
+	_check_mute_context(slice, "reward")
 	slice._unhandled_input(pause_event)
 	_check(slice.get_slice_snapshot().modal_kind == &"reward", "Esc cannot dismiss a pending reward or resume combat behind it")
 	slice._activate_modal_choice(0)
@@ -60,6 +63,34 @@ func _run() -> void:
 	else:
 		push_error("FOLDLIGHT_UNIFIED_ENDLESS_PAUSE: FAIL - %s" % "; ".join(_failures))
 		quit(1)
+
+
+func _check_mute_context(slice: FoldlightEndlessSliceRuntime, context: String) -> void:
+	var audio := slice.audio_director
+	var previous := audio.is_muted()
+	var previous_modal := slice._modal_kind
+	var previous_options := slice._modal_options.duplicate(true)
+	var previous_time := slice.controller.evolution.survival_seconds
+	_send_mute(true)
+	_check(audio.is_muted() != previous and AudioServer.is_bus_mute(AudioServer.get_bus_index("Master")) == audio.is_muted(), "M toggles the actual master bus once during " + context)
+	_send_mute(true, true)
+	_check(audio.is_muted() != previous, "holding M does not repeat-toggle during " + context)
+	_send_mute(false)
+	_check(audio.is_muted() != previous, "releasing M does not toggle during " + context)
+	_send_mute(true)
+	_send_mute(false)
+	_check(audio.is_muted() == previous, "a second M press restores audio during " + context)
+	_check(slice._modal_kind == previous_modal and slice._modal_options == previous_options and is_equal_approx(slice.controller.evolution.survival_seconds, previous_time), "mute leaves modal choices and effective survival time unchanged during " + context)
+
+
+func _send_mute(pressed: bool, echo: bool = false) -> void:
+	var event := InputEventKey.new()
+	event.physical_keycode = KEY_M
+	event.keycode = KEY_M
+	event.pressed = pressed
+	event.echo = echo
+	Input.parse_input_event(event)
+	Input.flush_buffered_events()
 
 
 func _check(condition: bool, message: String) -> void:

@@ -92,9 +92,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if _ready_for_choice:
 		return
-	# Pause/cancel retains its existing owner. Consume both press and release
+	# Pause/cancel and mute retain their existing owner. Consume press/release
 	# before GUI dispatch, not just the presentation's _unhandled_input path.
-	if event.is_action(&"pause_game") or event.is_action(&"ui_cancel"):
+	if event.is_action(&"pause_game") or event.is_action(&"ui_cancel") or event.is_action(&"mute_audio"):
 		return
 	if event is InputEventKey or event is InputEventMouseButton or event is InputEventJoypadButton or event is InputEventJoypadMotion or event is InputEventAction or event is InputEventScreenTouch:
 		# Analog devices can emit small drift changes every frame. Neutral is

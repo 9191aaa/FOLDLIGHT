@@ -61,6 +61,7 @@ func _run() -> void:
 	_check(root.gui_get_focus_owner() == next_scene_button, "dismissed tutorial cannot steal focus after its deferred request")
 	tutorial.queue_free()
 	await _test_boss_banner_lifecycle(next_scene_button)
+	await _test_scene_switch_input(next_scene_button)
 	next_scene_button.queue_free()
 	await process_frame
 	print("FOLDLIGHT_DEFERRED_UI_FOCUS: %s" % ("PASS" if _failures.is_empty() else "FAIL"))
@@ -102,6 +103,43 @@ func _test_boss_banner_lifecycle(next_scene_button: Button) -> void:
 	banner.dismiss()
 	_check(root.gui_get_focus_owner() == next_scene_button, "live boss dismissal preserves another control's focus")
 	banner.queue_free()
+	await process_frame
+
+
+func _test_scene_switch_input(next_scene_button: Button) -> void:
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(1280, 720)
+	root.add_child(viewport)
+	var ui := (load("res://scenes/roguelite/ui/rogue_presentation.tscn") as PackedScene).instantiate() as FoldlightRoguePresentation
+	viewport.add_child(ui)
+	await process_frame
+	await process_frame
+	var endless_button: BaseButton
+	for candidate: Button in ui._focus_groups[&"title"]:
+		if candidate.text.contains("无尽"):
+			endless_button = candidate
+	_check(endless_button != null, "scene-switch probe finds the real endless title action")
+	if endless_button == null:
+		viewport.queue_free()
+		return
+	endless_button.grab_focus()
+	var presses: Array[int] = [0]
+	var consumed_before_switch: Array[bool] = [false]
+	ui.endless_requested.connect(func() -> void:
+		presses[0] += 1
+		consumed_before_switch[0] = viewport.is_input_handled()
+		root.remove_child(viewport)
+		next_scene_button.grab_focus()
+	)
+	var event := InputEventAction.new()
+	event.action = &"fold"
+	event.pressed = true
+	ui._unhandled_input(event)
+	_check(presses[0] == 1 and consumed_before_switch[0], "keyboard activation consumes its event before a synchronous endless scene switch")
+	_check(not viewport.is_inside_tree() and root.gui_get_focus_owner() == next_scene_button, "scene-switch input leaves the detached viewport alone and preserves the next scene focus")
+	ui._unhandled_input(event)
+	_check(presses[0] == 1, "a detached presentation ignores a late input event")
+	viewport.queue_free()
 	await process_frame
 
 
