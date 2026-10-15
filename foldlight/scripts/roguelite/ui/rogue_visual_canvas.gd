@@ -49,14 +49,12 @@ func _draw() -> void:
 
 
 func _draw_damage_flash(viewport_size: Vector2) -> void:
-	# A short edge-weighted red response keeps the playfield readable while the
-	# entire screen still registers the hit immediately.
+	# Coral stays on the screen edge; the playfield and hazard colors stay clear.
 	var strength := _damage_flash * _damage_flash
-	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.55, 0.035, 0.025, 0.035 * strength), true)
 	for inset in 6:
 		var margin := float(inset) * 14.0
-		var alpha := strength * (0.13 - float(inset) * 0.016)
-		draw_rect(Rect2(Vector2(margin, margin), viewport_size - Vector2.ONE * margin * 2.0), Color(0.82, 0.08, 0.045, maxf(0.0, alpha)), false, 12.0, true)
+		var alpha := strength * (0.30 - float(inset) * 0.045)
+		draw_rect(Rect2(Vector2(margin, margin), viewport_size - Vector2.ONE * margin * 2.0), Color(PaperArt.DANGER, maxf(0.0, alpha)), false, 12.0, true)
 
 
 func _draw_full_bleed(viewport_size: Vector2) -> void:

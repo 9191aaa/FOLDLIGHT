@@ -13,6 +13,16 @@ const MAX_LIVE_ENEMIES := 84
 const BASE_RETURN_DAMAGE := 2.8
 const BASE_RETURN_SPEED := 610.0
 const REWARD_INPUT_GUARD = preload("res://scripts/ui/reward_input_guard.gd")
+const DAMAGE_EDGE_DURATION: float = 0.24
+const DAMAGE_EDGE_SHADER: String = """
+shader_type canvas_item;
+render_mode unshaded;
+void fragment() {
+	vec2 distance_from_center = abs(UV * 2.0 - 1.0);
+	float edge = smoothstep(0.68, 1.0, max(distance_from_center.x, distance_from_center.y));
+	COLOR = vec4(COLOR.rgb, COLOR.a * edge * edge);
+}
+"""
 
 var run_ended: bool = false
 var _modal_kind: StringName = &""
@@ -29,8 +39,14 @@ var _race_prepared: bool = false
 var _race_started: bool = false
 var _reward_input_guard: Node
 var _reward_entrance_tween: Tween
+var _feedback_motion_scale: float = 1.0
+var _feedback_vibration: bool = true
+var _capture_sfx_cooldown: float = 0.0
+var _kill_shake_cooldown: float = 0.0
+var _return_kick_cooldown: float = 0.0
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
+@onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
 @onready var world: FoldlightRogueWorld = $RogueWorld
 @onready var player: FoldlightPlayer = $Player
 @onready var camera: FoldlightRogueCamera = $RogueWorld/CameraRig
@@ -55,6 +71,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_apply_shared_theme()
 	_setup_reward_input()
+	_setup_combat_feedback()
 	controller.enemy_wave_requested.connect(_on_enemy_wave_requested)
 	controller.player_evolution_changed.connect(_on_player_evolution_changed)
 	controller.mission_reward_offered.connect(_on_mission_reward_offered)
@@ -62,6 +79,10 @@ func _ready() -> void:
 	combat_runtime.projectile_captured.connect(_on_projectile_captured)
 	combat_runtime.player_hit.connect(_on_player_hit)
 	combat_runtime.enemy_defeated_detailed.connect(_on_enemy_defeated_detailed)
+	combat_runtime.impact_confirmed.connect(_on_combat_impact_confirmed)
+	player.fold_started.connect(_on_feedback_fold_started)
+	player.fold_released.connect(_on_feedback_fold_released)
+	player.focus_empty.connect(_on_feedback_focus_empty)
 	for index in modal_buttons.size():
 		modal_buttons[index].pressed.connect(_activate_modal_choice.bind(index))
 		modal_buttons[index].focus_entered.connect(_on_modal_button_focused.bind(index))
@@ -155,6 +176,11 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	player.set_play_enabled(false)
 	player.reset_player()
 	player.configure_roguelite_combat(true)
+	_apply_feedback_settings()
+	audio_director.reset_combat_feedback()
+	_capture_sfx_cooldown = 0.0
+	_kill_shake_cooldown = 0.0
+	_return_kick_cooldown = 0.0
 	player.set_debug_invincible(false)
 	controller.map_runtime.build_physics_walls = false
 	controller.map_runtime.draw_cover_visuals = false
@@ -206,13 +232,16 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	_capture_sfx_cooldown = maxf(0.0, _capture_sfx_cooldown - delta)
+	_kill_shake_cooldown = maxf(0.0, _kill_shake_cooldown - delta)
+	_return_kick_cooldown = maxf(0.0, _return_kick_cooldown - delta)
 	if _toast_remaining > 0.0:
 		_toast_remaining = maxf(0.0, _toast_remaining - delta)
 		reward_toast.visible = _toast_remaining > 0.0
 	if _damage_flash_remaining > 0.0:
 		_damage_flash_remaining = maxf(0.0, _damage_flash_remaining - delta)
-		var ratio := _damage_flash_remaining / 0.24
-		damage_flash.color.a = 0.18 * ratio
+		var ratio := _damage_flash_remaining / DAMAGE_EDGE_DURATION
+		damage_flash.color.a = 0.42 * ratio
 		damage_flash.visible = ratio > 0.0
 	elif damage_flash.visible:
 		damage_flash.hide()
@@ -304,25 +333,84 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 	combat_runtime.spawn_directed_wave(directed)
 
 
-func _on_projectile_captured(_captured_count: int, _position: Vector2) -> void:
+func _on_projectile_captured(captured_count: int, _position: Vector2) -> void:
 	controller.report_projectiles_absorbed(1)
+	if _capture_sfx_cooldown <= 0.0 and _feedback_is_live():
+		_capture_sfx_cooldown = 0.065
+		audio_director.play_sfx(&"capture", 0.90 + minf(0.32, float(captured_count) * 0.025), -10.0)
 
 
 func _on_enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary) -> void:
 	var report := entry.duplicate(true)
 	report["enemy_id"] = enemy_id
 	controller.report_enemy_defeated(report)
-	var shake := 0.34 if bool(entry.get("is_captain", false)) else 0.16
-	camera.add_trauma(shake)
+	if _kill_shake_cooldown <= 0.0:
+		var shake := 0.34 if bool(entry.get("is_captain", false)) else 0.16
+		camera.add_trauma(shake * _feedback_motion_scale)
+		_kill_shake_cooldown = 0.075
 
 
 func _on_player_hit(health_remaining: int) -> void:
-	_damage_flash_remaining = 0.24
+	_damage_flash_remaining = DAMAGE_EDGE_DURATION
+	damage_flash.color = Color(0.96, 0.43, 0.34, 0.42)
 	damage_flash.show()
-	camera.add_trauma(0.62)
-	camera.add_hit_kick(1.0)
+	audio_director.play_sfx(&"hurt", 0.96, -4.0)
+	camera.add_trauma(0.62 * _feedback_motion_scale)
+	camera.add_hit_kick(_feedback_motion_scale)
+	if _feedback_vibration:
+		Input.start_joy_vibration(0, 0.22, 0.46, 0.16)
+	_refresh_hud()
 	if health_remaining <= 0:
 		_finish_run()
+
+
+func _setup_combat_feedback() -> void:
+	var edge_shader := Shader.new()
+	edge_shader.code = DAMAGE_EDGE_SHADER
+	var edge_material := ShaderMaterial.new()
+	edge_material.shader = edge_shader
+	damage_flash.material = edge_material
+	damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func _apply_feedback_settings() -> void:
+	var profile := get_node_or_null("/root/ProfileManager")
+	_feedback_motion_scale = clampf(float(profile.call("get_setting", &"screen_shake", 1.0)), 0.0, 1.0) if profile != null else 1.0
+	_feedback_vibration = bool(profile.call("get_setting", &"vibration", true)) if profile != null else true
+	player.set_feedback_motion_scale(_feedback_motion_scale)
+
+
+func _feedback_is_live() -> bool:
+	return not run_ended and _modal_kind.is_empty() and combat_runtime.active
+
+
+func _on_combat_impact_confirmed(kind: StringName, weight: float) -> void:
+	if _feedback_is_live():
+		audio_director.play_combat_impact(kind, weight)
+		if kind == &"return" and _return_kick_cooldown <= 0.0:
+			camera.add_hit_kick(0.32 * _feedback_motion_scale)
+			_return_kick_cooldown = 0.18
+
+
+func _on_feedback_fold_started() -> void:
+	if _feedback_is_live():
+		audio_director.play_sfx(&"fold", 1.0, -8.0)
+
+
+func _on_feedback_fold_released(captured_count: int, _charge_ratio: float) -> void:
+	if not _feedback_is_live():
+		return
+	audio_director.play_sfx(&"release" if captured_count > 0 else &"empty", 0.90 + minf(0.25, float(captured_count) * 0.015), -7.0 if captured_count > 0 else -12.0)
+	if captured_count > 0:
+		camera.add_trauma(minf(0.30, 0.10 + float(captured_count) * 0.018) * _feedback_motion_scale)
+		if _feedback_vibration:
+			var strength := minf(0.34, 0.16 + float(captured_count) * 0.012)
+			Input.start_joy_vibration(0, strength * 0.55, strength, 0.11)
+
+
+func _on_feedback_focus_empty(_captured_count: int, _charge_ratio: float) -> void:
+	if _feedback_is_live():
+		audio_director.play_sfx(&"empty", 0.86, -12.0)
 
 
 func _on_player_evolution_changed(_snapshot: Dictionary) -> void:

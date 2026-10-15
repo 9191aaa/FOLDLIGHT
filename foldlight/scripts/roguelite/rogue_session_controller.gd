@@ -35,8 +35,6 @@ var _prologue_volley_timer: float = 0.0
 var _prologue_encounter_started: bool = false
 var _pending_reward_kinds: Dictionary = {}
 var _paused: bool = false
-var _pending_kill_sfx: int = 0
-var _kill_sfx_cooldown: float = 0.0
 var _feedback_shake_cooldown: float = 0.0
 var _capture_sfx_cooldown: float = 0.0
 var _mechanic_intro_queue: Array[Dictionary] = []
@@ -73,6 +71,7 @@ func _ready() -> void:
 	world.combat_runtime.projectile_captured.connect(_on_projectile_captured)
 	world.combat_runtime.enemy_defeated.connect(_on_enemy_defeated)
 	world.combat_runtime.enemy_spawned.connect(_on_enemy_spawned)
+	world.combat_runtime.impact_confirmed.connect(_on_combat_impact)
 	mechanic_tracker.card_requested.connect(_on_mechanic_card_requested)
 	presentation.mechanic_card_dismissed.connect(_on_mechanic_card_dismissed)
 	presentation.new_run_requested.connect(_on_new_run_requested)
@@ -97,7 +96,7 @@ func _ready() -> void:
 	player.active_item_used.connect(_on_player_active_item_used)
 	player.focus_empty.connect(_on_player_focus_empty)
 	player.statuses_cleansed.connect(_on_player_statuses_cleansed)
-	player.feedback_budget.impact_batch_requested.connect(_on_feedback_impact_batch)
+	player.set_feedback_motion_scale(float(profile_manager.get_setting(&"screen_shake", 1.0)))
 	call_deferred("enter_title")
 
 
@@ -131,17 +130,12 @@ func _process(delta: float) -> void:
 		return
 	if _paused:
 		return
-	_kill_sfx_cooldown = maxf(0.0, _kill_sfx_cooldown - delta)
 	_feedback_shake_cooldown = maxf(0.0, _feedback_shake_cooldown - delta)
 	_capture_sfx_cooldown = maxf(0.0, _capture_sfx_cooldown - delta)
 	_kill_shake_cooldown = maxf(0.0, _kill_shake_cooldown - delta)
 	_kill_combo_timer = maxf(0.0, _kill_combo_timer - delta)
 	if _kill_combo_timer <= 0.0:
 		_kill_combo_count = 0
-	if _pending_kill_sfx > 0 and _kill_sfx_cooldown <= 0.0:
-		audio_director.play_sfx(&"kill", 0.94 + minf(0.18, float(_pending_kill_sfx) * 0.025), -6.0)
-		_pending_kill_sfx = 0
-		_kill_sfx_cooldown = 0.085
 	if _can_advance_encounter():
 		world.room_runtime.advance_encounter(delta)
 	if mode == SessionMode.RUN and run_controller.phase in [FoldlightRogueRunController.Phase.ENTERING_ROOM, FoldlightRogueRunController.Phase.COMBAT]:
@@ -570,7 +564,11 @@ func _on_run_finished(result: Dictionary) -> void:
 		_result_committed = true
 	presentation.show_result(completed)
 	audio_director.set_intensity(0.04)
-	audio_director.play_sfx(&"victory" if bool(completed.get("won", false)) else &"hurt", 1.0, -2.0)
+	if bool(completed.get("won", false)):
+		audio_director.play_sfx(&"victory", 1.0, -2.0)
+	elif StringName(completed.get("reason", &"")) != &"lantern_extinguished":
+		# Fatal damage already plays hurt before fail_run emits this result.
+		audio_director.play_sfx(&"hurt", 1.0, -2.0)
 
 
 func _on_player_hit(health_remaining: int) -> void:
@@ -595,7 +593,6 @@ func _on_player_hit(health_remaining: int) -> void:
 
 
 func _on_enemy_defeated(enemy_id: StringName) -> void:
-	_pending_kill_sfx += 1
 	if _kill_combo_timer <= 0.0:
 		_kill_combo_count = 0
 	_kill_combo_count += 1
@@ -893,11 +890,12 @@ func _on_player_statuses_cleansed(status_ids: Array[StringName]) -> void:
 		audio_director.play_sfx(&"capture", 1.28, -7.0)
 
 
-func _on_feedback_impact_batch(weight: float, count: int) -> void:
-	audio_director.play_sfx(&"hit", clampf(0.90 + weight * 0.16 + float(count) * 0.003, 0.90, 1.16), -8.5)
-	if _feedback_shake_cooldown <= 0.0:
-		world.camera.add_trauma(minf(0.17, 0.045 + weight * 0.065) * float(profile_manager.get_setting(&"screen_shake", 1.0)))
-		_feedback_shake_cooldown = 0.10
+func _on_combat_impact(kind: StringName, weight: float) -> void:
+	audio_director.play_combat_impact(kind, weight)
+	# Ordinary fire stays local; the return landing earns a short camera accent.
+	if kind == &"return" and _feedback_shake_cooldown <= 0.0:
+		world.camera.add_hit_kick(0.32 * float(profile_manager.get_setting(&"screen_shake", 1.0)))
+		_feedback_shake_cooldown = 0.16
 
 
 func _start_prologue_encounter() -> void:
@@ -1191,5 +1189,7 @@ func _on_setting_adjust_requested(setting_key: StringName, direction: int) -> vo
 		&"vibration", &"high_contrast", &"fullscreen":
 			value = not bool(current)
 	profile_manager.set_setting(setting_key, value)
+	if setting_key == &"screen_shake":
+		player.set_feedback_motion_scale(float(value))
 	presentation.refresh_settings(profile_manager.settings)
 	audio_director.play_sfx(&"ui", 1.0 + float(direction) * 0.06, -7.0)

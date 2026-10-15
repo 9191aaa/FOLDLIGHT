@@ -2,6 +2,7 @@ class_name FoldlightRogueEnemyActor
 extends CharacterBody2D
 
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
+const HitReaction = preload("res://scripts/visuals/paper_hit_reaction.gd")
 
 signal attack_requested(snapshot: Dictionary)
 signal player_pressure_requested(snapshot: Dictionary)
@@ -45,9 +46,8 @@ var _state_remaining: float = 0.0
 var _age: float = 0.0
 var _phase: float = 0.0
 var _flash: float = 0.0
-var _hit_punch: float = 0.0
-var _hit_ring: float = 0.0
-var _hit_direction: Vector2 = Vector2.ZERO
+var _hit_reaction := HitReaction.new()
+var _capture_flash: float = 0.0
 var _mirror_remaining: float = 2.4
 var _path_sample_remaining: float = 0.08
 var _path_history: Array[Vector2] = []
@@ -67,6 +67,9 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	actor_id = new_actor_id
 	classic_archetype = _resolve_classic_archetype(definition.content_id if definition != null else &"drifter")
 	health = definition.base_health if definition != null else 1.0
+	_hit_reaction.reset()
+	_flash = 0.0
+	_capture_flash = 0.0
 	_rng.seed = hash(String(actor_id))
 	_attack_remaining = _rng.randf_range(0.75, 1.8)
 	_special_remaining = _rng.randf_range(2.0, 3.8)
@@ -92,9 +95,9 @@ func advance_simulation(delta: float, new_target_position: Vector2, hostile_time
 	var safe_delta := maxf(0.0, delta) * clampf(hostile_time_scale, 0.1, 2.0)
 	target_position = new_target_position
 	_age += safe_delta
-	_flash = maxf(0.0, _flash - safe_delta * 5.5)
-	_hit_punch = maxf(0.0, _hit_punch - safe_delta * 6.8)
-	_hit_ring = maxf(0.0, _hit_ring - safe_delta * 4.6)
+	_hit_reaction.advance(maxf(0.0, delta))
+	_capture_flash = maxf(0.0, _capture_flash - safe_delta * 5.5)
+	_flash = maxf(_capture_flash, _hit_reaction.flash)
 	match classic_archetype:
 		&"drifter":
 			_advance_drifter(safe_delta)
@@ -118,17 +121,17 @@ func advance_simulation(delta: float, new_target_position: Vector2, hostile_time
 	queue_redraw()
 
 
-func take_damage(amount: float) -> bool:
+func take_damage(amount: float, source: StringName = &"weapon", incoming_velocity: Vector2 = Vector2.ZERO) -> bool:
 	if health <= 0.0 or amount <= 0.0:
 		return false
 	health = maxf(0.0, health - amount)
-	_flash = 1.0
-	_hit_punch = 1.0
-	_hit_ring = 1.0
-	if _hit_direction.is_zero_approx():
-		_hit_direction = target_position.direction_to(global_position)
-		if _hit_direction.is_zero_approx():
-			_hit_direction = Vector2.from_angle(_phase)
+	var impact_direction: Vector2 = incoming_velocity
+	if impact_direction.is_zero_approx():
+		impact_direction = target_position.direction_to(global_position)
+		if impact_direction.is_zero_approx():
+			impact_direction = Vector2.from_angle(_phase)
+	_hit_reaction.trigger(impact_direction, source, health <= 0.0)
+	_flash = maxf(_capture_flash, _hit_reaction.flash)
 	damaged.emit(amount, health)
 	if health <= 0.0:
 		defeated.emit(self)
@@ -137,14 +140,14 @@ func take_damage(amount: float) -> bool:
 	return false
 
 
-func take_projectile_damage(amount: float, incoming_velocity: Vector2, _style: StringName) -> bool:
-	if not incoming_velocity.is_zero_approx():
-		_hit_direction = incoming_velocity.normalized()
-	return take_damage(amount)
+func take_projectile_damage(amount: float, incoming_velocity: Vector2, style: StringName) -> bool:
+	return take_damage(amount, style, incoming_velocity)
 
 
 func get_hit_feedback_snapshot() -> Dictionary:
-	return {"flash": _flash, "punch": _hit_punch, "ring": _hit_ring, "direction": _hit_direction}
+	var result: Dictionary = _hit_reaction.snapshot()
+	result["flash"] = _flash
+	return result
 
 
 func set_support_buff(attack_multiplier: float) -> void:
@@ -206,7 +209,8 @@ func capture_return_light() -> bool:
 	if not can_intercept_return_light():
 		return false
 	stored_light = mini(18, stored_light + 1)
-	_flash = 0.72
+	_capture_flash = 0.72
+	_flash = maxf(_capture_flash, _hit_reaction.flash)
 	queue_redraw()
 	return true
 
@@ -530,22 +534,13 @@ func _draw() -> void:
 	var spawn_scale := maxf(0.055, ease(clampf(_age / 0.52, 0.0, 1.0), -2.0))
 	var dark := Palette.INK.lerp(Color.WHITE, _flash * 0.72)
 	var ink := Palette.DANGER.lerp(Color.WHITE, _flash)
-	if _hit_ring > 0.0:
-		var ring_progress := 1.0 - _hit_ring
-		var ring_radius := get_contact_radius() + 5.0 + ring_progress * 34.0
-		draw_circle(Vector2.ZERO, ring_radius * 0.72, Color(Palette.GOLD, _hit_ring * 0.075))
-		draw_arc(Vector2.ZERO, ring_radius, -PI * 0.88, PI * 0.88, 32, Color(Palette.GOLD, _hit_ring * 0.92), 4.6 - ring_progress * 2.2, true)
-		draw_arc(Vector2.ZERO, ring_radius - 8.0, PI * 0.16, PI * 1.12, 22, Color(Palette.FOLD, _hit_ring * 0.58), 2.2, true)
-		for shard in 4:
-			var shard_direction := _hit_direction.rotated((float(shard) - 1.5) * 0.42)
-			draw_line(shard_direction * 10.0, shard_direction * (24.0 + ring_progress * 30.0), Color(Palette.GOLD, _hit_ring * 0.84), 3.4, true)
 	var movement_ratio := clampf(velocity.length() / maxf(1.0, definition.move_speed if definition != null else 100.0), 0.0, 1.4)
 	var idle_wave := sin(_age * (2.8 + movement_ratio * 1.4) + _phase)
 	var animation_offset := Vector2(0.0, idle_wave * (1.8 + movement_ratio * 0.7))
 	var animation_scale := Vector2(1.0 + idle_wave * 0.018, 1.0 - idle_wave * 0.028)
 	var movement_tilt := clampf(velocity.x / 700.0, -0.12, 0.12)
-	var punch_offset := _hit_direction * _hit_punch * 11.0
-	var punch_scale := Vector2(1.0 + _hit_punch * 0.12, 1.0 - _hit_punch * 0.08)
+	var punch_offset := _hit_reaction.direction * _hit_reaction.punch * 8.0
+	var punch_scale := Vector2(1.0 + _hit_reaction.punch * 0.10, 1.0 - _hit_reaction.punch * 0.07)
 	draw_set_transform(punch_offset + animation_offset, movement_tilt, punch_scale * animation_scale)
 	if support_attack_multiplier < 0.99:
 		draw_arc(Vector2.ZERO, get_contact_radius() + 9.0, 0.0, TAU, 32, Color(Palette.GOLD, 0.72), 2.5, true)
@@ -560,6 +555,7 @@ func _draw() -> void:
 		&"rewinder": _draw_rewinder(spawn_scale)
 		_: _draw_drifter(spawn_scale, dark, ink)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_hit_reaction.draw_details(self, get_contact_radius())
 	if _skill_charge > 0.0:
 		_draw_sealed_charge(get_contact_radius(), _skill_charge)
 

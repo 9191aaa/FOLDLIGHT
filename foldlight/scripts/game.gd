@@ -175,6 +175,7 @@ func _ready() -> void:
 	challenge_director.tier_changed.connect(_on_challenge_tier_changed)
 	_build_background_details()
 	player.reset_player()
+	player.set_feedback_motion_scale(float(profile_manager.get_setting(&"screen_shake", 1.0)))
 	player.global_position = Vector2(960.0, 696.0)
 	player.scale = Vector2.ONE
 	player.visible = true
@@ -477,6 +478,7 @@ func _adjust_setting(direction: int) -> void:
 			profile_manager.set_setting(key, clampf(float(current) + float(direction) * 0.1, 0.0, 1.0))
 		&"screen_shake":
 			profile_manager.set_setting(key, clampf(float(current) + float(direction) * 0.25, 0.0, 1.0))
+			player.set_feedback_motion_scale(float(profile_manager.get_setting(key, 1.0)))
 		&"vibration", &"fullscreen", &"high_contrast":
 			profile_manager.set_setting(key, not bool(current))
 	audio_director.play_sfx(&"ui", 1.12 if direction > 0 else 0.88)

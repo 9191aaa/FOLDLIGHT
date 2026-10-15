@@ -82,6 +82,7 @@ func _run() -> void:
 	ui.show_reward(CHOICES, "隐藏取消")
 	await _wait_ready(ui._reward_buttons)
 	ui._reward_buttons[0].pressed.emit()
+	_check(bool(ui._reward_buttons[0].get_presentation_snapshot()["confirming"]), "hide cancellation starts from an actual pending confirmation")
 	ui.hide()
 	await create_timer(0.28).timeout
 	_check(_chosen.size() == before_cancel, "hiding the presentation cancels a pending confirmation")
@@ -91,8 +92,9 @@ func _run() -> void:
 	var next_stage := func(_id: StringName) -> void: ui.show_reward([CHOICES[1]], "第二道折痕")
 	ui.reward_chosen.connect(next_stage, CONNECT_ONE_SHOT)
 	_send("fold_key", true)
+	_check(bool(ui._reward_buttons[0].get_presentation_snapshot()["confirming"]), "a fresh fold key begins the first stage before testing held input")
 	await create_timer(1.50).timeout
-	_check(_chosen.size() == before_cancel + 1 and ui._reward_buttons[0].disabled, "a held confirmation cannot carry into the following reward stage")
+	_check(_chosen.size() == before_cancel + 1 and ui._reward_buttons[0].get_meta("upgrade_id") == &"double_step" and ui._reward_buttons[0].disabled, "a held confirmation cannot carry into the following reward stage")
 	_send("fold_key", false)
 	await _wait_ready(ui._reward_buttons)
 	_send("enter", true)
@@ -150,10 +152,14 @@ func _test_endless() -> void:
 
 
 func _wait_ready(buttons: Array[Button]) -> void:
-	for frame in 120:
-		if not buttons[0].disabled:
+	# Headless idle frames can run faster than 120 Hz; a frame count is not a
+	# one-second reading interval. Require the real UI state and deferred focus.
+	var deadline := Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline:
+		if not buttons[0].disabled and root.gui_get_focus_owner() == buttons[0]:
 			return
 		await process_frame
+	_check(false, "reward cards become enabled and focused within the readiness deadline")
 
 
 func _send(kind: String, pressed: bool, point: Vector2 = Vector2.ZERO) -> void:

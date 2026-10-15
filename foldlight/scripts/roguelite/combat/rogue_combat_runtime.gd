@@ -7,6 +7,7 @@ signal enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary)
 signal projectile_spawned(projectile: FoldlightRogueProjectile)
 signal projectile_captured(captured_count: int, position: Vector2)
 signal player_hit(health_remaining: int)
+signal impact_confirmed(kind: StringName, weight: float)
 signal active_item_resolved(item_id: StringName, snapshot: Dictionary)
 
 const PROJECTILE_SCENE: PackedScene = preload("res://scenes/roguelite/combat/rogue_projectile.tscn")
@@ -53,6 +54,7 @@ var _release_hit_stop_remaining: float = 0.0
 var _active_flashes: Array[Dictionary] = []
 var _enemy_hit_bursts: Array[Dictionary] = []
 var _hit_vfx_tokens: float = HIT_VFX_BUDGET_MAX
+var _impact_cooldowns: Dictionary = {}
 var _return_navigation_grid: AStarGrid2D
 var _return_navigation_size: Vector2i = Vector2i.ZERO
 var _return_route_cache: Dictionary = {}
@@ -183,6 +185,7 @@ func clear_combat() -> void:
 	_active_flashes.clear()
 	_enemy_hit_bursts.clear()
 	_hit_vfx_tokens = HIT_VFX_BUDGET_MAX
+	_impact_cooldowns.clear()
 	_return_route_cache.clear()
 	_return_nav_queries = 0
 	_return_nav_cache_hits = 0
@@ -274,8 +277,9 @@ func spawn_directed_wave(entries: Array[Dictionary]) -> Array[Node2D]:
 func damage_all_enemies(amount: float) -> void:
 	for enemy in enemies.duplicate():
 		if is_instance_valid(enemy) and enemy.has_method("take_damage"):
+			var before := float(enemy.get("health"))
 			enemy.call("take_damage", amount)
-			_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, Vector2.ZERO, amount)
+			_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, Vector2.ZERO, before - float(enemy.get("health")))
 
 
 func _physics_process(delta: float) -> void:
@@ -295,6 +299,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _update_temporary_effects(delta: float) -> void:
+	for kind in _impact_cooldowns:
+		_impact_cooldowns[kind] = maxf(0.0, float(_impact_cooldowns[kind]) - delta)
 	_hostile_slow_remaining = maxf(0.0, _hostile_slow_remaining - delta)
 	_hostile_time_scale = _hostile_slow_scale if _hostile_slow_remaining > 0.0 else 1.0
 	_weapon_overdrive_remaining = maxf(0.0, _weapon_overdrive_remaining - delta)
@@ -506,13 +512,13 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 			_damage_enemies_in_radius(projectile.global_position, 150.0, applied_damage)
 		elif enemy is FoldlightRogueBossActor:
 			var source: StringName = &"return" if projectile.style == &"return_light" else &"weapon"
-			target_defeated = (enemy as FoldlightRogueBossActor).take_damage(applied_damage, source)
+			target_defeated = (enemy as FoldlightRogueBossActor).take_damage(applied_damage, source, projectile.velocity)
 		elif enemy.has_method("take_projectile_damage"):
 			target_defeated = bool(enemy.call("take_projectile_damage", applied_damage, projectile.velocity, projectile.style))
 		else:
 			target_defeated = bool(enemy.call("take_damage", applied_damage))
 		if projectile.style != &"tide_bell":
-			_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, applied_damage)
+			_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, enemy_health - float(enemy.get("health")), &"return" if projectile.style == &"return_light" else &"weapon")
 		if not projectile.is_echo and projectile.echo_chance > 0.0 and _rng.randf() <= projectile.echo_chance:
 			var echo_direction := projectile.velocity.normalized().rotated(0.32 if _rng.randf() > 0.5 else -0.32)
 			_spawn_projectile({"origin": projectile.global_position + echo_direction * 34.0, "velocity": echo_direction * projectile.velocity.length(), "hostile": false, "reflectable": false, "damage": applied_damage * 0.45, "radius": projectile.radius * 0.8, "lifetime": 1.6, "pierce": 0, "style": projectile.style, "echo_chance": 0.0, "is_echo": true})
@@ -566,13 +572,14 @@ func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, st
 	for enemy in enemies.duplicate():
 		if not is_instance_valid(enemy) or enemy.global_position.distance_to(center) > radius:
 			continue
+		var before := float(enemy.get("health"))
 		if style == &"return_light" and enemy is FoldlightRogueBossActor:
-			(enemy as FoldlightRogueBossActor).take_damage(amount, &"return")
+			(enemy as FoldlightRogueBossActor).take_damage(amount, &"return", enemy.global_position - center)
 		elif style != &"" and enemy.has_method("take_projectile_damage"):
 			enemy.call("take_projectile_damage", amount, Vector2.ZERO, style)
 		elif enemy.has_method("take_damage"):
 			enemy.call("take_damage", amount)
-		_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, enemy.global_position - center, amount)
+		_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, enemy.global_position - center, before - float(enemy.get("health")), &"return" if style == &"return_light" else &"weapon")
 
 
 func _try_hit_player(impact_direction: Vector2 = Vector2.ZERO) -> bool:
@@ -726,6 +733,10 @@ func _on_boss_volley_requested(snapshot: Dictionary) -> void:
 func _on_enemy_defeated(actor: Node2D) -> void:
 	if not enemies.has(actor):
 		return
+	var direction := Vector2.ZERO
+	if actor.has_method("get_hit_feedback_snapshot"):
+		direction = Vector2((actor.call("get_hit_feedback_snapshot") as Dictionary).get("direction", Vector2.ZERO))
+	_register_enemy_hit_feedback(_enemy_feedback_key(actor), actor.global_position, direction, 1.0, &"break")
 	var definition_variant: Variant = actor.get("definition")
 	var enemy_id := (definition_variant as FoldlightRogueEnemyDefinition).content_id if definition_variant is FoldlightRogueEnemyDefinition else &"enemy"
 	if actor is FoldlightRogueBossActor:
@@ -980,35 +991,49 @@ func _add_active_flash(position_value: Vector2, color: Color, maximum_radius: fl
 	queue_redraw()
 
 
-func _register_enemy_hit_feedback(target_key: StringName, position_value: Vector2, incoming_velocity: Vector2, damage: float) -> void:
+func _register_enemy_hit_feedback(target_key: StringName, position_value: Vector2, incoming_velocity: Vector2, damage: float, kind: StringName = &"weapon") -> void:
+	if damage <= 0.0:
+		return
 	var direction := incoming_velocity.normalized()
 	if direction.is_zero_approx():
-		direction = Vector2.from_angle(_rng.randf_range(0.0, TAU))
+		# Visual choices must never consume the combat RNG (crit/echo/spawns).
+		direction = Vector2.from_angle(float(absi(hash(target_key)) % 360) * PI / 180.0)
+	var tier := 2 if kind == &"break" else (1 if kind == &"return" else 0)
+	var duration := 0.32 if tier == 2 else (0.24 if tier == 1 else 0.14)
 	for burst in _enemy_hit_bursts:
 		if StringName(burst.get("target_key", &"")) != target_key:
 			continue
-		burst["position"] = position_value
-		burst["direction"] = direction
-		burst["remaining"] = maxf(float(burst.get("remaining", 0.0)), HIT_VFX_DURATION * 0.62)
-		burst["strength"] = minf(1.85, float(burst.get("strength", 0.0)) + 0.12 + minf(0.18, damage * 0.012))
 		burst["hit_count"] = int(burst.get("hit_count", 1)) + 1
+		# A volley shares one impact. Only an escalation may restart its shape.
+		if tier > int(burst.get("tier", 0)):
+			burst["tier"] = tier
+			burst["position"] = position_value
+			burst["direction"] = direction
+			burst["duration"] = duration
+			burst["remaining"] = duration
+		if tier >= int(burst.get("tier", 0)):
+			_emit_confirmed_impact(kind, minf(1.0, 0.35 + damage * 0.025))
 		queue_redraw()
 		return
-	if _hit_vfx_tokens < 1.0:
+	_emit_confirmed_impact(kind, minf(1.0, 0.35 + damage * 0.025))
+	if _hit_vfx_tokens < 1.0 and tier == 0:
 		return
-	_hit_vfx_tokens -= 1.0
+	# Death/return cues can replace a weak hit when the small draw budget is full.
+	_hit_vfx_tokens = maxf(0.0, _hit_vfx_tokens - 1.0)
 	if _enemy_hit_bursts.size() >= HIT_VFX_MAX_BURSTS:
 		_enemy_hit_bursts.pop_front()
 	_enemy_hit_bursts.append({
-		"target_key": target_key,
-		"position": position_value,
-		"direction": direction,
-		"duration": HIT_VFX_DURATION,
-		"remaining": HIT_VFX_DURATION,
-		"strength": clampf(0.92 + damage * 0.045, 0.92, 1.48),
-		"hit_count": 1,
+		"target_key": target_key, "position": position_value, "direction": direction,
+		"duration": duration, "remaining": duration, "tier": tier, "hit_count": 1,
 	})
 	queue_redraw()
+
+
+func _emit_confirmed_impact(kind: StringName, weight: float) -> void:
+	if float(_impact_cooldowns.get(kind, 0.0)) > 0.0:
+		return
+	_impact_cooldowns[kind] = 0.06 if kind == &"weapon" else 0.10
+	impact_confirmed.emit(kind, weight)
 
 
 func _update_enemy_hit_vfx(delta: float) -> void:
@@ -1351,23 +1376,35 @@ func _enemy_center() -> Vector2:
 func _draw() -> void:
 	for burst in _enemy_hit_bursts:
 		var duration := maxf(0.01, float(burst.get("duration", HIT_VFX_DURATION)))
-		var remaining := clampf(float(burst.get("remaining", 0.0)), 0.0, duration)
-		var progress := 1.0 - remaining / duration
+		var progress := 1.0 - clampf(float(burst.get("remaining", 0.0)) / duration, 0.0, 1.0)
 		var center := Vector2(burst.get("position", Vector2.ZERO))
 		var direction := Vector2(burst.get("direction", Vector2.RIGHT)).normalized()
-		var strength := float(burst.get("strength", 1.0))
-		var alpha := pow(1.0 - progress, 1.65)
-		var radius := lerpf(8.0, 33.0 + strength * 7.0, ease(progress, -1.35))
-		draw_circle(center, radius * 0.72, Color(1.0, 0.66, 0.22, alpha * 0.14))
-		draw_arc(center, radius, -PI * 0.88, PI * 0.88, 28, Color(1.0, 0.88, 0.54, alpha * 0.96), 4.2 - progress * 1.8, true)
-		draw_arc(center, radius * 0.72, PI * 0.12, PI * 1.08, 18, Color(0.38, 0.96, 0.90, alpha * 0.62), 2.2, true)
-		for shard_index in 5:
-			var shard_angle := direction.angle() + (float(shard_index) - 2.0) * 0.42
-			var shard_direction := Vector2.from_angle(shard_angle)
-			var shard_start := center + shard_direction * (4.0 + progress * 8.0)
-			var shard_end := center + shard_direction * (19.0 + progress * (24.0 + strength * 6.0))
-			draw_line(shard_start, shard_end, Color(1.0, 0.70 + float(shard_index) * 0.045, 0.28, alpha * (0.96 - float(abs(shard_index - 2)) * 0.08)), 3.8 - progress * 1.5, true)
-			draw_circle(shard_end, maxf(0.8, 2.4 - progress * 1.3), Color(1.0, 0.94, 0.72, alpha * 0.82))
+		var tier := int(burst.get("tier", 0))
+		var alpha := pow(1.0 - progress, 1.6)
+		var gold := Color("d7af70")
+		var paper := Color("e6e4d5")
+		var travel := (12.0 if tier == 0 else (35.0 if tier == 1 else 58.0)) * ease(progress, -1.6)
+		# A small contact nick; the large paper silhouette belongs to the target.
+		if tier < 2:
+			var cross_axis := direction.orthogonal()
+			var half_length := (6.0 if tier == 0 else 14.0) * (1.0 - progress * 0.6)
+			draw_line(center - cross_axis * half_length, center + cross_axis * half_length, Color(paper, alpha), 2.4, true)
+		var shard_count := 2 if tier == 0 else (4 if tier == 1 else 7)
+		for index in shard_count:
+			var angle := float(index) / float(shard_count) * TAU if tier == 2 else (float(index) - float(shard_count - 1) * 0.5) * 0.52
+			var ray := direction.rotated(angle)
+			var tip := center + ray * (7.0 + travel * (0.72 + float(index % 3) * 0.14))
+			var length := (4.0 if tier == 0 else 9.0) * (1.0 - progress * 0.5)
+			var side := ray.orthogonal() * length * 0.33
+			var shard := PackedVector2Array([tip + ray * length, tip + side, tip - ray * length * 0.55, tip - side])
+			draw_colored_polygon(shard, Color(paper if index % 2 == 0 else gold, alpha * 0.9))
+		if tier == 2:
+			# One broken seal acknowledges defeat after the enemy node disappears.
+			var radius := 16.0 + travel * 0.7
+			for arc in 3:
+				var start := direction.angle() + float(arc) * TAU / 3.0
+				draw_arc(center, radius, start, start + 0.75, 8, Color(gold, alpha * 0.6), 1.8, true)
+
 	for flash in _active_flashes:
 		var duration := maxf(0.1, float(flash.get("duration", 0.1)))
 		var remaining := clampf(float(flash.get("remaining", 0.0)), 0.0, duration)

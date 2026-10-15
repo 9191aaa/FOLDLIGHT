@@ -59,6 +59,8 @@ try {
         'test_return_relay_3_8',
         'test_player_hit_reaction_3_5_1',
         'test_enemy_hit_feedback_3_4_1',
+        'test_combat_impact_feedback',
+        'test_endless_combat_feedback',
         'test_region_visual_layers_3_3',
         'test_formal_art_feedback_pass_3_6',
         'test_two_hour_campaign',

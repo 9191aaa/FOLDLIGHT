@@ -1,6 +1,8 @@
 class_name FoldlightRogueBossActor
 extends CharacterBody2D
 
+const HitReaction = preload("res://scripts/visuals/paper_hit_reaction.gd")
+
 signal damaged(amount: float, health_remaining: float, source: StringName)
 signal defeated(actor: Node2D)
 signal phase_changed(phase_index: int)
@@ -23,9 +25,7 @@ var _locked_attack_target: Vector2 = Vector2.ZERO
 var _attack_locked: bool = false
 var _return_window_budget: float = 0.0
 var _arena_damage_remaining: float = 0.0
-var _hit_flash: float = 0.0
-var _hit_punch: float = 0.0
-var _hit_ring: float = 0.0
+var _hit_reaction := HitReaction.new()
 var _visual_time: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
@@ -49,6 +49,7 @@ func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed
 	definition = new_definition
 	actor_id = definition.content_id if definition != null else &"boss"
 	health = definition.base_health if definition != null else 1.0
+	_hit_reaction.reset()
 	_room_bounds = bounds
 	_rng.seed = seed
 	return_meter = 0.0
@@ -70,9 +71,7 @@ func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed
 func advance_simulation(delta: float, player_position: Vector2, hostile_time_scale: float = 1.0) -> void:
 	if definition == null or health <= 0.0:
 		return
-	_hit_flash = maxf(0.0, _hit_flash - maxf(0.0, delta) * 5.0)
-	_hit_punch = maxf(0.0, _hit_punch - maxf(0.0, delta) * 8.0)
-	_hit_ring = maxf(0.0, _hit_ring - maxf(0.0, delta) * 5.2)
+	_hit_reaction.advance(maxf(0.0, delta))
 	var safe_delta := maxf(0.0, delta) * clampf(hostile_time_scale, 0.1, 2.0)
 	_visual_time += safe_delta
 	_target_position = player_position
@@ -89,10 +88,11 @@ func advance_simulation(delta: float, player_position: Vector2, hostile_time_sca
 	queue_redraw()
 
 
-func take_damage(amount: float, source: StringName = &"weapon") -> bool:
+func take_damage(amount: float, source: StringName = &"weapon", incoming_velocity: Vector2 = Vector2.ZERO) -> bool:
 	if definition == null or health <= 0.0 or amount <= 0.0:
 		return false
 	var applied := amount
+	var was_staggered: bool = phase_controller.state == FoldlightBossPhaseController.State.STAGGERED
 	if source == &"return":
 		if phase_controller.state == FoldlightBossPhaseController.State.STAGGERED:
 			applied = minf(amount, _return_window_budget)
@@ -108,9 +108,11 @@ func take_damage(amount: float, source: StringName = &"weapon") -> bool:
 	if applied <= 0.0:
 		return false
 	health = maxf(0.0, health - applied)
-	_hit_flash = 1.0
-	_hit_punch = maxf(_hit_punch, 0.88)
-	_hit_ring = 1.0
+	var impact_direction: Vector2 = incoming_velocity
+	if impact_direction.is_zero_approx():
+		impact_direction = _target_position.direction_to(global_position)
+	var opened_window: bool = not was_staggered and phase_controller.state == FoldlightBossPhaseController.State.STAGGERED
+	_hit_reaction.trigger(impact_direction, source, health <= 0.0 or opened_window)
 	damaged.emit(applied, health, source)
 	if health <= 0.0:
 		phase_controller.mark_defeated()
@@ -134,7 +136,7 @@ func get_combat_snapshot() -> Dictionary:
 
 
 func get_hit_feedback_snapshot() -> Dictionary:
-	return {"flash": _hit_flash, "punch": _hit_punch, "ring": _hit_ring}
+	return _hit_reaction.snapshot()
 
 
 func _update_movement(delta: float) -> void:
@@ -343,16 +345,13 @@ func _volley_snapshot(count: int, speed: float, spread: float, reflectable: bool
 func _draw() -> void:
 	if definition == null:
 		return
-	var accent := definition.accent.lerp(Color.WHITE, _hit_flash * 0.76)
+	var accent := definition.accent.lerp(Color.WHITE, _hit_reaction.flash * 0.62)
 	var phase := phase_controller.phase_index
 	var is_reef_crown := definition.content_id == &"reef_crown_battery"
 	var silhouette_radius := 108.0 if is_reef_crown else 66.0
-	if _hit_ring > 0.0:
-		var ring_progress := 1.0 - _hit_ring
-		draw_arc(Vector2.ZERO, silhouette_radius + ring_progress * 34.0, -PI * 0.88, PI * 0.88, 36, Color(1.0, 0.84, 0.48, _hit_ring * 0.78), 5.0 - ring_progress * 1.8, false)
 	var boss_breathe := sin(_visual_time * (2.2 + float(phase) * 0.25))
-	var boss_offset := Vector2(0.0, boss_breathe * (2.0 if is_reef_crown else 4.0))
-	var boss_scale := Vector2(1.0 + _hit_punch * 0.08 + boss_breathe * 0.012, 1.0 - _hit_punch * 0.05 - boss_breathe * 0.018)
+	var boss_offset := Vector2(0.0, boss_breathe * (2.0 if is_reef_crown else 4.0)) + _hit_reaction.direction * _hit_reaction.punch * 4.5
+	var boss_scale := Vector2(1.0 + _hit_reaction.punch * 0.055 + boss_breathe * 0.012, 1.0 - _hit_reaction.punch * 0.035 - boss_breathe * 0.018)
 	draw_set_transform(boss_offset, boss_breathe * (0.008 if is_reef_crown else 0.022), boss_scale)
 	for ring in range(4 + phase, 0, -1):
 		draw_circle(Vector2.ZERO, (76.0 if is_reef_crown else 44.0) + float(ring) * 9.0, Color(accent, 0.018 * float(6 - mini(ring, 5))))
@@ -366,13 +365,13 @@ func _draw() -> void:
 				Vector2(-30, -30), Vector2(0, -94), Vector2(30, -30),
 				Vector2(56, -76), Vector2(84, -46), Vector2(92, 48),
 			])
-			var crown_fill := Color("8b7958").lerp(Color.WHITE, _hit_flash * 0.58)
+			var crown_fill := Color("8b7958").lerp(Color.WHITE, _hit_reaction.flash * 0.48)
 			draw_colored_polygon(crown, crown_fill)
 			var crown_inset := PackedVector2Array([
 				Vector2(-72, 34), Vector2(-55, -40), Vector2(-24, 18),
 				Vector2(0, -78), Vector2(25, 18), Vector2(56, -45), Vector2(72, 34),
 			])
-			draw_colored_polygon(crown_inset, Color("d2bd83").lerp(Color.WHITE, _hit_flash * 0.46))
+			draw_colored_polygon(crown_inset, Color("d2bd83").lerp(Color.WHITE, _hit_reaction.flash * 0.38))
 			draw_polyline(PackedVector2Array(Array(crown) + [crown[0]]), accent, 7.0, false)
 			# Side batteries foreshadow turret-crown summons.
 			for turret_x in [-72.0, 72.0]:
@@ -390,7 +389,7 @@ func _draw() -> void:
 				draw_rect(Rect2(Vector2(-18.0 + phase_mark * 18.0, 58.0), Vector2(10.0, 7.0)), accent, true)
 		&"inverted_archivist":
 			var book := Rect2(Vector2(-50, -42), Vector2(100, 84))
-			draw_rect(book, Color(0.11, 0.06, 0.18, 0.98).lerp(Color.WHITE, _hit_flash * 0.58), true)
+			draw_rect(book, Color(0.11, 0.06, 0.18, 0.98).lerp(Color.WHITE, _hit_reaction.flash * 0.48), true)
 			draw_rect(book, accent, false, 6.0, true)
 			draw_line(Vector2(0, -40), Vector2(0, 40), Color(0.96, 0.70, 1.0), 4.0, true)
 			for page in 4:
@@ -401,7 +400,7 @@ func _draw() -> void:
 				draw_polyline(PackedVector2Array(Array(page_shape) + [page_shape[0]]), Color(accent, 0.38), 1.5, true)
 		&"origami_judge":
 			var judge := PackedVector2Array([Vector2(0, -58), Vector2(48, -22), Vector2(38, 48), Vector2(0, 30), Vector2(-38, 48), Vector2(-48, -22)])
-			draw_colored_polygon(judge, Color(0.16, 0.08, 0.08, 0.98).lerp(Color.WHITE, _hit_flash * 0.58))
+			draw_colored_polygon(judge, Color(0.16, 0.08, 0.08, 0.98).lerp(Color.WHITE, _hit_reaction.flash * 0.48))
 			draw_polyline(PackedVector2Array(Array(judge) + [judge[0]]), accent, 6.0, true)
 			draw_colored_polygon(PackedVector2Array([judge[0], judge[1], judge[3]]), Color(0.96, 0.48, 0.16, 0.26))
 			draw_colored_polygon(PackedVector2Array([judge[0], judge[3], judge[5]]), Color(1.0, 0.78, 0.34, 0.18))
@@ -415,6 +414,7 @@ func _draw() -> void:
 	if phase_controller.state == FoldlightBossPhaseController.State.STAGGERED:
 		draw_arc(Vector2.ZERO, 116.0 if is_reef_crown else 70.0, 0.0, TAU, 40, Color(0.52, 1.0, 0.88, 0.96), 8.0, false)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_hit_reaction.draw_details(self, silhouette_radius)
 	var health_ratio := clampf(health / definition.base_health, 0.0, 1.0)
 	var bar_width := 212.0 if is_reef_crown else 144.0
 	var bar_y := -124.0 if is_reef_crown else -82.0

@@ -65,9 +65,22 @@ func _run() -> void:
 	await process_frame
 	_check(session.run_controller.phase == FoldlightRogueRunController.Phase.COMBAT and String(session.current_room_node.get("id", "")) == exits[0], "route selection loads the chosen next room")
 
+	var audio_cues: Array[StringName] = []
+	session.audio_director.sfx_requested.connect(func(sound_name: StringName, _pitch: float, _volume_db: float) -> void: audio_cues.append(sound_name))
 	session.run_controller.fail_run(&"test_complete")
 	await process_frame
 	_check(session.mode == FoldlightRogueSessionController.SessionMode.RESULT and session.presentation.screen_kind == &"result", "failed voyage produces a complete result screen")
+	_check(audio_cues.count(&"hurt") == 1, "a non-damage failure retains its single result cue")
+
+	session.start_new_run()
+	await process_frame
+	session.player.health = 1
+	session.player.invulnerability = 0.0
+	session.player.set_debug_invincible(false)
+	audio_cues.clear()
+	_check(session.world.combat_runtime._try_hit_player(Vector2.LEFT), "a real combat hit reaches the one-health player")
+	_check(session.player.health == 0 and session.mode == FoldlightRogueSessionController.SessionMode.RESULT and session.presentation.screen_kind == &"result", "fatal combat damage reaches the voyage result synchronously")
+	_check(audio_cues.count(&"hurt") == 1, "fatal damage and its result screen share exactly one hurt cue")
 
 	session._on_classic_requested()
 	await process_frame

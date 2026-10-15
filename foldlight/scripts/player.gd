@@ -30,6 +30,7 @@ const ROGUELITE_VISUAL_SCALE: float = 0.82
 const CLASSIC_VISUAL_SCALE: float = 1.24
 const HIT_REACTION_DURATION: float = 0.24
 const HIT_REACTION_DISTANCE: float = 18.0
+const DAMAGE_MARK_DURATION: float = 0.42
 
 var health: int = MAX_HEALTH
 var focus: float = 1.0
@@ -70,6 +71,9 @@ var _hit_reaction_remaining: float = 0.0
 var _hit_reaction_direction: Vector2 = Vector2.DOWN
 var _hit_visual_offset: Vector2 = Vector2.ZERO
 var _hit_visual_scale: Vector2 = Vector2.ONE
+var _damage_mark_remaining: float = 0.0
+var _damage_grace_active: bool = false
+var _feedback_motion_scale: float = 1.0
 
 @onready var status_effects: FoldlightStatusEffects = $StatusEffects
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
@@ -218,6 +222,8 @@ func reset_player() -> void:
 	_hit_reaction_remaining = 0.0
 	_hit_visual_offset = Vector2.ZERO
 	_hit_visual_scale = Vector2.ONE
+	_damage_mark_remaining = 0.0
+	_damage_grace_active = false
 	status_effects.clear_all()
 	_trail.clear()
 	_facing_angle = 0.0
@@ -415,7 +421,20 @@ func get_hit_reaction_snapshot() -> Dictionary:
 		"visual_scale": _hit_visual_scale,
 		"duration": HIT_REACTION_DURATION,
 		"maximum_distance": HIT_REACTION_DISTANCE,
+		"source_direction": -_hit_reaction_direction,
+		"damage_mark_remaining": _damage_mark_remaining,
+		"damage_mark_strength": _damage_mark_strength(),
+		"protection_alpha": _protection_alpha(),
+		"motion_scale": _feedback_motion_scale,
 	}
+
+
+## The host passes the existing screen-shake preference. Zero keeps the
+## damage colour and protection cues, while removing recoil and flying scraps.
+func set_feedback_motion_scale(value: float) -> void:
+	_feedback_motion_scale = clampf(value, 0.0, 1.0)
+	_update_hit_pose()
+	queue_redraw()
 
 
 func _begin_hit_reaction(impact_direction: Vector2) -> void:
@@ -426,19 +445,24 @@ func _begin_hit_reaction(impact_direction: Vector2) -> void:
 		direction = Vector2.DOWN
 	_hit_reaction_direction = direction
 	_hit_reaction_remaining = HIT_REACTION_DURATION
-	# Start on the impact pose immediately. Waiting for the next process frame
-	# made short hits disappear inside the invulnerability blink.
-	_hit_visual_offset = direction * HIT_REACTION_DISTANCE
-	_hit_visual_scale = Vector2(1.07, 0.91)
+	_damage_mark_remaining = DAMAGE_MARK_DURATION
+	_damage_grace_active = true
+	# Damage owns a coral cue, separate from the white capture flash.
+	_update_hit_pose()
 	queue_redraw()
 
 
 func _update_hit_reaction(delta: float) -> void:
-	if _hit_reaction_remaining <= 0.0:
-		_hit_visual_offset = Vector2.ZERO
-		_hit_visual_scale = Vector2.ONE
+	if not play_enabled:
 		return
 	_hit_reaction_remaining = maxf(0.0, _hit_reaction_remaining - maxf(0.0, delta))
+	_damage_mark_remaining = maxf(0.0, _damage_mark_remaining - maxf(0.0, delta))
+	if invulnerability <= 0.0:
+		_damage_grace_active = false
+	_update_hit_pose()
+
+
+func _update_hit_pose() -> void:
 	if _hit_reaction_remaining <= 0.0:
 		_hit_visual_offset = Vector2.ZERO
 		_hit_visual_scale = Vector2.ONE
@@ -447,9 +471,21 @@ func _update_hit_reaction(delta: float) -> void:
 	var envelope := pow(1.0 - progress, 2.0)
 	# Two compact reversals read as a physical hit, while the quadratic envelope
 	# prevents the old 2.0-style repeated shaking from lingering.
-	var oscillation := cos(progress * PI * 3.0) * envelope
+	var oscillation := cos(progress * PI * 3.0) * envelope * _feedback_motion_scale
 	_hit_visual_offset = _hit_reaction_direction * HIT_REACTION_DISTANCE * oscillation
 	_hit_visual_scale = Vector2(1.0 + oscillation * 0.07, 1.0 - oscillation * 0.09)
+
+
+func _damage_mark_strength() -> float:
+	return pow(clampf(_damage_mark_remaining / DAMAGE_MARK_DURATION, 0.0, 1.0), 1.15)
+
+
+func _protection_alpha() -> float:
+	if invulnerability <= 0.0:
+		return 0.0
+	# A continuous outline replaces whole-body blinking. Its gentle breathing
+	# stops at zero motion, and the final 0.2s fades out without a hard flash.
+	return (0.70 + sin(invulnerability * 5.0) * 0.10 * _feedback_motion_scale) * minf(1.0, invulnerability / 0.20)
 
 
 func get_hit_radius() -> float:
@@ -481,6 +517,8 @@ func add_focus(amount: float) -> void:
 
 
 func grant_invulnerability(duration: float) -> void:
+	if invulnerability <= 0.0:
+		_damage_grace_active = false
 	invulnerability = maxf(invulnerability, duration)
 
 
@@ -528,15 +566,60 @@ func _draw() -> void:
 	_draw_trail()
 	if folding:
 		_draw_fold_field()
-	var blink := invulnerability > 0.0 and _hit_reaction_remaining <= 0.0 and int(invulnerability * 14.0) % 2 == 0
-	if blink:
-		return
 	draw_set_transform(_hit_visual_offset, _facing_angle, _hit_visual_scale)
 	_draw_moth(Vector2.ZERO, _body_visual_scale, visual_flash)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_draw_damage_tear()
+	_draw_protection_mark()
 	if roguelite_combat and fold_component.cooldown_remaining > 0.0:
 		var ready_ratio := 1.0 - clampf(fold_component.cooldown_remaining / maxf(0.01, fold_component.roguelite_cooldown), 0.0, 1.0)
 		draw_arc(Vector2.ZERO, 38.0, -PI * 0.5, -PI * 0.5 + TAU * ready_ratio, 32, Color(PaperArt.FOLD, 0.72), 2.0, true)
+	# This point is drawn after resetting the art transform: neither recoil,
+	# wing motion nor invulnerability can shift or hide the real hurtbox centre.
+	draw_circle(Vector2.ZERO, 4.0, PaperArt.INK)
+	draw_circle(Vector2.ZERO, 2.2, PaperArt.PAPER)
+
+
+func _draw_damage_tear() -> void:
+	var strength := _damage_mark_strength()
+	if strength <= 0.0:
+		return
+	var progress := 1.0 - _damage_mark_remaining / DAMAGE_MARK_DURATION
+	var source_angle := (-_hit_reaction_direction).angle()
+	var spread := 7.0 * progress * _feedback_motion_scale
+	var radius := maxf(28.0, _body_visual_scale * 42.0) + spread
+	var torn_edge := PackedVector2Array()
+	for index in 7:
+		var angle := source_angle - 0.72 + float(index) * 0.24
+		torn_edge.append(Vector2.from_angle(angle) * (radius + (3.0 if index % 2 == 1 else 0.0)))
+	draw_polyline(torn_edge, Color(PaperArt.INK, strength * 0.85), 5.0, true)
+	draw_polyline(torn_edge, Color(PaperArt.DANGER, strength), 2.8, true)
+	# Five small folded scraps travel from the struck side, never a full burst
+	# covering the player's surrounding bullets. Reduced motion keeps the edge.
+	if _feedback_motion_scale <= 0.01:
+		return
+	for index in 5:
+		var angle := source_angle - 0.68 + float(index) * 0.34
+		var outward := Vector2.from_angle(angle)
+		var tangent := outward.orthogonal()
+		var travel := (13.0 + float(index % 3) * 7.0) * progress * _feedback_motion_scale
+		var center := outward * (radius + 7.0 + travel)
+		var length := (5.0 + float(index % 2) * 2.0) * (1.0 - progress * 0.35)
+		var scrap := PackedVector2Array([center - outward * length, center + tangent * 3.0, center + outward * length, center - tangent * 1.5])
+		draw_colored_polygon(scrap, Color(PaperArt.DANGER, strength * 0.80))
+		draw_line(scrap[0], scrap[2], Color(PaperArt.PAPER, strength * 0.72), 1.0, true)
+
+
+func _draw_protection_mark() -> void:
+	var opacity := _protection_alpha()
+	if opacity <= 0.0:
+		return
+	var color := PaperArt.DANGER.lerp(PaperArt.PAPER, 0.38) if _damage_grace_active else PaperArt.FOLD
+	var radius := hit_radius + 7.0
+	# Open brackets read as protection, rather than an enlarged collision disk.
+	for side in [0.0, PI]:
+		draw_arc(Vector2.ZERO, radius, side - 0.66, side + 0.66, 16, Color(PaperArt.INK, opacity), 4.0, true)
+		draw_arc(Vector2.ZERO, radius, side - 0.66, side + 0.66, 16, Color(color, opacity), 1.7, true)
 
 
 func _set_physical_radius(radius: float) -> void:
@@ -616,7 +699,13 @@ func _draw_moth(origin: Vector2, scale_factor: float, flash: float) -> void:
 			var length := (34.0 + float(streak % 2) * 24.0) * scale_factor
 			draw_line(center + Vector2(x, 22.0 * scale_factor), center + Vector2(x, 22.0 * scale_factor + length), Color(PaperArt.FOLD, 0.24), 2.0, true)
 	PaperArt.draw_moth(self, center, scale_factor, wing, flash)
-	# This fixed center is the actual hurtbox center, independent of wing/bob art.
-	# It remains legible while folding or when the wings bank during movement.
-	draw_circle(origin, 3.3, PaperArt.INK)
-	draw_circle(origin, 2.0, PaperArt.PAPER)
+	var hurt := _damage_mark_strength()
+	if hurt > 0.0:
+		for side in [-1.0, 1.0]:
+			var torn_facet := PackedVector2Array([
+				center + Vector2(side * 4.0, -12.0) * scale_factor,
+				center + Vector2(side * 57.0 * wing, -44.0) * scale_factor,
+				center + Vector2(side * 22.0 * wing, -11.0) * scale_factor,
+			])
+			draw_colored_polygon(torn_facet, Color(PaperArt.DANGER, hurt * 0.72))
+			draw_line(torn_facet[0], torn_facet[1], Color(PaperArt.PAPER, hurt * 0.85), 1.3, true)
