@@ -18,6 +18,7 @@ var focus_buttons: Array[Button] = []
 var _content: VBoxContainer
 var _entrance: Tween
 var _quit_confirmation: Control
+var _touch_layout := false
 
 
 func build(button_factory: Callable) -> void:
@@ -101,7 +102,7 @@ func present(profile: Dictionary) -> void:
 	continue_button.visible = has_continue
 	primary_button.text = "开始迷航" if learned else "开始迷航  ·  操作教学"
 	primary_button.theme_type_variation = "FoldlightMenuButton" if has_continue else "PrimaryButton"
-	primary_button.custom_minimum_size.y = 58 if has_continue else 84
+	primary_button.custom_minimum_size.y = 120 if _touch_layout else (58 if has_continue else 84)
 	tutorial_button.visible = learned
 	var runs := int(profile.get("runs", 0))
 	if runs > 0:
@@ -118,6 +119,11 @@ func present(profile: Dictionary) -> void:
 func set_input_device(gamepad: bool) -> void:
 	if input_label != null:
 		input_label.text = INPUT_CONTRACT.menu_hint(gamepad)
+
+
+func set_touch_layout(enabled: bool) -> void:
+	_touch_layout = enabled
+	primary_button.custom_minimum_size.y = 120 if enabled else (58 if continue_button.visible else 84)
 
 
 func _action(factory: Callable, text_value: String, action: StringName, variation: StringName, height: float) -> Button:

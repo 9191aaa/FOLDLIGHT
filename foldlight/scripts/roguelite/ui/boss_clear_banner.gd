@@ -12,6 +12,9 @@ var _description: Label
 var _hint: Label
 var _continue_button: Button
 var _confirmed: bool = false
+var _panel: PanelContainer
+var _stack: VBoxContainer
+var _touch_layout: bool = false
 
 
 func _ready() -> void:
@@ -19,6 +22,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var panel := PanelContainer.new()
+	_panel = panel
 	add_child(panel)
 	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	panel.offset_left = -310
@@ -31,6 +35,7 @@ func _ready() -> void:
 	style.border_color = Color(FoldlightTheme.GOLD, 0.55)
 	panel.add_theme_stylebox_override("panel", style)
 	var stack := VBoxContainer.new()
+	_stack = stack
 	stack.add_theme_constant_override("separation", 12)
 	panel.add_child(stack)
 	_title = _label(30, FoldlightTheme.GOLD)
@@ -47,7 +52,36 @@ func _ready() -> void:
 	_input_guard = INPUT_GUARD.new()
 	_input_guard.state_changed.connect(_update_input_state)
 	add_child(_input_guard)
+	var touch := get_node_or_null("/root/TouchControls")
+	if touch != null:
+		touch.touch_mode_changed.connect(set_touch_layout)
+		set_touch_layout(bool(touch.is_touch_mode()))
 	hide()
+
+
+func set_touch_layout(enabled: bool) -> void:
+	_touch_layout = enabled
+	if _panel == null:
+		return
+	var extent := Vector2(1160, 440) if enabled else Vector2(620, 210)
+	_panel.custom_minimum_size = extent
+	_panel.offset_left = -extent.x * 0.5
+	_panel.offset_right = extent.x * 0.5
+	_panel.offset_top = -170.0 if enabled else -58.0
+	_panel.offset_bottom = _panel.offset_top + extent.y
+	_panel.size = extent
+	_stack.add_theme_constant_override("separation", 20 if enabled else 12)
+	_title.add_theme_font_size_override("font_size", 48 if enabled else 30)
+	_description.add_theme_font_size_override("font_size", 36 if enabled else 19)
+	_hint.add_theme_font_size_override("font_size", 32 if enabled else 17)
+	_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if enabled else TextServer.AUTOWRAP_OFF
+	_continue_button.custom_minimum_size.y = 136.0 if enabled else 54.0
+	if enabled:
+		_continue_button.add_theme_font_size_override("font_size", 38)
+	else:
+		_continue_button.remove_theme_font_size_override("font_size")
+	if _input_guard != null:
+		_update_input_state()
 
 
 func present(boss_title: String, next_region_title: String) -> void:
@@ -100,6 +134,8 @@ func _update_input_state() -> void:
 	_continue_button.disabled = not ready
 	_continue_button.focus_mode = Control.FOCUS_ALL if ready else Control.FOCUS_NONE
 	_hint.text = "按 Space / A、Enter 或点击继续" if ready else ("潮声渐息 · 稍候片刻" if _input_guard._elapsed < READ_SECONDS else "松开按键、鼠标或摇杆，再继续")
+	if _touch_layout:
+		_hint.text = "轻触下方按钮，继续航行" if ready else ("潮声渐息 · 稍候片刻" if _input_guard._elapsed < READ_SECONDS else "松开所有手指，再轻触继续")
 	if ready:
 		call_deferred("_focus_continue")
 

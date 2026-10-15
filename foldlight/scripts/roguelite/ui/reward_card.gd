@@ -30,6 +30,16 @@ var _entrance_tween: Tween
 var _attention_tween: Tween
 var _confirm_tween: Tween
 var _dim_tween: Tween
+var _touch_layout := false
+
+
+func set_touch_layout(enabled: bool) -> void:
+	_touch_layout = enabled
+	custom_minimum_size = Vector2(550, 710) if enabled else Vector2(420, 520)
+	for pair: Array in [[title_label, 40, 31], [description_label, 34, 21], [rarity_label, 32, 18], [level_label, 30, 17], [_action_label, 32, 18]]:
+		(pair[0] as Label).add_theme_font_size_override("font_size", pair[1] if enabled else pair[2])
+	_update_content_layout()
+	queue_redraw()
 
 
 func _ready() -> void:
@@ -317,6 +327,15 @@ func _update_content_layout() -> void:
 	level_label.size = Vector2(130, 28)
 	_action_label.position = Vector2(170, size.y - 57)
 	_action_label.size = Vector2(maxf(1, size.x - 202), 28)
+	if _touch_layout:
+		rarity_label.size.y = 44
+		title_label.size.y = 60
+		description_label.position.y = 352
+		description_label.size.y = maxf(150, size.y - 450)
+		level_label.position.y = size.y - 62
+		level_label.size = Vector2(210, 44)
+		_action_label.position = Vector2(250, size.y - 62)
+		_action_label.size = Vector2(maxf(1, size.x - 282), 44)
 
 
 func _surface_offset() -> float:

@@ -46,6 +46,7 @@ func _ready() -> void:
 	presentation.show_hud()
 	presentation.reward_chosen.connect(_on_reward_chosen)
 	presentation.resume_requested.connect(_resume_game)
+	presentation.pause_requested.connect(_pause_game)
 	presentation.settings_requested.connect(_on_settings_requested)
 	presentation.setting_adjust_requested.connect(_on_setting_adjust_requested)
 	presentation.settings_back_requested.connect(_on_settings_back_requested)
@@ -300,17 +301,25 @@ func _retry_run() -> void:
 
 
 func _return_to_title() -> void:
+	if not is_inside_tree() or is_queued_for_deletion() or _transitioning_to_title:
+		return
 	_cancel_reward_entry()
 	if _web_race_bridge != null:
 		_web_race_bridge.call("finish_local", &"abandoned", "abandoned")
-		return
-	if _transitioning_to_title:
 		return
 	_transitioning_to_title = true
 	player.set_play_enabled(false)
 	world.deactivate()
 	controller.exit_mode(&"return_to_title")
+	# Preserve the result's GUI touch-focus target until the input event batch
+	# finishes; its emulated mouse release arrives before the raw touch release.
+	call_deferred("_complete_title_transition")
 	title_requested.emit()
+
+
+func _complete_title_transition() -> void:
+	if not is_inside_tree() or is_queued_for_deletion() or not _transitioning_to_title:
+		return
 	var error := get_tree().change_scene_to_file("res://scenes/main.tscn")
 	if error != OK:
 		_transitioning_to_title = false

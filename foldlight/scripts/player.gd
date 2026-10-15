@@ -75,6 +75,9 @@ var _hit_visual_scale: Vector2 = Vector2.ONE
 var _damage_mark_remaining: float = 0.0
 var _damage_grace_active: bool = false
 var _feedback_motion_scale: float = 1.0
+var _touch_movement: Vector2 = Vector2.ZERO
+var _touch_fold_held: bool = false
+var _touch_dash_buffer_timer: float = 0.0
 
 @onready var status_effects: FoldlightStatusEffects = $StatusEffects
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
@@ -115,9 +118,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_fold_buffer_timer = 0.18
 		get_viewport().set_input_as_handled()
 	elif event.is_action_released(&"fold"):
-		_fold_buffer_timer = 0.0
-		if folding:
-			_release_fold(false)
+		if not _touch_fold_held:
+			_fold_buffer_timer = 0.0
+			if folding:
+				_release_fold(false)
 		get_viewport().set_input_as_handled()
 
 
@@ -140,19 +144,21 @@ func _physics_process(delta: float) -> void:
 	status_effects.tick(delta)
 	if _fold_buffer_timer > 0.0:
 		_fold_buffer_timer = maxf(0.0, _fold_buffer_timer - delta)
-		if not folding and focus > 0.055 and fold_component.can_begin() and Input.is_action_pressed(&"fold"):
+		if not folding and focus > 0.055 and fold_component.can_begin() and (Input.is_action_pressed(&"fold") or _touch_fold_held):
 			_fold_buffer_timer = 0.0
 			try_begin_fold()
 
-	var direction := INPUT_CONTRACT.movement_vector()
+	var direction := INPUT_CONTRACT.movement_vector(_touch_movement)
 	if direction.length_squared() > 0.02:
 		_last_direction = direction.normalized()
 		var target_angle := _last_direction.angle() + PI * 0.5
 		_facing_angle = lerp_angle(_facing_angle, target_angle, minf(1.0, delta * 7.5))
-	if _dash_buffer_timer > 0.0:
+	if _dash_buffer_timer > 0.0 or _touch_dash_buffer_timer > 0.0:
 		_dash_buffer_timer = maxf(0.0, _dash_buffer_timer - delta)
+		_touch_dash_buffer_timer = maxf(0.0, _touch_dash_buffer_timer - delta)
 		if request_dash(direction):
 			_dash_buffer_timer = 0.0
+			_touch_dash_buffer_timer = 0.0
 
 	var status_move_multiplier := status_effects.get_move_multiplier()
 	if dash_component.is_dashing():
@@ -193,6 +199,7 @@ func _process(delta: float) -> void:
 
 
 func reset_player() -> void:
+	_cancel_touch_controls()
 	global_position = Vector2(960.0, 650.0)
 	velocity = Vector2.ZERO
 	max_health = MAX_HEALTH
@@ -229,6 +236,7 @@ func reset_player() -> void:
 func set_play_enabled(enabled: bool) -> void:
 	play_enabled = enabled
 	if not enabled:
+		_cancel_touch_controls()
 		velocity = Vector2.ZERO
 		_fold_buffer_timer = 0.0
 
@@ -238,6 +246,7 @@ func set_play_enabled(enabled: bool) -> void:
 ## release event happens while the combat simulation is suspended.
 func suspend_for_overlay() -> void:
 	play_enabled = false
+	_cancel_touch_controls()
 	velocity = Vector2.ZERO
 	folding = false
 	fold_time = 0.0
@@ -254,6 +263,62 @@ func cancel_fold() -> void:
 	fold_time = 0.0
 	captured = 0
 	_fold_buffer_timer = 0.0
+
+
+## Touch is a separate device source. Canceling it never releases a keyboard
+## or controller action and never turns a lost contact into returned light.
+func set_touch_movement(direction: Vector2) -> void:
+	_touch_movement = direction.limit_length(1.0) if play_enabled else Vector2.ZERO
+	if not _touch_movement.is_zero_approx():
+		last_input_device = &"touch"
+
+
+func set_touch_fold_pressed(pressed: bool) -> void:
+	if not play_enabled or _touch_fold_held == pressed:
+		return
+	_touch_fold_held = pressed
+	last_input_device = &"touch"
+	if pressed:
+		if not folding and not try_begin_fold():
+			_fold_buffer_timer = 0.18
+	elif not Input.is_action_pressed(&"fold"):
+		_fold_buffer_timer = 0.0
+		if folding:
+			_release_fold(false)
+
+
+func request_touch_dash() -> void:
+	if play_enabled and roguelite_combat:
+		last_input_device = &"touch"
+		_touch_dash_buffer_timer = 0.14
+
+
+func request_touch_active_item() -> void:
+	if play_enabled and roguelite_combat:
+		last_input_device = &"touch"
+		request_active_item()
+
+
+func cancel_touch_input() -> void:
+	var was_touch_fold := _touch_fold_held
+	_touch_movement = Vector2.ZERO
+	_touch_fold_held = false
+	_touch_dash_buffer_timer = 0.0
+	if was_touch_fold and not Input.is_action_pressed(&"fold"):
+		folding = false
+		fold_time = 0.0
+		_fold_buffer_timer = 0.0
+
+
+func _cancel_touch_controls() -> void:
+	var controls := get_node_or_null("/root/TouchControls") if is_inside_tree() else null
+	if controls != null:
+		controls.call("cancel_for_player", self)
+	cancel_touch_input()
+
+
+func _exit_tree() -> void:
+	_cancel_touch_controls()
 
 
 func configure_roguelite_combat(enabled: bool) -> void:

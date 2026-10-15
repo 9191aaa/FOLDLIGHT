@@ -69,6 +69,8 @@ Windows 输出为 `foldlight/build/FOLDLIGHT_Refactor_Windows/FOLDLIGHT.exe`。�
 
 两模式的菜单均支持 WASD／方向键、左摇杆／十字键选择，Enter／空格／E／A 确认。Esc／B 返回上一层，Esc／Start 暂停或继续；M 静音。暂停菜单提供继续、设置和结束本局。好友竞赛不可手动暂停，奖励选择期间停止计时。
 
+手机网页版采用横屏触控：左下摇杆移动，右下按住折翼收弹、松开返光，旁边分别是冲刺和主动道具。自动武器继续自动开火。触屏使用紧凑 HUD 和放大的菜单按钮；奖励、航图和暂停页面隐藏战斗触控，松开旧手指后才能确认。网页返回和游戏暂停分居顶部两侧，并预留刘海及安全边距。竖屏提示旋转，切屏或触点取消会清除残留操作；好友赛计时不因旋转而暂停。键盘、鼠标与手柄保留原有操作，触屏不向全局按键状态注入输入。详见 [手机网页适配](foldlight/docs/MOBILE_WEB.md)。
+
 ## 开发与验证
 
 ```powershell
@@ -85,6 +87,8 @@ Windows 输出为 `foldlight/build/FOLDLIGHT_Refactor_Windows/FOLDLIGHT.exe`。�
 
 新增精英与首领演出这轮，49/49 项默认检查通过，Web 与 Windows 导出无错误，桌面启动、网页单人返回／重启／输入／异常恢复实测通过；网页音频和恢复的 11 项测试及 TypeScript 检查通过。两个独立浏览器的好友赛通过同种子倒计时、真实生存计时、全屏与反馈入口不中断战斗、弃赛结算验证，无引擎错误。额外 GPU 压力场景包含 1 只新精英、初始 19 名敌人与 260 发弹丸：平均 / P95 帧时为 29.22 / 55.97 ms，绘制 1966 次，内存 104.5 MB。数量、绘制与内存预算通过，但帧时仍未达到既有 20.5 / 26 ms 预算；该压力测试的性能结果不能计为全部通过。
 
+手机适配覆盖独立多指、弹窗触点、Boss 继续、手机布局及指针换场回归；既有输入与生命周期检查通过。真实网页在三种手机模拟尺寸通过移动／折翼／冲刺、多指暂停、设置、旋转及返回确认，桌面缩窗仍保持桌面操作。手机与电脑混合好友赛通过真实计时、旋转期间继续计时和退出结算；18 项网页测试、TypeScript、Web／Windows 导出与桌面启动通过，无引擎错误。尚未用 Android／iOS 真机验证设备性能与握持手感，详见 [手机验证记录](foldlight/docs/MOBILE_WEB.md)。
+
 主要职责边界：
 
 - `scripts/ui/foldlight_theme.gd`：共享颜色、字体、控件样式。
@@ -92,6 +96,8 @@ Windows 输出为 `foldlight/build/FOLDLIGHT_Refactor_Windows/FOLDLIGHT.exe`。�
 - `scripts/roguelite/rogue_session_controller.gd`：迷航流程与存档协调。
 - `scripts/visuals/paper_art.gd`：共用纸蛾和纸海绘制。
 - `scripts/ui/input_contract.gd`：共用操作绑定、导航与提示。
+- `scripts/autoloads/touch_controls.gd`：独立多指操作、输入取消与网页安全边距。
+- `scripts/roguelite/ui/mobile_presentation_layout.gd`：手机菜单布局与桌面布局恢复。
 - `scripts/roguelite/ui/rogue_presentation.gd`：迷航与无尽共用的 HUD、奖励、暂停、设置和结算。
 - `scripts/game.gd`：轻量应用入口，不再载入旧故事战斗或旧 HUD。
 - `scripts/endless/endless_slice_runtime.gd`：无尽任务、生存成长与竞赛适配，共用玩家、战斗和界面组件。

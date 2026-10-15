@@ -24,6 +24,7 @@ WebRaceBridge="*res://scripts/autoloads/web_race_bridge.gd"
 ProfileManager="*res://scripts/autoloads/profile_manager.gd"
 PlatformBridge="*res://scripts/autoloads/platform_bridge.gd"
 AudioDirector="*res://scripts/audio_director.gd"
+TouchControls="*res://scripts/autoloads/touch_controls.gd"
 
 [display]
 

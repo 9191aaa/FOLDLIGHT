@@ -18,6 +18,8 @@ signal retry_requested
 signal title_requested
 signal mechanic_card_dismissed(content_id: StringName)
 signal pause_navigation(event: InputEventKey)
+signal pause_requested
+signal screen_changed(kind: StringName)
 
 const FOLD := FoldlightRogueUITheme.FOLD
 const GOLD := FoldlightRogueUITheme.GOLD
@@ -33,6 +35,17 @@ const MECHANIC_PREVIEW_SCENE := preload("res://scripts/roguelite/ui/mechanic_pre
 const ROUTE_ATLAS := preload("res://scripts/roguelite/ui/route_atlas.gd")
 const ROUTE_PANEL := preload("res://scripts/roguelite/ui/route_destination_panel.gd")
 const INPUT_CONTRACT := preload("res://scripts/ui/input_contract.gd")
+const MOBILE_LAYOUT := preload("res://scripts/roguelite/ui/mobile_presentation_layout.gd")
+const MOBILE_HUD := preload("res://scripts/roguelite/ui/mobile_combat_hud.gd")
+
+var _touch_layout: bool = false
+var _mobile_layout := MOBILE_LAYOUT.new()
+var _mobile_hud: Control
+var _hud_player: FoldlightPlayer
+var _desktop_hud: Control
+var _settings_grid: GridContainer
+var _settings_minus: Array[Button] = []
+var _touch_safe_top: float = -1.0
 
 var screen_kind: StringName = &"title"
 var _screens: Dictionary = {}
@@ -139,7 +152,61 @@ func _ready() -> void:
 	_build_settings()
 	_build_mechanic_toast()
 	_build_mechanic_briefing()
+	var touch := get_node_or_null("/root/TouchControls")
+	if touch != null:
+		touch.touch_mode_changed.connect(set_touch_layout)
+		touch.layout_changed.connect(_on_touch_layout_changed)
+		set_touch_layout(bool(touch.is_touch_mode()))
 	show_title({})
+
+
+func set_touch_layout(enabled: bool) -> void:
+	if _touch_layout == enabled:
+		return
+	_touch_layout = enabled
+	_mobile_layout.apply(self, enabled)
+	_desktop_hud.visible = not enabled
+	_mobile_hud.visible = enabled
+	_mobile_hud.set_tutorial_mode(_quick_tutorial.visible)
+	_title_screen.set_touch_layout(enabled)
+	_quick_tutorial.set_touch_layout(enabled)
+	_route_atlas.set_touch_layout(enabled)
+	_route_panel.set_touch_layout(enabled)
+	for card in _reward_buttons:
+		card.set_touch_layout(enabled)
+	_refresh_input_hint()
+	_touch_safe_top = MOBILE_LAYOUT.safe_top(self) if enabled else -1.0
+
+
+func _on_touch_layout_changed() -> void:
+	if _touch_layout and not is_equal_approx(_touch_safe_top, MOBILE_LAYOUT.safe_top(self)):
+		_touch_safe_top = MOBILE_LAYOUT.safe_top(self)
+		_mobile_layout.apply(self, true)
+
+
+func get_touch_debug_buttons() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	_collect_touch_buttons(interface, result)
+	return result
+
+
+func _collect_touch_buttons(node: Node, result: Array[Dictionary]) -> void:
+	if node is Button and node.is_visible_in_tree() and not node.disabled:
+		var rect: Rect2 = node.get_global_rect()
+		result.append({"text": node.text, "x": rect.position.x, "y": rect.position.y, "width": rect.size.x, "height": rect.size.y})
+	for child in node.get_children(): _collect_touch_buttons(child, result)
+
+
+func _sync_touch_context() -> void:
+	var touch := get_node_or_null("/root/TouchControls")
+	if touch != null:
+		touch.set_context(self, _hud_player, visible and screen_kind == &"hud")
+
+
+func _exit_tree() -> void:
+	var touch := get_node_or_null("/root/TouchControls")
+	if touch != null:
+		touch.clear_context(self)
 
 
 func _process(delta: float) -> void:
@@ -156,6 +223,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# Raw touches allow a second finger to pause while the first holds the stick.
+	# It remains observable by the entry guards; no synthetic combat key is sent.
+	if _touch_layout and screen_kind == &"hud" and event is InputEventScreenTouch and event.pressed and not event.canceled and _mobile_hud.pause_button.is_visible_in_tree():
+		if _mobile_hud.pause_button.get_global_rect().has_point(event.position):
+			pause_requested.emit()
+			return
 	var device := INPUT_CONTRACT.device_for_event(event, _input_device)
 	if device != _input_device:
 		_input_device = device
@@ -230,6 +303,8 @@ func show_hud() -> void:
 func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictionary, region_title: String, wave_text: String = "", boss_snapshot: Dictionary = {}, context: Dictionary = {}) -> void:
 	if player == null:
 		return
+	_hud_player = player
+	_sync_touch_context()
 	_hud_region.text = "%s  /  %s" % [region_title, _category_title(StringName(room_node.get("category", &"combat")))]
 	_hud_room.text = _t(&"ROGUE_HUD_ROOM", "房间 %d  ·  微光 %d") % [int(snapshot.get("room_count", 0)) + 1, int(snapshot.get("glimmer", 0))]
 	_hud_context = context
@@ -305,6 +380,9 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 		_boss_bar.max_value = maximum
 		_boss_bar.value = health
 		_boss_label.text = "%s  ·  已澄清" % str(boss_snapshot.get("title", "终潮")) if bool(boss_snapshot.get("defeated", false)) else "%s  ·  阶段 %d" % [str(boss_snapshot.get("title", "终潮")), int(boss_snapshot.get("phase", 1))]
+	if _touch_layout:
+		_mobile_hud.update_from(self)
+		_mobile_hud.set_tutorial_mode(_quick_tutorial.visible)
 
 
 func show_prologue_step(step_number: int, _total_steps: int, _title: String, _body: String) -> void:
@@ -314,6 +392,7 @@ func show_prologue_step(step_number: int, _total_steps: int, _title: String, _bo
 		_quick_tutorial.begin(not Input.get_connected_joypads().is_empty())
 	else:
 		_quick_tutorial.show_step(step_number - 1)
+	if _touch_layout: _mobile_hud.set_tutorial_mode(true)
 
 
 func hide_prologue_step() -> void:
@@ -422,7 +501,7 @@ func _on_result_input_state_changed() -> void:
 	var ready: bool = _result_input_guard.can_select()
 	for button: Button in _focus_groups[&"result"]:
 		button.disabled = not ready
-	_result_hint.text = INPUT_CONTRACT.menu_hint(_input_device == &"gamepad") if ready else "先看一眼航行记录 · 松开按键后再选择"
+	_result_hint.text = ("轻触选择下一段航程" if _touch_layout else INPUT_CONTRACT.menu_hint(_input_device == &"gamepad")) if ready else "先看一眼航行记录 · 松开操作后再选择"
 	if ready:
 		_set_focus_group(_visible_buttons(_focus_groups[&"result"]))
 
@@ -478,6 +557,8 @@ func _refresh_input_hint() -> void:
 
 
 func _reward_choice_hint() -> String:
+	if _touch_layout:
+		return "轻触一张折痕，确认本次强化"
 	# Rewards cannot be dismissed, so show only the shared selection/confirm
 	# bindings and omit the menu's Back action.
 	var hint := INPUT_CONTRACT.menu_hint(_input_device == &"gamepad")
@@ -510,7 +591,7 @@ func _on_leave_input_state_changed() -> void:
 	var ready: bool = _leave_input_guard.can_select()
 	for button: Button in _focus_groups[&"leave_confirmation"]:
 		button.disabled = not ready
-	_leave_hint.text = "默认取消 · 选择结束后才会离开本次航行" if ready else "请松开按键，再作选择 · Esc / B / Start 可取消"
+	_leave_hint.text = "默认取消 · 选择结束后才会离开本次航行" if ready else ("请松开触点，稍后再作选择" if _touch_layout else "请松开按键，再作选择 · Esc / B / Start 可取消")
 	if ready:
 		_set_focus_group(_visible_buttons(_focus_groups[&"leave_confirmation"]))
 
@@ -584,7 +665,7 @@ func show_mechanic_card(snapshot: Dictionary) -> void:
 	_mechanic_intro_counter.text = "怎么躲\n%s" % str(snapshot.get("counterplay", "看到预警先换位，再抓住空档反击。"))
 	_mechanic_intro_attack_caption.text = str(snapshot.get("attack_preview_text", _attack_demo_title(StringName(snapshot.get("attack_style", &"")), preview_id)))
 	_mechanic_intro_preview.configure(snapshot)
-	_mechanic_intro_button.text = "知道怎么躲了，开始交锋   [空格 / A]"
+	_mechanic_intro_button.text = "知道怎么躲了 · 开始交锋" if _touch_layout else "知道怎么躲了，开始交锋   [空格 / A]"
 	_mechanic_remaining = 0.0
 	_mechanic_panel.hide()
 	_show_only(&"mechanic_intro")
@@ -649,6 +730,7 @@ func _build_hud() -> void:
 	var screen := _new_screen(&"hud")
 	screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var margin := _full_margin(screen, 42, 30, 42, 28)
+	_desktop_hud = margin
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var layout := VBoxContainer.new()
 	layout.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -794,6 +876,11 @@ func _build_hud() -> void:
 	_hud_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(_hud_help)
 	_refresh_input_hint()
+	_mobile_hud = MOBILE_HUD.new()
+	_mobile_hud.name = "MobileCombatHUD"
+	screen.add_child(_mobile_hud)
+	_mobile_hud.pause_requested.connect(func() -> void: pause_requested.emit())
+	_mobile_hud.hide()
 
 	_prologue_banner = PanelContainer.new()
 	_prologue_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1002,7 +1089,7 @@ func _on_route_input_state_changed() -> void:
 	var available: bool = _route_input_guard.can_select()
 	for button in _route_buttons:
 		button.disabled = not available
-	_route_hint.text = "方向键 / 摇杆选择航路   ·   空格 / A 确认出发" if available else "航图正在展开 · 松开按键后再启航"
+	_route_hint.text = ("点折岛查看 · 点出发启航" if _touch_layout else "方向键 / 摇杆选择航路   ·   空格 / A 确认出发") if available else "航图正在展开 · 松开操作后再启航"
 	if available:
 		# Arming may follow programmatic inspection. Keep the selected island;
 		# a distant preview must not silently focus a different launch action.
@@ -1156,11 +1243,27 @@ func _build_settings() -> void:
 	var title := _label("设置", 40, PAPER)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(title)
+	_settings_grid = GridContainer.new()
+	_settings_grid.columns = 1
+	_settings_grid.add_theme_constant_override("h_separation", 24)
+	_settings_grid.add_theme_constant_override("v_separation", 10)
+	stack.add_child(_settings_grid)
 	for key in _settings_keys:
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_settings_grid.add_child(row)
+		var minus := _button("−", 58)
+		minus.name = String(key).to_pascal_case() + "Decrease"
+		minus.custom_minimum_size.x = 120
+		minus.pressed.connect(func() -> void: setting_adjust_requested.emit(key, -1))
+		minus.hide()
+		row.add_child(minus)
+		_settings_minus.append(minus)
 		var button := _button(String(key), 58)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.set_meta("setting_key", key)
 		button.pressed.connect(func() -> void: setting_adjust_requested.emit(StringName(button.get_meta("setting_key")), 1))
-		stack.add_child(button)
+		row.add_child(button)
 		_settings_buttons.append(button)
 	var back := _button("返回", 58)
 	back.pressed.connect(func() -> void: settings_back_requested.emit(_settings_return))
@@ -1348,6 +1451,8 @@ func _show_only(kind: StringName) -> void:
 		_leave_input_guard.cancel()
 		_leave_action_locked = true
 	screen_kind = kind
+	_sync_touch_context()
+	screen_changed.emit(kind)
 	for key_variant: Variant in _screens.keys():
 		(_screens[key_variant] as Control).visible = StringName(key_variant) == kind
 	_mechanic_panel.visible = _mechanic_remaining > 0.0 and kind == &"hud"

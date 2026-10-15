@@ -101,9 +101,9 @@ func _test_scene_transition() -> void:
 	_check(session.mode == FoldlightRogueSessionController.SessionMode.RUN and session.presentation.screen_kind == &"settings", "a stale pause action cannot abandon a voyage while settings are open")
 	session.enter_title()
 	session._on_endless_requested()
-	_check(not session.is_inside_tree(), "real endless scene change detaches the previous voyage immediately")
-	# A second queued button signal can still reference a detached scene until
-	# frame-end deletion. It must not ask that detached node for its SceneTree.
+	_check(session.is_inside_tree() and session._scene_transitioning, "real endless departure locks the old voyage until the input batch has finished")
+	# Repeated button signals in the same input batch must not schedule a
+	# second scene replacement while the original Controls are still attached.
 	session._on_endless_requested()
 	session.presentation.endless_requested.emit()
 	await _frames(4)

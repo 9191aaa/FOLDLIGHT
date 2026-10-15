@@ -87,6 +87,7 @@ func _ready() -> void:
 	presentation.quit_requested.connect(_on_quit_requested)
 	presentation.settings_requested.connect(_on_settings_requested)
 	presentation.resume_requested.connect(_resume_game)
+	presentation.pause_requested.connect(_pause_game)
 	presentation.abandon_requested.connect(_on_abandon_requested)
 	presentation.setting_adjust_requested.connect(_on_setting_adjust_requested)
 	presentation.settings_back_requested.connect(_on_settings_back_requested)
@@ -193,9 +194,16 @@ func _on_endless_requested() -> void:
 		return
 	_scene_transitioning = true
 	_active = false
-	var scene_tree := get_tree()
 	_enter_modal_safety()
-	var error := scene_tree.change_scene_to_file(ENDLESS_SURVIVAL_SCENE)
+	# A touch emits an emulated mouse release before its raw touch release.
+	# Keep the old GUI Controls in the tree until both dispatches have ended.
+	call_deferred("_complete_endless_transition")
+
+
+func _complete_endless_transition() -> void:
+	if not is_inside_tree() or is_queued_for_deletion() or not _scene_transitioning:
+		return
+	var error := get_tree().change_scene_to_file(ENDLESS_SURVIVAL_SCENE)
 	if error != OK:
 		_scene_transitioning = false
 		push_error("Unable to open endless survival scene: %s" % error_string(error))

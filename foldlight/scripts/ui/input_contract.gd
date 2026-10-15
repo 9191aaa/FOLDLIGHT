@@ -10,15 +10,23 @@ const KEYBOARD_DASH: String = "SHIFT  冲刺"
 const GAMEPAD_DASH: String = "B  冲刺"
 const KEYBOARD_ACTIVE: String = "Q  主动技能"
 const GAMEPAD_ACTIVE: String = "X  主动技能"
+const TOUCH_MOVE: String = "左侧摇杆  移动"
+const TOUCH_FOLD: String = "按住收纳 · 松开返光"
+const TOUCH_DASH: String = "点按冲刺"
+const TOUCH_ACTIVE: String = "点按技能"
 const AUTOMATIC_ATTACK: String = "武器自动寻敌攻击 · 返光自动追踪"
 const TUTORIAL_SKIP_HINT: String = "F / LB  跳过并开始"
 
 
-static func movement_vector() -> Vector2:
-	return Input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down")
+static func movement_vector(touch_vector: Vector2 = Vector2.ZERO) -> Vector2:
+	return (Input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down") + touch_vector).limit_length(1.0)
 
 
 static func device_for_event(event: InputEvent, current: StringName = &"keyboard") -> StringName:
+	if event is InputEventScreenTouch and event.pressed and event.device != InputEvent.DEVICE_ID_EMULATION:
+		return &"touch"
+	if event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
+		return current
 	if event is InputEventJoypadButton and event.is_pressed():
 		return &"gamepad"
 	if event is InputEventJoypadMotion:

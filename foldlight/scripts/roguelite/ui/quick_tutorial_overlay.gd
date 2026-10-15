@@ -49,6 +49,13 @@ var _step_index: int = 0
 var _gamepad_mode: bool = false
 var _finished: bool = false
 var _transition: Tween
+var _touch_layout := false
+
+
+func set_touch_layout(enabled: bool) -> void:
+	_touch_layout = enabled
+	skip_button.text = "跳过教学" if enabled else INPUT_CONTRACT.TUTORIAL_SKIP_HINT
+	_apply_step(false)
 
 @onready var card: PanelContainer = %Card
 @onready var content: VBoxContainer = %Content
@@ -210,6 +217,9 @@ func _apply_step(animate_change: bool) -> void:
 	title_label.text = str(step.get("title", "新手提示"))
 	device_label.text = "手柄" if _gamepad_mode else "单手键盘"
 	controls_label.text = str(step.get("gamepad" if _gamepad_mode else "keyboard", ""))
+	if _touch_layout:
+		device_label.text = "触屏"
+		controls_label.text = ["左下摇杆移动 · 轻触冲刺穿过弹线", "按住右侧收纳 · 松开返光追踪", "武器自动开火 · 黑金弹不可收纳 · 技能可解围"][mini(_step_index, 2)]
 	body_label.text = str(step.get("body", ""))
 	warning_label.text = "◆  %s" % str(step.get("warning", ""))
 	page_label.text = "%d / %d" % [_step_index + 1, _steps.size()]

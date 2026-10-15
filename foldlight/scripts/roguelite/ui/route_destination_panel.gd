@@ -40,6 +40,13 @@ var illustration: Illustration
 var _snapshot: Dictionary = {}
 
 
+func set_touch_layout(enabled: bool) -> void:
+	for child in [context_label, illustration, body_label, get_child(6), get_child(7)]:
+		child.visible = not enabled
+	for pair: Array in [[title_label, 40, 29], [status_label, 32, 16], [risk_label, 32, 18], [reward_label, 32, 23]]:
+		(pair[0] as Label).add_theme_font_size_override("font_size", pair[1] if enabled else pair[2])
+
+
 func _ready() -> void:
 	add_theme_constant_override("separation", 10)
 	context_label = _label("", 18, Palette.GOLD)

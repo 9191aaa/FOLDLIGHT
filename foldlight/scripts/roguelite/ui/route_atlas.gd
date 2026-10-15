@@ -63,6 +63,16 @@ var _context: Dictionary = {}
 var _seafloor: Seafloor
 var _redraw_elapsed: float = 0.0
 var _draw_count: int = 0
+var _touch_layout := false
+var _touch_index := -1
+
+
+func set_touch_layout(enabled: bool) -> void:
+	_touch_layout = enabled
+	_touch_index = -1
+	_pointer_down = false
+	_drag_started = false
+	queue_redraw()
 
 
 func _init() -> void:
@@ -95,6 +105,7 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_touch_index = -1
 		_pointer_down = false
 		_drag_started = false
 		_drag_button = MOUSE_BUTTON_NONE
@@ -340,6 +351,40 @@ func _refresh_seafloor() -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if _touch_layout and event is InputEventScreenTouch:
+		if event.pressed and _touch_index == -1:
+			_touch_index = event.index
+			_stop_focus_motion()
+			_pressed_position = event.position
+			_pointer_down = true
+			_drag_started = false
+		elif not event.pressed and event.index == _touch_index:
+			if not _drag_started and not event.canceled:
+				var id := _node_at(event.position)
+				if not id.is_empty():
+					selected_node_id = id
+					_refresh_static_hover()
+					queue_redraw()
+					node_selected.emit(id)
+			_touch_index = -1
+			_pointer_down = false
+			_drag_started = false
+		accept_event()
+		return
+	if _touch_layout and event is InputEventScreenDrag:
+		if event.index == _touch_index:
+			if event.position.distance_to(_pressed_position) >= 20: _drag_started = true
+			if _drag_started:
+				_view_mode = &"manual"
+				pan += event.relative
+				_clamp_pan()
+				queue_redraw()
+			accept_event()
+		return
+	# Native raw touch owns chart gestures; its emulated mouse must not select twice.
+	if _touch_layout and event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
+		accept_event()
+		return
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
 		_last_pointer = mouse.position
@@ -418,7 +463,7 @@ func _node_at(point: Vector2) -> StringName:
 	if point.y >= size.y - 112:
 		return _minimap_node_at(point)
 	var nearest: StringName = &""
-	var distance := maxf(28.0, PICK_RADIUS * zoom)
+	var distance := maxf(60.0 if _touch_layout else 28.0, PICK_RADIUS * zoom)
 	for node in _nodes:
 		var id := StringName(node.get("id", &""))
 		var delta := point.distance_to(get_node_screen_position(id))
@@ -486,6 +531,7 @@ func _on_mouse_exited() -> void:
 
 
 func _on_visibility_changed() -> void:
+	_touch_index = -1
 	set_process(is_visible_in_tree() and _motion_scale > 0.0)
 	if not is_visible_in_tree():
 		_stop_focus_motion()
@@ -611,15 +657,15 @@ func _draw_island(node: Dictionary) -> void:
 	elif id in _cleared:
 		draw_line(center + Vector2(-9, -1) * zoom, center + Vector2(-2, 6) * zoom, Palette.GOLD, 2.0, true)
 		draw_line(center + Vector2(-2, 6) * zoom, center + Vector2(12, -10) * zoom, Palette.GOLD, 2.0, true)
-	var font_size := int(clampf(21.0 * zoom, 15.0, 25.0))
+	var font_size := 32 if _touch_layout else int(clampf(21.0 * zoom, 15.0, 25.0))
 	var title := _category_title(category)
 	var width := _font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 	_draw_text(title, center + Vector2(-width * 0.5, radius + 22.0), font_size, Color(Palette.PAPER, (0.96 if reachable or current else 0.62) * _unfold))
-	if reachable or current or id in _cleared:
+	if not _touch_layout and (reachable or current or id in _cleared):
 		var tag := "此刻" if current else ("可抵达" if reachable else "已澄清")
 		var tag_width := _font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 		_draw_text(tag, center + Vector2(-tag_width * 0.5, radius + 39), 12, Color(Palette.FOLD if current else Palette.GOLD, _unfold))
-	if reachable and zoom >= 0.7:
+	if not _touch_layout and reachable and zoom >= 0.7:
 		var info := get_node_preview(id)
 		var reward_text := "武器" if info.get("reward_kind") == &"weapon" else ("主动道具" if info.get("reward_kind") == &"active" else ("强化＋主动" if info.get("reward_kind") == &"first_active" else ("终潮" if category == &"boss" else "强化")))
 		var caption := "威胁 %d  /  %s" % [int(node.get("risk", 1)), reward_text]
@@ -638,6 +684,9 @@ func _draw_compass() -> void:
 
 func _draw_chart_caption() -> void:
 	var chapter := int(_snapshot.get("index", 0)) + 1
+	if _touch_layout:
+		_draw_text("海域 %02d  /  %s" % [chapter, "前方航路" if _view_mode == &"ahead" else "航图"], Vector2(28, 44), 32, Palette.FOLD)
+		return
 	_draw_text("海域 %02d  /  %s" % [chapter, "前方航路" if _view_mode == &"ahead" else ("完整航图" if _view_mode == &"overview" else "自由阅图")], Vector2(28, 37), 17, Palette.FOLD)
 	_draw_text("第 %d / %d 折点  ·  距终潮 %d 航段" % [_current_depth + 1, _max_depth + 1, maxi(0, _max_depth - _current_depth)], Vector2(28, 66), 17, Palette.MUTED)
 
@@ -654,7 +703,7 @@ func _minimap_position(id: StringName) -> Vector2:
 
 func _minimap_node_at(point: Vector2) -> StringName:
 	var nearest: StringName = &""
-	var distance := 18.0
+	var distance := 60.0 if _touch_layout else 18.0
 	for node in _nodes:
 		var id := StringName(node["id"])
 		var candidate := point.distance_to(_minimap_position(id))
@@ -668,8 +717,9 @@ func _draw_minimap() -> void:
 	var top := size.y - 112
 	draw_rect(Rect2(Vector2(0, top), Vector2(size.x, 112)), Color(Palette.INK, 0.96))
 	draw_line(Vector2(24, top), Vector2(size.x - 24, top), Color(Palette.FOLD, 0.18), 1.0)
-	_draw_text("全程航迹", Vector2(28, top + 23), 14, Palette.MUTED)
-	_draw_text("金线 已航行   ·   青线 可前往", Vector2(maxf(190, size.x - 290), top + 23), 14, Palette.MUTED)
+	_draw_text("全程航迹", Vector2(28, top + 30), 28 if _touch_layout else 14, Palette.MUTED)
+	if not _touch_layout:
+		_draw_text("金线 已航行   ·   青线 可前往", Vector2(maxf(190, size.x - 290), top + 23), 14, Palette.MUTED)
 	for edge in _edges:
 		var from_id := StringName(edge["from"])
 		var to_id := StringName(edge["to"])
