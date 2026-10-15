@@ -74,10 +74,11 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 	slice._on_mission_reward_offered(first_a, {"title": "航路校验"})
 	for index in first_a.size():
 		var option := first_a[index]
-		var card_text := slice.modal_buttons[index].text
-		_check(card_text.contains("【%s】" % EXPECTED_LANE_TITLES[index]), "reward card %d shows its lane title" % (index + 1))
+		var card: FoldlightRewardCard = slice.presentation._reward_buttons[index] as FoldlightRewardCard
+		var card_text: String = card.title_label.text + " " + card.description_label.text + " " + card.rarity_label.text + " " + card.level_label.text
+		_check(card_text.contains(EXPECTED_LANE_TITLES[index]), "reward card %d shows its lane title" % (index + 1))
 		_check(card_text.contains(String(option.get("title", ""))), "reward card %d shows the reward name" % (index + 1))
-		_check(card_text.contains("Lv.%d" % int(option.get("next_level", 0))), "reward card %d shows its next level" % (index + 1))
+		_check(card_text.contains(str(int(option.get("next_level", 0)))), "reward card %d shows its next level" % (index + 1))
 		_check(card_text.contains(String(option.get("description", ""))), "reward card %d shows the complete effect description" % (index + 1))
 
 
@@ -209,7 +210,7 @@ func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> v
 	var projectile_position := hostile.global_position
 	var projectile_lifetime := hostile.lifetime
 	var enemy_before := targets[0].get_combat_snapshot()
-	_check(slice._modal_kind == &"reward" and slice.modal_dim.visible, "mission reward opens a blocking modal")
+	_check(slice._modal_kind == &"reward" and slice.presentation.screen_kind == &"reward", "mission reward opens a blocking modal")
 	_check(not slice.player.play_enabled and not slice.combat_runtime.active, "reward suspension reaches shared player and combat runtime")
 	slice._physics_process(0.25)
 	slice.player._physics_process(0.25)
@@ -219,8 +220,9 @@ func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> v
 	_check(targets[0].get_combat_snapshot() == enemy_before, "an open reward modal freezes the shared enemy state")
 
 	await _wait_for_reward_input(slice)
-	slice._activate_modal_choice(0)
-	_check(slice._modal_kind.is_empty() and not slice.modal_dim.visible, "choosing a reward closes the blocking modal")
+	slice.presentation._reward_buttons[0].pressed.emit()
+	await create_timer(0.28).timeout
+	_check(slice._modal_kind.is_empty() and slice.presentation.screen_kind == &"hud", "choosing a reward closes the blocking modal")
 	_check(slice.player.play_enabled and slice.combat_runtime.active and slice.player.invulnerability >= 0.75, "selection restores shared combat with the overlay safety window")
 	slice.combat_runtime._physics_process(0.1)
 	_check(hostile.global_position != projectile_position and targets[0].get_combat_snapshot() != enemy_before, "hostile projectiles and enemies resume simulation after selection")
@@ -344,14 +346,15 @@ func _offer_and_choose(slice: FoldlightEndlessSliceRuntime, completion_index: in
 	var options := slice.controller.get_pending_mission_rewards()
 	for index in options.size():
 		if StringName(options[index].get("id", &"")) == reward_id:
-			slice._activate_modal_choice(index)
+			slice.presentation._reward_buttons[index].pressed.emit()
+			await create_timer(0.28).timeout
 			return int((slice.controller.evolution.get_mission_snapshot().get("reward_levels", {}) as Dictionary).get(reward_id, 0)) == 1
 	return false
 
 
 func _wait_for_reward_input(slice: FoldlightEndlessSliceRuntime) -> void:
 	for frame in 180:
-		if not slice.modal_buttons[0].disabled:
+		if not slice.presentation._reward_buttons[0].disabled:
 			return
 		await create_timer(0.02).timeout
 

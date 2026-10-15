@@ -38,8 +38,6 @@ func _capture() -> void:
 		choices.append({"content_id": content_id, "title": definition.title, "description": definition.description, "rarity": definition.rarity, "accent": definition.accent, "next_level": 1, "maximum_level": definition.max_stacks})
 	session.presentation.show_reward(choices, "纸礁浅海")
 	await _save("reward")
-	game.activate_classic_campaign()
-	await _save("story")
 	game.queue_free()
 	await process_frame
 	var endless := load("res://scenes/endless/endless_survival_slice.tscn").instantiate() as FoldlightEndlessSliceRuntime

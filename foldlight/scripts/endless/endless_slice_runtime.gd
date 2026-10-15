@@ -12,33 +12,18 @@ const DASH_COOLDOWN := 2.0
 const MAX_LIVE_ENEMIES := 84
 const BASE_RETURN_DAMAGE := 2.8
 const BASE_RETURN_SPEED := 610.0
-const REWARD_INPUT_GUARD = preload("res://scripts/ui/reward_input_guard.gd")
-const DAMAGE_EDGE_DURATION: float = 0.24
-const DAMAGE_EDGE_SHADER: String = """
-shader_type canvas_item;
-render_mode unshaded;
-void fragment() {
-	vec2 distance_from_center = abs(UV * 2.0 - 1.0);
-	float edge = smoothstep(0.68, 1.0, max(distance_from_center.x, distance_from_center.y));
-	COLOR = vec4(COLOR.rgb, COLOR.a * edge * edge);
-}
-"""
 
 var run_ended: bool = false
 var _modal_kind: StringName = &""
 var _modal_options: Array[Dictionary] = []
-var _modal_selected: int = 0
 var _combined_modifiers: Dictionary = {}
-var _toast_remaining: float = 0.0
-var _damage_flash_remaining: float = 0.0
 var _hud_clock: float = 0.0
 var _objective_weapon_clock: float = 0.0
 var _transitioning_to_title: bool = false
 var _web_race_bridge: Node
 var _race_prepared: bool = false
 var _race_started: bool = false
-var _reward_input_guard: Node
-var _reward_entrance_tween: Tween
+var _claiming_reward: bool = false
 var _feedback_motion_scale: float = 1.0
 var _feedback_vibration: bool = true
 var _capture_sfx_cooldown: float = 0.0
@@ -51,27 +36,21 @@ var _return_kick_cooldown: float = 0.0
 @onready var player: FoldlightPlayer = $Player
 @onready var camera: FoldlightRogueCamera = $RogueWorld/CameraRig
 @onready var combat_runtime: FoldlightRogueCombatRuntime = $RogueWorld/CombatRuntime
-@onready var status_label: Label = $HUD/Status
-@onready var objective_label: Label = $HUD/Objective
-@onready var help_label: Label = $HUD/Help
-@onready var damage_flash: ColorRect = $HUD/DamageFlash
-@onready var reward_toast: Panel = $HUD/RewardToast
-@onready var reward_toast_label: Label = $HUD/RewardToast/RewardToastLabel
-@onready var modal_dim: ColorRect = $HUD/ModalDim
-@onready var modal_title: Label = $HUD/ModalDim/ModalPanel/ModalTitle
-@onready var modal_body: Label = $HUD/ModalDim/ModalPanel/ModalBody
-@onready var modal_buttons: Array[Button] = [
-	$HUD/ModalDim/ModalPanel/Choice1,
-	$HUD/ModalDim/ModalPanel/Choice2,
-	$HUD/ModalDim/ModalPanel/Choice3,
-]
+@onready var presentation: FoldlightRoguePresentation = $RoguePresentation
+@onready var profile_manager: FoldlightProfileManager = get_node("/root/ProfileManager") as FoldlightProfileManager
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_apply_shared_theme()
-	_setup_reward_input()
-	_setup_combat_feedback()
+	presentation.show_hud()
+	presentation.reward_chosen.connect(_on_reward_chosen)
+	presentation.resume_requested.connect(_resume_game)
+	presentation.settings_requested.connect(_on_settings_requested)
+	presentation.setting_adjust_requested.connect(_on_setting_adjust_requested)
+	presentation.settings_back_requested.connect(_on_settings_back_requested)
+	presentation.abandon_requested.connect(_abandon_run)
+	presentation.retry_requested.connect(_retry_run)
+	presentation.title_requested.connect(_return_to_title)
 	controller.enemy_wave_requested.connect(_on_enemy_wave_requested)
 	controller.player_evolution_changed.connect(_on_player_evolution_changed)
 	controller.mission_reward_offered.connect(_on_mission_reward_offered)
@@ -83,9 +62,6 @@ func _ready() -> void:
 	player.fold_started.connect(_on_feedback_fold_started)
 	player.fold_released.connect(_on_feedback_fold_released)
 	player.focus_empty.connect(_on_feedback_focus_empty)
-	for index in modal_buttons.size():
-		modal_buttons[index].pressed.connect(_activate_modal_choice.bind(index))
-		modal_buttons[index].focus_entered.connect(_on_modal_button_focused.bind(index))
 	call_deferred("_start_initial_slice")
 
 
@@ -108,11 +84,12 @@ func prepare_web_race(bridge: Node) -> bool:
 	_race_prepared = true
 	_modal_kind = &"race_waiting"
 	_set_combat_suspended(true)
-	modal_title.text = "好友无尽 · 等待出发"
-	modal_body.text = "双方准备完成后，由网页统一倒计时。\n同一种子、相同基础机体；按有效战斗时间比较。"
-	for button in modal_buttons:
-		button.hide()
-	modal_dim.show()
+	presentation.show_result({
+		"title": "好友无尽 · 等待出发",
+		"body": "双方准备完成后，由网页统一倒计时。\n同一种子、相同基础机体；按有效战斗时间比较。",
+		"accent": FoldlightTheme.FOLD,
+		"allow_retry": false, "allow_title": false,
+	})
 	_refresh_hud()
 	if snapshot.has("errors"):
 		bridge.call("finish_local", &"abandoned", "scene_load_failed")
@@ -125,7 +102,7 @@ func begin_web_race() -> void:
 		return
 	_race_started = true
 	_modal_kind = &""
-	modal_dim.hide()
+	presentation.show_hud()
 	combat_runtime.set_active(true)
 	player.set_play_enabled(true)
 	_refresh_hud()
@@ -139,11 +116,11 @@ func stop_web_race(reason: String) -> void:
 	controller.exit_mode(StringName(reason))
 	_modal_kind = &"race_finished"
 	_modal_options.clear()
-	modal_title.text = "灯火熄灭" if reason == "player_defeated" else "好友对局已结束"
-	modal_body.text = "有效航行 %s · 击破 %d\n请在网页房间查看成绩。本局不能重新开始。" % [_format_time(controller.evolution.survival_seconds), controller.defeated_total]
-	for button in modal_buttons:
-		button.hide()
-	modal_dim.show()
+	presentation.show_result({
+		"title": "灯火熄灭" if reason == "player_defeated" else "好友对局已结束",
+		"body": "有效航行 %s · 击破 %d\n请在网页房间查看成绩。本局不能重新开始。" % [_format_time(controller.evolution.survival_seconds), controller.defeated_total],
+		"allow_retry": false, "allow_title": false,
+	})
 
 
 func get_race_stats() -> Dictionary:
@@ -205,12 +182,9 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	run_ended = false
 	_modal_kind = &""
 	_modal_options.clear()
-	_modal_selected = 0
-	modal_dim.hide()
-	reward_toast.hide()
-	damage_flash.hide()
-	_toast_remaining = 0.0
-	_damage_flash_remaining = 0.0
+	_claiming_reward = false
+	presentation.reset_feedback()
+	presentation.show_hud()
 	_objective_weapon_clock = 0.0
 	_transitioning_to_title = false
 	var snapshot := controller.enter_mode(seed, player)
@@ -235,16 +209,6 @@ func _process(delta: float) -> void:
 	_capture_sfx_cooldown = maxf(0.0, _capture_sfx_cooldown - delta)
 	_kill_shake_cooldown = maxf(0.0, _kill_shake_cooldown - delta)
 	_return_kick_cooldown = maxf(0.0, _return_kick_cooldown - delta)
-	if _toast_remaining > 0.0:
-		_toast_remaining = maxf(0.0, _toast_remaining - delta)
-		reward_toast.visible = _toast_remaining > 0.0
-	if _damage_flash_remaining > 0.0:
-		_damage_flash_remaining = maxf(0.0, _damage_flash_remaining - delta)
-		var ratio := _damage_flash_remaining / DAMAGE_EDGE_DURATION
-		damage_flash.color.a = 0.42 * ratio
-		damage_flash.visible = ratio > 0.0
-	elif damage_flash.visible:
-		damage_flash.hide()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -255,51 +219,82 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		audio_director.toggle_mute()
 		return
-	if not _modal_kind.is_empty():
-		if _modal_kind == &"pause" and event.is_action_pressed(&"pause_game"):
-			_resume_game()
-		elif event.is_action_pressed(&"ui_up") or event.is_action_pressed(&"move_up"):
-			_move_modal_selection(-1)
-		elif event.is_action_pressed(&"ui_down") or event.is_action_pressed(&"move_down"):
-			_move_modal_selection(1)
-		elif event.is_action_pressed(&"ui_accept") or event.is_action_pressed(&"fold"):
-			_activate_modal_choice(_modal_selected)
-		get_viewport().set_input_as_handled()
-		return
 	if event.is_action_pressed(&"pause_game"):
-		_pause_game()
+		# Consume before a listener can change or detach the scene.
+		get_viewport().set_input_as_handled()
+		if _modal_kind == &"settings":
+			_on_settings_back_requested(&"pause")
+		elif _modal_kind == &"pause":
+			_resume_game()
+		else:
+			_pause_game()
+	elif not _modal_kind.is_empty():
+		# Shared presentation owns menu focus/confirmation. No combat input
+		# may escape a waiting, reward, settings or result overlay.
 		get_viewport().set_input_as_handled()
 
 
 func _pause_game() -> void:
 	if _web_race_bridge != null:
-		reward_toast_label.text = "好友竞赛不能手动暂停；奖励选择不计时。弃赛请使用网页房间。"
-		_toast_remaining = 2.8
-		reward_toast.show()
+		presentation.show_notice("好友竞赛", "不能手动暂停；奖励选择不计时。弃赛请使用网页房间。")
 		return
 	if run_ended or not _modal_kind.is_empty() or not controller.active:
 		return
 	_cancel_reward_entry()
 	_modal_kind = &"pause"
-	_modal_selected = 0
-	modal_title.text = "暂泊纸海"
-	modal_body.text = "无尽挑战已暂停。\n返回主菜单会结束本次挑战。"
-	modal_buttons[0].text = "继续航行"
-	modal_buttons[0].show()
-	modal_buttons[1].text = "结束挑战 · 返回主菜单"
-	modal_buttons[1].show()
-	modal_buttons[2].hide()
-	modal_dim.show()
 	_set_combat_suspended(true)
-	_update_modal_focus()
+	presentation.show_pause()
 
 
 func _resume_game() -> void:
 	if _modal_kind != &"pause":
 		return
 	_modal_kind = &""
-	modal_dim.hide()
+	presentation.show_hud()
 	_set_combat_suspended(false)
+	_refresh_hud()
+
+
+func _on_settings_requested() -> void:
+	if _modal_kind != &"pause" or _web_race_bridge != null:
+		return
+	_modal_kind = &"settings"
+	presentation.show_settings(profile_manager.settings.duplicate(true), &"pause")
+
+
+func _on_settings_back_requested(_return_screen: StringName) -> void:
+	if _modal_kind != &"settings":
+		return
+	_modal_kind = &"pause"
+	presentation.show_pause()
+
+
+func _on_setting_adjust_requested(setting_key: StringName, direction: int) -> void:
+	if _modal_kind != &"settings":
+		return
+	var current: Variant = profile_manager.get_setting(setting_key)
+	var value: Variant = current
+	match setting_key:
+		&"master_volume", &"music_volume", &"sfx_volume":
+			value = clampf(float(current) + float(direction) * 0.1, 0.0, 1.0)
+		&"screen_shake":
+			value = clampf(float(current) + float(direction) * 0.5, 0.0, 1.0)
+		&"vibration", &"high_contrast", &"fullscreen":
+			value = not bool(current)
+	profile_manager.set_setting(setting_key, value)
+	_apply_feedback_settings()
+	presentation.refresh_settings(profile_manager.settings)
+	audio_director.play_sfx(&"ui", 1.0 + float(direction) * 0.06, -7.0)
+
+
+func _abandon_run() -> void:
+	if _modal_kind == &"pause" and _web_race_bridge == null:
+		_finish_run(&"abandoned")
+
+
+func _retry_run() -> void:
+	if _modal_kind == &"game_over" and _web_race_bridge == null:
+		start_slice(controller.run_seed)
 
 
 func _return_to_title() -> void:
@@ -356,9 +351,7 @@ func _on_enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary) -> voi
 
 
 func _on_player_hit(health_remaining: int) -> void:
-	_damage_flash_remaining = DAMAGE_EDGE_DURATION
-	damage_flash.color = Color(0.96, 0.43, 0.34, 0.42)
-	damage_flash.show()
+	presentation.flash_player_damage()
 	audio_director.play_sfx(&"hurt", 0.96, -4.0)
 	camera.add_trauma(0.62 * _feedback_motion_scale)
 	camera.add_hit_kick(_feedback_motion_scale)
@@ -367,15 +360,6 @@ func _on_player_hit(health_remaining: int) -> void:
 	_refresh_hud()
 	if health_remaining <= 0:
 		_finish_run()
-
-
-func _setup_combat_feedback() -> void:
-	var edge_shader := Shader.new()
-	edge_shader.code = DAMAGE_EDGE_SHADER
-	var edge_material := ShaderMaterial.new()
-	edge_material.shader = edge_shader
-	damage_flash.material = edge_material
-	damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func _apply_feedback_settings() -> void:
@@ -427,28 +411,21 @@ func _on_mission_reward_offered(options: Array[Dictionary], objective_snapshot: 
 		return
 	_modal_kind = &"reward"
 	_modal_options = options.duplicate(true)
-	_modal_selected = 0
-	modal_title.text = "任务完成 · 选择一次进化"
-	modal_body.text = "%s 已完成。三条路线只强化本局。" % String(objective_snapshot.get("title", "系统任务"))
-	for index in modal_buttons.size():
-		var button := modal_buttons[index]
-		button.visible = index < _modal_options.size()
-		if button.visible:
-			var option := _modal_options[index]
-			button.text = "【%s】%s  Lv.%d\n%s" % [
-				String(option.get("lane_title", "成长")),
-				String(option.get("title", "进化")),
-				int(option.get("next_level", 1)),
-				String(option.get("description", "")),
-			]
-	modal_dim.show()
+	_claiming_reward = false
 	_set_combat_suspended(true)
-	_reward_input_guard.begin(modal_dim)
-	if _reward_entrance_tween != null and _reward_entrance_tween.is_valid():
-		_reward_entrance_tween.kill()
-	modal_dim.modulate.a = 0.0
-	_reward_entrance_tween = create_tween()
-	_reward_entrance_tween.tween_property(modal_dim, "modulate:a", 1.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	presentation.show_reward(_reward_card_choices(), str(objective_snapshot.get("title", "系统任务")))
+
+
+func _reward_card_choices() -> Array[Dictionary]:
+	var choices: Array[Dictionary] = []
+	for option: Dictionary in _modal_options:
+		var choice := option.duplicate(true)
+		choice["content_id"] = StringName(option.get("id", &""))
+		choice["display_rarity"] = "%s · 任务进化" % str(option.get("lane_title", "成长"))
+		choice["display_level"] = "刻印  Lv.%d · 本局累积" % int(option.get("next_level", 1))
+		choice["accent"] = FoldlightTheme.GOLD if StringName(option.get("lane_id", &"")) == &"sustain" else FoldlightTheme.FOLD
+		choices.append(choice)
+	return choices
 
 
 func _on_mission_reward_claimed(reward: Dictionary) -> void:
@@ -457,124 +434,67 @@ func _on_mission_reward_claimed(reward: Dictionary) -> void:
 	var reward_modifiers_variant: Variant = reward.get("modifiers", {})
 	var reward_modifiers := reward_modifiers_variant as Dictionary if reward_modifiers_variant is Dictionary else {}
 	player.health = mini(player.max_health, health_before + int(round(float(reward_modifiers.get("heal", 0.0)))))
-	reward_toast_label.text = "已获得【%s】%s  Lv.%d" % [
+	var title := "已获得【%s】%s  Lv.%d" % [
 		String(reward.get("lane_title", "成长")),
 		String(reward.get("title", "进化")),
 		int(reward.get("level", 1)),
 	]
-	_toast_remaining = 2.8
-	reward_toast.show()
+	presentation.show_notice(title, str(reward.get("description", "")))
 
 
-func _move_modal_selection(direction: int) -> void:
-	if _modal_kind == &"reward" and not _reward_input_guard.can_select():
+func _on_reward_chosen(reward_id: StringName) -> void:
+	if run_ended or _modal_kind != &"reward" or _claiming_reward:
 		return
-	var visible_count := 0
-	for button in modal_buttons:
-		if button.visible:
-			visible_count += 1
-	if visible_count <= 0:
+	var offered := false
+	for choice: Dictionary in _modal_options:
+		if StringName(choice.get("id", &"")) == reward_id:
+			offered = true
+			break
+	if not offered:
 		return
-	_modal_selected = posmod(_modal_selected + direction, visible_count)
-	_update_modal_focus()
-
-
-func _update_modal_focus() -> void:
-	if _modal_selected >= 0 and _modal_selected < modal_buttons.size() and modal_buttons[_modal_selected].visible and not modal_buttons[_modal_selected].disabled:
-		modal_buttons[_modal_selected].grab_focus()
-
-
-func _on_modal_button_focused(index: int) -> void:
-	_modal_selected = index
-
-
-func _activate_modal_choice(index: int) -> void:
-	if _modal_kind == &"pause":
-		if index == 0:
-			_resume_game()
-		elif index == 1:
-			_return_to_title()
-	elif _modal_kind == &"reward":
-		if not _reward_input_guard.can_select() or index < 0 or index >= _modal_options.size():
-			return
-		# Lock before the controller emits synchronous reward signals.
-		_reward_input_guard.cancel()
-		var reward_id := StringName(_modal_options[index].get("id", &""))
-		if controller.claim_mission_reward(reward_id).is_empty():
-			_reward_input_guard.begin(modal_dim)
-			return
-		_modal_kind = &""
-		_modal_options.clear()
-		modal_dim.hide()
-		_set_combat_suspended(false)
-	elif _modal_kind == &"game_over":
-		if index == 0:
-			start_slice(controller.run_seed)
-		elif index == 1:
-			_return_to_title()
-
-
-func _setup_reward_input() -> void:
-	_reward_input_guard = REWARD_INPUT_GUARD.new()
-	_reward_input_guard.name = "RewardInputGuard"
-	add_child(_reward_input_guard)
-	_reward_input_guard.state_changed.connect(_on_reward_input_state_changed)
-	modal_dim.visibility_changed.connect(_on_reward_visibility_changed)
-
-
-func _on_reward_input_state_changed() -> void:
-	if _modal_kind != &"reward":
+	# Shared cards guard entry, wait for input release and finish confirmation
+	# before emitting. Lock again here before synchronous controller signals.
+	_claiming_reward = true
+	if controller.claim_mission_reward(reward_id).is_empty():
+		_claiming_reward = false
+		presentation.show_reward(_reward_card_choices(), "系统任务")
 		return
-	var available: bool = _reward_input_guard.can_select()
-	for button in modal_buttons:
-		button.disabled = not available
-	($HUD/ModalDim/ModalPanel/ModalHint as Label).text = "方向键 / WASD 选择    空格 / A 确认" if available else _reward_input_guard.get_hint()
-	if available:
-		_update_modal_focus()
+	if run_ended or _modal_kind != &"reward":
+		return
+	_modal_kind = &""
+	_modal_options.clear()
+	presentation.show_hud()
+	_set_combat_suspended(false)
+	_refresh_hud()
 
 
 func _cancel_reward_entry() -> void:
-	if _reward_input_guard != null:
-		_reward_input_guard.cancel()
-	if _reward_entrance_tween != null and _reward_entrance_tween.is_valid():
-		_reward_entrance_tween.kill()
-	modal_dim.modulate = Color.WHITE
-	for button in modal_buttons:
-		button.disabled = false
-	($HUD/ModalDim/ModalPanel/ModalHint as Label).text = "方向键 / WASD 选择    空格 / A 确认"
+	_claiming_reward = true
+	presentation.cancel_reward_selection()
 
 
-func _on_reward_visibility_changed() -> void:
-	if not modal_dim.is_visible_in_tree():
-		_cancel_reward_entry()
-
-
-func _finish_run() -> void:
+func _finish_run(reason: StringName = &"player_defeated") -> void:
 	_cancel_reward_entry()
 	if run_ended:
 		return
 	run_ended = true
 	player.set_play_enabled(false)
 	combat_runtime.set_active(false)
-	controller.exit_mode(&"player_defeated")
+	controller.exit_mode(reason)
 	if _web_race_bridge != null:
 		_web_race_bridge.call("finish_local", &"dead", "player_defeated")
 		return
 	_modal_kind = &"game_over"
 	_modal_options.clear()
-	_modal_selected = 0
-	modal_title.text = "灯火熄灭"
-	modal_body.text = "航行 %s · 击破 %d\n再点亮一次，继续向深海出发。" % [
-		_format_time(controller.evolution.survival_seconds),
-		controller.defeated_total,
-	]
-	modal_buttons[0].text = "重新开始"
-	modal_buttons[0].show()
-	modal_buttons[1].text = "返回主菜单"
-	modal_buttons[1].show()
-	modal_buttons[2].hide()
-	modal_dim.show()
-	_update_modal_focus()
+	presentation.show_result({
+		"title": "本次航行已结束" if reason == &"abandoned" else "这盏灯沉入了纸海",
+		"body": "无尽挑战\n航行时间  %s\n击破敌人  %d\n威胁阶段  %d · 收纳进化  %d" % [
+			_format_time(controller.evolution.survival_seconds), controller.defeated_total,
+			int(controller.evolution.get_enemy_snapshot().get("stage", 0)),
+			int(controller.evolution.get_player_snapshot().get("stage", 0)),
+		],
+		"retry_label": "再次挑战",
+	})
 
 
 func _set_combat_suspended(suspended: bool) -> void:
@@ -646,44 +566,17 @@ func _build_room_terrain() -> Array[Dictionary]:
 func _refresh_hud() -> void:
 	var enemy_state := controller.evolution.get_enemy_snapshot()
 	var player_state := controller.evolution.get_player_snapshot()
-	status_label.text = "FOLDLIGHT / 无尽挑战\n灯芯 %d/%d · 敌人 %d · 击破 %d\n威胁阶段 %d · 收纳进化 %d · 航行 %s" % [
-		player.health,
-		player.max_health,
-		combat_runtime.enemies.size(),
-		controller.defeated_total,
-		int(enemy_state.get("stage", 0)),
-		int(player_state.get("stage", 0)),
-		_format_time(float(enemy_state.get("survival_seconds", 0.0))),
-	]
 	var objective := controller.objectives.get_snapshot()
-	objective_label.text = "%s\n%s\n进度 %d%% · 剩余 %d 秒" % [
-		String(objective.get("title", "任务准备中")),
-		String(objective.get("instruction", "")),
-		int(float(objective.get("progress_ratio", 0.0)) * 100.0),
-		int(ceil(float(objective.get("time_remaining", 0.0)))),
-	]
-	help_label.text = "左摇杆移动    A 折域    B 冲刺    X 主动道具    Start 暂停" if not Input.get_connected_joypads().is_empty() else "WASD / 方向键移动    空格折域    Shift 冲刺    Q 主动道具    Esc 暂停"
-	if _web_race_bridge != null:
-		help_label.text = "好友竞赛 · 同一种子 / 基础机体    奖励选择不计时    竞赛不可手动暂停    弃赛请使用网页房间"
-
-
-func _apply_shared_theme() -> void:
-	var shared_theme := FoldlightTheme.build()
-	for child in $HUD.get_children():
-		if child is Control:
-			child.theme = shared_theme
-	for panel: Panel in [$HUD/TopPanel, $HUD/ObjectivePanel, $HUD/HelpPanel, reward_toast, $HUD/ModalDim/ModalPanel]:
-		panel.add_theme_stylebox_override("panel", FoldlightTheme.panel_style())
-	for button in modal_buttons:
-		for style in [&"normal", &"hover", &"pressed", &"focus"]:
-			button.remove_theme_stylebox_override(style)
-		button.add_theme_font_size_override("font_size", 24)
-	status_label.add_theme_color_override("font_color", FoldlightTheme.PAPER)
-	objective_label.add_theme_color_override("font_color", FoldlightTheme.GOLD)
-	help_label.add_theme_color_override("font_color", FoldlightTheme.MUTED)
-	modal_title.add_theme_color_override("font_color", FoldlightTheme.PAPER)
-	modal_body.add_theme_color_override("font_color", FoldlightTheme.MUTED)
-	reward_toast_label.add_theme_color_override("font_color", FoldlightTheme.GOLD)
+	var context := {
+		"region_text": "好友无尽" if _web_race_bridge != null else "无尽挑战 / 纸海深处",
+		"voyage_text": "航行 %s  ·  击破 %d" % [_format_time(float(enemy_state.get("survival_seconds", 0.0))), controller.defeated_total],
+		"objective_title": "%s  ·  %d 秒" % [str(objective.get("title", "任务准备中")), ceili(float(objective.get("time_remaining", 0.0)))],
+		"objective_detail": str(objective.get("instruction", "")),
+		"objective_progress": float(objective.get("progress_ratio", 0.0)),
+		"race": _web_race_bridge != null,
+	}
+	var pressure := "威胁 %d · 场上 %d\n收纳进化 %d" % [int(enemy_state.get("stage", 0)), combat_runtime.enemies.size(), int(player_state.get("stage", 0))]
+	presentation.update_hud(player, {}, {}, "无尽挑战", pressure, {}, context)
 
 
 func get_slice_snapshot() -> Dictionary:

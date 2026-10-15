@@ -63,11 +63,11 @@ func _run() -> void:
 			_check(old_game_ref.get_ref() == null, "main scene is released after entering endless mode")
 			if live_endless != null:
 				live_endless.player.dash_component.cooldown_remaining = 1.4
-				live_endless._damage_flash_remaining = 0.2
+				live_endless.presentation.flash_player_damage()
 				live_endless.camera.offset = Vector2(9.0, -6.0)
 				live_endless._finish_run()
-				live_endless._activate_modal_choice(0)
-				_check(is_zero_approx(live_endless.player.dash_component.cooldown_remaining) and is_zero_approx(live_endless._damage_flash_remaining) and live_endless.camera.offset.is_zero_approx(), "restart clears shared-component cooldown, damage and camera feedback")
+				(live_endless.presentation._focus_groups[&"result"][0] as Button).pressed.emit()
+				_check(is_zero_approx(live_endless.player.dash_component.cooldown_remaining) and is_zero_approx(live_endless.presentation.visual_canvas.get_damage_flash_strength()) and live_endless.camera.offset.is_zero_approx(), "restart clears shared-component cooldown, damage and camera feedback")
 				await process_frame
 				await process_frame
 				_check(live_endless.controller.active and not live_endless.run_ended, "game-over restart reuses the scene without stale run state")

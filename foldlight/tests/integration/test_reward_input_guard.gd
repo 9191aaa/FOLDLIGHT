@@ -116,25 +116,25 @@ func _test_endless() -> void:
 	slice.controller.mission_reward_claimed.connect(func(_reward: Dictionary) -> void: _endless_claims += 1)
 	var completion := 0
 	for input_kind in ["space", "fold_key", "enter", "gamepad", "mouse"]:
-		var point := slice.modal_buttons[0].get_global_rect().get_center()
+		var point := slice.presentation._reward_buttons[0].get_global_rect().get_center()
 		_send(input_kind, true, point)
 		completion += 1
 		slice.controller._on_objective_completed({"completion_count": completion, "title": "输入保护"})
 		if completion == 1:
 			slice._pause_game()
-			_check(slice._modal_kind == &"reward" and slice.modal_buttons[0].disabled, "a rejected pause request cannot cancel a pending reward's input protection")
-		slice._activate_modal_choice(0)
+			_check(slice._modal_kind == &"reward" and slice.presentation._reward_buttons[0].disabled, "a rejected pause request cannot cancel a pending reward's input protection")
+		slice.presentation._reward_buttons[0].pressed.emit()
 		await create_timer(1.16).timeout
 		_check(_endless_claims == completion - 1 and slice._modal_kind == &"reward" and not slice.combat_runtime.active, "endless %s holds the reward and frozen combat while old input remains down" % input_kind)
 		_send(input_kind, false, point)
 		await process_frame
 		_check(_endless_claims == completion - 1, "endless %s release cannot claim the reward" % input_kind)
-		await _wait_ready(slice.modal_buttons)
+		await _wait_ready(slice.presentation._reward_buttons)
 		_send(input_kind, true, point)
 		_send(input_kind, false, point)
-		await process_frame
+		await create_timer(0.28).timeout
 		_check(_endless_claims == completion, "endless %s fresh viewport input reaches the reward controller" % input_kind)
-		slice._activate_modal_choice(0)
+		slice.presentation._reward_buttons[0].pressed.emit()
 		_check(_endless_claims == completion and slice._modal_kind.is_empty() and slice.combat_runtime.active, "endless %s fresh input claims once and resumes combat" % input_kind)
 		slice.combat_runtime.set_active(false)
 		slice.player.set_play_enabled(false)
@@ -142,10 +142,10 @@ func _test_endless() -> void:
 	slice.start_slice(44101)
 	slice.set_physics_process(false)
 	await create_timer(1.16).timeout
-	_check(slice._modal_kind.is_empty() and _endless_claims == completion and not slice.modal_dim.visible, "endless restart cancels the old reward guard and delayed focus")
+	_check(slice._modal_kind.is_empty() and _endless_claims == completion and slice.presentation.screen_kind == &"hud", "endless restart cancels the old reward guard and delayed focus")
 	slice._pause_game()
-	_check(slice._modal_kind == &"pause" and not slice.modal_buttons[0].disabled, "ordinary pause buttons remain immediately usable after reward cancellation")
-	slice._activate_modal_choice(0)
+	_check(slice._modal_kind == &"pause" and not (slice.presentation._focus_groups[&"pause"][0] as Button).disabled, "ordinary pause buttons remain immediately usable after reward cancellation")
+	(slice.presentation._focus_groups[&"pause"][0] as Button).pressed.emit()
 	_check(slice._modal_kind.is_empty(), "ordinary pause can still resume")
 	slice.queue_free()
 	await process_frame

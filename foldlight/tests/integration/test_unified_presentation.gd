@@ -21,7 +21,6 @@ func _run() -> void:
 	await process_frame
 	ui.new_run_requested.connect(func() -> void: _actions.append(&"new_run"))
 	ui.continue_requested.connect(func() -> void: _actions.append(&"continue"))
-	ui.classic_requested.connect(func() -> void: _actions.append(&"story"))
 	ui.endless_requested.connect(func() -> void: _actions.append(&"endless"))
 	ui.prologue_requested.connect(func() -> void: _actions.append(&"tutorial"))
 	ui.settings_requested.connect(func() -> void: _actions.append(&"settings"))
@@ -41,10 +40,7 @@ func _run() -> void:
 	_check(ui._title_stats.text.contains("3") and ui._title_stats.text.contains("2"), "voyage record reflects the supplied profile")
 	_press(ui, &"move_down")
 	var selected := root.gui_get_focus_owner() as Button
-	_check(selected != null and selected.text == "故事航路", "controller navigation moves from main run to story mode")
-	_press(ui, &"fold")
-	_check(_actions.back() == &"story", "story navigation keeps the legacy campaign signal")
-	_press(ui, &"move_down")
+	_check(selected != null and selected.name == "EndlessButton", "controller navigation moves directly from the main voyage to endless")
 	_press(ui, &"fold")
 	_check(_actions.back() == &"endless", "endless remains a selectable secondary mode")
 	_press(ui, &"move_down")

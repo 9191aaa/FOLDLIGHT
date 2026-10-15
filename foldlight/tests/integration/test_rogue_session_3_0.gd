@@ -1,8 +1,7 @@
 extends SceneTree
 
 ## End-to-end contract for the actual default mode: title -> large room ->
-## reward -> route -> next room -> result, with the classic campaign still
-## reachable through its preserved controller.
+## reward -> route -> next room -> result -> the shared title.
 
 var _failures: Array[String] = []
 
@@ -24,7 +23,7 @@ func _run() -> void:
 	var session := game.get_node("RogueSession") as FoldlightRogueSessionController
 	session.persist_profile = false
 	_check(session.mode == FoldlightRogueSessionController.SessionMode.TITLE, "new roguelite title is the default mode")
-	_check(not game.get_node("HUD").visible and game.get_node("RoguePresentation").visible, "legacy HUD stays dormant behind the new title")
+	_check(game.get_node_or_null("HUD") == null and game.get_node("RoguePresentation").visible, "the shared presentation is the only interface in the main scene")
 
 	session.start_new_run()
 	await process_frame
@@ -82,9 +81,9 @@ func _run() -> void:
 	_check(session.player.health == 0 and session.mode == FoldlightRogueSessionController.SessionMode.RESULT and session.presentation.screen_kind == &"result", "fatal combat damage reaches the voyage result synchronously")
 	_check(audio_cues.count(&"hurt") == 1, "fatal damage and its result screen share exactly one hurt cue")
 
-	session._on_classic_requested()
+	game.return_to_main_menu()
 	await process_frame
-	_check(not session._active and game.get_node("HUD").visible and game.mode == FoldlightGame.RunMode.CAMPAIGN_MAP, "classic Twelve Voyages remains reachable and owns its original HUD")
+	_check(session._active and session.mode == FoldlightRogueSessionController.SessionMode.TITLE and session.presentation.screen_kind == &"title", "result returns to the shared title with one active input owner")
 
 	game.queue_free()
 	await process_frame

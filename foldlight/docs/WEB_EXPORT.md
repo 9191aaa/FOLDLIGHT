@@ -29,6 +29,6 @@ The Godot 4.6.3 single-thread release engine is 37,700,666 bytes (35.95 MiB), la
 
 ## Verification
 
-The first export was launched in Edge with a fresh browser context and a plain local HTTP server without isolation headers. The title and story selector rendered their Chinese text, the audio context ran, and the console had no script/runtime errors. `crossOriginIsolated` was false and `SharedArrayBuffer` was undefined. This checks Chromium compatibility; it is not a Safari, Firefox, mobile, or frame-rate certification.
+Browser verification uses Edge with a fresh browser context and a local server without isolation headers. The current title exposes voyages and endless survival using the same UI and controls; the story campaign has been retired. `crossOriginIsolated` is false and `SharedArrayBuffer` is undefined. This checks Chromium compatibility; it is not a Safari, Firefox, mobile, or frame-rate certification.
 
 References: [Godot Web export](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html), [SystemFont platform support](https://docs.godotengine.org/en/stable/classes/class_systemfont.html), [Web preset properties](https://docs.godotengine.org/en/stable/classes/class_editorexportplatformweb.html).

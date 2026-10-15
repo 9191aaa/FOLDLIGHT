@@ -25,6 +25,10 @@ func _run() -> void:
 		{"content_id": &"large_burden", "title": "巨页契", "description": "体型增大，提升武器伤害。", "rarity": 4, "next_level": 1, "maximum_level": 1},
 	]
 	ui.show_reward(choices, "纸礁浅海")
+	# Drive the actual entrance Tweens on one shared clock. A cold headless
+	# layout frame can exceed the whole animation and makes wall timers flaky.
+	for card: FoldlightRewardCard in ui._reward_buttons:
+		card._entrance_tween.pause()
 	await process_frame
 	var first: Button = ui._reward_buttons[0]
 	var second: Button = ui._reward_buttons[1]
@@ -32,9 +36,11 @@ func _run() -> void:
 	_check(StringName(first.get_meta("upgrade_id")) == &"tiny_silhouette", "animated card preserves the upgrade ID metadata")
 	_check(ui._reward_content[0]["title"].text == "小纸身", "legacy content references point to the rendered labels")
 	_check(first.get_presentation_snapshot()["symbol"] != second.get_presentation_snapshot()["symbol"] and second.get_presentation_snapshot()["symbol"] != third.get_presentation_snapshot()["symbol"], "three upgrade identities receive distinct paper symbols")
-	await create_timer(0.12).timeout
+	for card: FoldlightRewardCard in ui._reward_buttons:
+		card._entrance_tween.custom_step(0.12)
 	_check(float(first.get_presentation_snapshot()["reveal"]) > float(third.get_presentation_snapshot()["reveal"]), "reward cards enter in a staggered sequence")
-	await create_timer(0.46).timeout
+	for card: FoldlightRewardCard in ui._reward_buttons:
+		card._entrance_tween.custom_step(0.46)
 	_check(is_equal_approx(float(third.get_presentation_snapshot()["reveal"]), 1.0), "all reward cards finish their entrance")
 	await _wait_for_selection(ui)
 	second.grab_focus()

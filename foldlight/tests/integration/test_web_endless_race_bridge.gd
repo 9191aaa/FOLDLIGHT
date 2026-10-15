@@ -37,6 +37,7 @@ func _run() -> void:
 	_check(slice.controller.run_seed == 414141 and slice.controller.evolution.survival_seconds == 0.0 and not slice.combat_runtime.active and not slice.player.play_enabled, "same-seed battlefield is prepared with zero score and frozen combat before the page starts it")
 	_check(slice.player.max_health == FoldlightPlayer.MAX_HEALTH and slice.player.get_capture_capacity() == 8 and is_equal_approx(slice.player.fold_radius_multiplier, 1.0), "maxed local profile cannot improve the race's default body")
 	_check(slice.player.weapon_mount.definitions.size() == 1 and slice.player.weapon_mount.definitions[0].content_id == &"crease_lantern" and slice.player.active_item_slot.definition.content_id == &"paper_burst", "race starts with the common basic weapon and active item")
+	_check(slice.presentation is FoldlightRoguePresentation, "friend race uses the same presentation as the main voyage")
 	var first_spawn_positions := _enemy_positions(slice)
 	bridge.accept_page_state({"phase": "running", "mayStart": false})
 	_check(bridge.phase == &"waiting" and not slice.player.play_enabled, "a running room without this instance's start admission cannot start combat")
@@ -67,7 +68,8 @@ func _run() -> void:
 	await create_timer(1.15).timeout
 	bridge._process(1.01)
 	_check(slice._modal_kind == &"reward" and slice.controller.evolution.survival_seconds == before_reward and bridge.last_report.paused and bridge.last_report.pauseReason == "reward", "real reward selection stops score time while wall-clock heartbeats continue")
-	slice._activate_modal_choice(0)
+	slice.presentation._reward_buttons[0].pressed.emit()
+	await create_timer(0.25).timeout
 	await _frames(5)
 	_check(slice._modal_kind.is_empty() and slice.controller.evolution.survival_seconds > before_reward, "a legal reward choice resumes the same combat clock")
 	var before_death_reports := bridge.messages.size()
@@ -75,6 +77,7 @@ func _run() -> void:
 	slice.player.invulnerability = 0.0
 	slice.combat_runtime._try_hit_player(Vector2.RIGHT)
 	_check(bridge.phase == &"terminal" and bridge.messages.size() == before_death_reports + 1 and bridge.last_report.status == "dead" and bridge.last_report.terminal, "real lethal combat damage immediately emits one terminal death report")
+	_check(slice.presentation.screen_kind == &"result" and _result_actions_hidden(slice.presentation), "the shared race result hides retry and title actions while the webpage owns the outcome")
 	var final_time := slice.controller.evolution.survival_seconds
 	await _frames(6)
 	bridge.accept_page_state({"phase": "running", "mayStart": true})
@@ -109,8 +112,8 @@ func _run() -> void:
 		await _frames(5)
 		_check(ending_bridge.last_report.status == ("abandoned" if ending == "abandoned" else "finished") and ending_bridge.last_report.terminal and ending_slice.controller.evolution.survival_seconds == score and not ending_slice.combat_runtime.active, "page signal %s immediately freezes the real match and reports the corresponding terminal state" % ending)
 		if ending == "match_finished":
-			ending_slice._activate_modal_choice(0)
-			_check(not ending_slice._reward_input_guard.can_select() and ending_slice._modal_kind == &"race_finished" and not ending_slice.combat_runtime.active, "server completion during reward entry cancels selection and cannot resume combat")
+			ending_slice.presentation._reward_buttons[0].pressed.emit()
+			_check(not ending_slice.presentation._reward_input_guard.can_select() and ending_slice._modal_kind == &"race_finished" and not ending_slice.combat_runtime.active, "server completion during reward entry cancels shared card selection and cannot resume combat")
 		ending_slice.queue_free()
 		ending_bridge.queue_free()
 		await process_frame
@@ -165,6 +168,13 @@ func _enemy_positions(slice: FoldlightEndlessSliceRuntime) -> Array[Vector2]:
 	for enemy in slice.combat_runtime.enemies:
 		result.append(enemy.global_position)
 	return result
+
+
+func _result_actions_hidden(presentation: FoldlightRoguePresentation) -> bool:
+	for button: Button in presentation._focus_groups[&"result"]:
+		if button.is_visible_in_tree():
+			return false
+	return true
 
 
 func _valid_reports(messages: Array[Dictionary]) -> bool:

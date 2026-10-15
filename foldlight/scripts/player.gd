@@ -2,6 +2,7 @@ class_name FoldlightPlayer
 extends CharacterBody2D
 
 const PaperArt = preload("res://scripts/visuals/paper_art.gd")
+const INPUT_CONTRACT = preload("res://scripts/ui/input_contract.gd")
 
 signal fold_started
 signal fold_released(captured_count: int, charge_ratio: float)
@@ -97,10 +98,7 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
-		last_input_device = &"gamepad"
-	elif event is InputEventKey and event.pressed:
-		last_input_device = &"keyboard"
+	last_input_device = INPUT_CONTRACT.device_for_event(event, last_input_device)
 
 	if not play_enabled:
 		return
@@ -146,10 +144,7 @@ func _physics_process(delta: float) -> void:
 			_fold_buffer_timer = 0.0
 			try_begin_fold()
 
-	var direction := Input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down")
-	var ui_direction := Input.get_vector(&"ui_left", &"ui_right", &"ui_up", &"ui_down")
-	if ui_direction.length_squared() > direction.length_squared():
-		direction = ui_direction
+	var direction := INPUT_CONTRACT.movement_vector()
 	if direction.length_squared() > 0.02:
 		_last_direction = direction.normalized()
 		var target_angle := _last_direction.angle() + PI * 0.5

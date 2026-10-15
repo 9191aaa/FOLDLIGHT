@@ -16,6 +16,8 @@ func _run() -> void:
 	for action in [&"fold", &"dash", &"active_item", &"pause_game"]:
 		_check(_has_event_type(action, "InputEventKey") and _has_event_type(action, "InputEventJoypadButton"), "%s supports one-hand keyboard and controller" % action)
 	_check(_has_physical_key(&"move_up", KEY_W) and _has_physical_key(&"move_left", KEY_A) and _has_physical_key(&"move_down", KEY_S) and _has_physical_key(&"move_right", KEY_D), "movement uses the familiar WASD diamond")
+	_check(_has_physical_key(&"move_up", KEY_UP) and _has_physical_key(&"move_left", KEY_LEFT) and _has_physical_key(&"move_down", KEY_DOWN) and _has_physical_key(&"move_right", KEY_RIGHT), "arrow movement belongs to the same combat actions as WASD")
+	_check(_has_joy_button(&"move_up", JOY_BUTTON_DPAD_UP) and _has_joy_button(&"move_down", JOY_BUTTON_DPAD_DOWN) and _has_joy_button(&"move_left", JOY_BUTTON_DPAD_LEFT) and _has_joy_button(&"move_right", JOY_BUTTON_DPAD_RIGHT), "D-pad movement belongs to the same combat actions as the left stick")
 	_check(_has_physical_key(&"fold", KEY_SPACE) and _has_physical_key(&"dash", KEY_SHIFT) and _has_physical_key(&"active_item", KEY_Q), "combat actions stay under one left hand")
 	_check(_has_joy_button(&"fold", JOY_BUTTON_A) and _has_joy_button(&"dash", JOY_BUTTON_B) and _has_joy_button(&"active_item", JOY_BUTTON_X) and _has_joy_button(&"pause_game", JOY_BUTTON_START), "controller actions use A Fold, B dash, X active, Start pause")
 

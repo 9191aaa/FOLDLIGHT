@@ -5,7 +5,6 @@ signal new_run_requested
 signal continue_requested
 signal prologue_requested
 signal prologue_skip_requested
-signal classic_requested
 signal endless_requested
 signal quit_requested
 signal settings_requested
@@ -18,6 +17,7 @@ signal route_chosen(destination_id: StringName)
 signal retry_requested
 signal title_requested
 signal mechanic_card_dismissed(content_id: StringName)
+signal pause_navigation(event: InputEventKey)
 
 const FOLD := FoldlightRogueUITheme.FOLD
 const GOLD := FoldlightRogueUITheme.GOLD
@@ -32,6 +32,7 @@ const QUICK_TUTORIAL_SCENE: PackedScene = preload("res://scenes/roguelite/ui/qui
 const MECHANIC_PREVIEW_SCENE := preload("res://scripts/roguelite/ui/mechanic_preview_canvas.gd")
 const ROUTE_ATLAS := preload("res://scripts/roguelite/ui/route_atlas.gd")
 const ROUTE_PANEL := preload("res://scripts/roguelite/ui/route_destination_panel.gd")
+const INPUT_CONTRACT := preload("res://scripts/ui/input_contract.gd")
 
 var screen_kind: StringName = &"title"
 var _screens: Dictionary = {}
@@ -60,6 +61,12 @@ var _hud_weapon_bar: ProgressBar
 var _hud_active: Label
 var _hud_active_bar: ProgressBar
 var _hud_status: Label
+var _hud_objective: Label
+var _hud_objective_detail: Label
+var _hud_objective_bar: ProgressBar
+var _hud_help: Label
+var _input_device: StringName = &"keyboard"
+var _hud_context: Dictionary = {}
 var _last_dash_ready: bool = true
 var _last_active_ready: bool = true
 var _last_fold_ready: bool = true
@@ -136,6 +143,21 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Kept as a callable input surface for diagnostics; real menus consume in
+	# _input before native Control navigation can steal settings left/right.
+	_handle_menu_input(event)
+
+
+func _input(event: InputEvent) -> void:
+	var device := INPUT_CONTRACT.device_for_event(event, _input_device)
+	if device != _input_device:
+		_input_device = device
+		_refresh_input_hint()
+	if screen_kind != &"hud":
+		_handle_menu_input(event)
+
+
+func _handle_menu_input(event: InputEvent) -> void:
 	if not is_inside_tree() or not visible or not event.is_pressed() or event.is_echo():
 		return
 	var viewport := get_viewport()
@@ -143,29 +165,39 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if screen_kind == &"reward" and not _reward_input_guard.can_select():
 		return
-	if screen_kind == &"settings" and (event.is_action_pressed(&"move_left") or event.is_action_pressed(&"move_right")):
+	if event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"pause_game"):
+		if screen_kind == &"settings":
+			viewport.set_input_as_handled()
+			settings_back_requested.emit(_settings_return)
+		elif screen_kind == &"pause":
+			viewport.set_input_as_handled()
+			resume_requested.emit()
+		elif screen_kind == &"result":
+			viewport.set_input_as_handled()
+			var actions: Array = _focus_groups.get(&"result", [])
+			if actions.size() > 1 and (actions[1] as Button).is_visible_in_tree():
+				title_requested.emit()
+		return
+	if screen_kind == &"hud" or event.is_action_pressed(&"pause_game") or event.is_action_pressed(&"mute_audio"):
+		return
+	if screen_kind == &"settings" and (event.is_action_pressed(&"move_left") or event.is_action_pressed(&"move_right") or event.is_action_pressed(&"ui_left") or event.is_action_pressed(&"ui_right")):
 		var owner := viewport.gui_get_focus_owner()
 		if owner is Button and owner.has_meta("setting_key"):
 			viewport.set_input_as_handled()
-			setting_adjust_requested.emit(StringName(owner.get_meta("setting_key")), -1 if event.is_action_pressed(&"move_left") else 1)
+			setting_adjust_requested.emit(StringName(owner.get_meta("setting_key")), -1 if event.is_action_pressed(&"move_left") or event.is_action_pressed(&"ui_left") else 1)
 		return
-	if event.is_action_pressed(&"move_up") or (event.is_action_pressed(&"move_left") and screen_kind != &"settings"):
+	var direction := INPUT_CONTRACT.navigation_step(event, screen_kind != &"settings")
+	if direction != 0:
+		if screen_kind == &"pause" and event is InputEventKey:
+			pause_navigation.emit(event)
 		viewport.set_input_as_handled()
-		_move_focus(-1)
-	elif event.is_action_pressed(&"move_down") or (event.is_action_pressed(&"move_right") and screen_kind != &"settings"):
-		viewport.set_input_as_handled()
-		_move_focus(1)
-	elif event.is_action_pressed(&"fold") and screen_kind in [&"title", &"reward", &"route", &"result", &"mechanic_intro"]:
+		_move_focus(direction)
+	elif event.is_action_pressed(&"fold") or event.is_action_pressed(&"ui_accept"):
 		var owner := viewport.gui_get_focus_owner()
-		if owner is BaseButton:
+		if owner is BaseButton and not owner.disabled and owner.is_visible_in_tree() and (_focus_groups.get(&"active", []) as Array).has(owner):
 			# Pressed listeners may synchronously replace and detach this scene.
 			viewport.set_input_as_handled()
 			(owner as BaseButton).pressed.emit()
-	elif event.is_action_pressed(&"fold") and screen_kind == &"settings":
-		var owner := viewport.gui_get_focus_owner()
-		if owner is Button:
-			viewport.set_input_as_handled()
-			(owner as Button).pressed.emit()
 
 
 func show_title(profile_snapshot: Dictionary) -> void:
@@ -181,11 +213,24 @@ func show_hud() -> void:
 	_set_focus_group([])
 
 
-func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictionary, region_title: String, wave_text: String = "", boss_snapshot: Dictionary = {}) -> void:
+func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictionary, region_title: String, wave_text: String = "", boss_snapshot: Dictionary = {}, context: Dictionary = {}) -> void:
 	if player == null:
 		return
 	_hud_region.text = "%s  /  %s" % [region_title, _category_title(StringName(room_node.get("category", &"combat")))]
 	_hud_room.text = _t(&"ROGUE_HUD_ROOM", "房间 %d  ·  微光 %d") % [int(snapshot.get("room_count", 0)) + 1, int(snapshot.get("glimmer", 0))]
+	_hud_context = context
+	if context.has("region_text"):
+		_hud_region.text = str(context["region_text"])
+	if context.has("voyage_text"):
+		_hud_room.text = str(context["voyage_text"])
+	_hud_objective.visible = context.has("objective_title")
+	_hud_objective_detail.visible = _hud_objective.visible
+	_hud_objective_bar.visible = _hud_objective.visible
+	if _hud_objective.visible:
+		_hud_objective.text = str(context["objective_title"])
+		_hud_objective_detail.text = str(context.get("objective_detail", ""))
+		_hud_objective_bar.value = clampf(float(context.get("objective_progress", 0.0)), 0.0, 1.0) * 100.0
+	_refresh_input_hint()
 	_hud_health.text = "灯芯  %d / %d" % [player.health, player.max_health]
 	_hud_health_bar.max_value = maxi(1, player.max_health)
 	_hud_health_bar.value = player.health
@@ -276,12 +321,14 @@ func show_reward(choices: Array[Dictionary], room_title: String) -> void:
 			continue
 		var choice := choices[index].duplicate(true)
 		var choice_kind := StringName(choice.get("choice_kind", &"upgrade"))
-		var rarity_text := _choice_kind_title(choice_kind) if choice_kind != &"upgrade" else _rarity_title(int(choice.get("rarity", 0)))
+		var rarity_text := str(choice.get("display_rarity", _choice_kind_title(choice_kind) if choice_kind != &"upgrade" else _rarity_title(int(choice.get("rarity", 0)))))
 		if choice_kind == &"upgrade" and bool(choice.get("offensive", false)):
 			rarity_text += "  ·  火力强化"
 		choice["display_rarity"] = rarity_text
 		button.show()
 		button.configure(choice, index)
+		if choice.has("display_level"):
+			button.level_label.text = str(choice["display_level"])
 		button.set_selection_available(false)
 		button.reveal(float(index) * 0.085)
 	_set_focus_group([])
@@ -331,7 +378,55 @@ func show_result(result: Dictionary, prologue: bool = false) -> void:
 		_result_title.text = _t(&"ROGUE_RESULT_WIN", "光已返航") if won else _t(&"ROGUE_RESULT_LOSE", "这盏灯沉入了纸海")
 		var elapsed := int(float(result.get("time", 0.0)))
 		_result_body.text = _t(&"ROGUE_RESULT_BODY", "抵达区域  %d / 3\n澄清房间  %d\n航行时间  %02d:%02d\n收集微光  %d") % [int(result.get("region", 1)), int(result.get("rooms", 0)), elapsed / 60, elapsed % 60, int(result.get("glimmer", 0))]
+	if result.has("title"):
+		_result_title.text = str(result["title"])
+	if result.has("body"):
+		_result_body.text = str(result["body"])
+	if result.has("accent"):
+		visual_canvas.configure(&"result", Color(result["accent"]))
+	var actions: Array = _focus_groups[&"result"]
+	(actions[0] as Button).text = str(result.get("retry_label", "再次迷航"))
+	(actions[0] as Button).visible = bool(result.get("allow_retry", true))
+	(actions[1] as Button).visible = bool(result.get("allow_title", true))
 	_set_focus_group(_visible_buttons(_focus_groups.get(&"result", [])))
+
+
+func show_notice(title: String, body: String, seconds: float = 2.8) -> void:
+	_mechanic_title.text = title
+	_mechanic_body.text = body
+	_mechanic_remaining = maxf(0.0, seconds)
+	_mechanic_panel.visible = screen_kind == &"hud" and _mechanic_remaining > 0.0
+
+
+func reset_feedback() -> void:
+	show_notice("", "", 0.0)
+	visual_canvas.clear_damage_flash()
+
+
+func cancel_reward_selection() -> void:
+	_cancel_reward_motion()
+	_set_focus_group([])
+
+
+func _refresh_input_hint() -> void:
+	if _title_screen != null:
+		_title_screen.set_input_device(_input_device == &"gamepad")
+	if _hud_help == null:
+		return
+	_hud_help.text = INPUT_CONTRACT.combat_hint(_input_device == &"gamepad")
+	if bool(_hud_context.get("race", false)):
+		_hud_help.text += "   ·   好友竞赛不可手动暂停"
+	else:
+		_hud_help.text += "   Start 暂停" if _input_device == &"gamepad" else "   Esc 暂停   M 静音"
+	if screen_kind == &"reward" and _reward_input_guard != null and _reward_input_guard.can_select() and not _reward_selection_locked:
+		_reward_hint.text = _reward_choice_hint()
+
+
+func _reward_choice_hint() -> String:
+	# Rewards cannot be dismissed, so show only the shared selection/confirm
+	# bindings and omit the menu's Back action.
+	var hint := INPUT_CONTRACT.menu_hint(_input_device == &"gamepad")
+	return "%s    %s" % [hint.get_slice("    ", 0), hint.get_slice("    ", 1)]
 
 
 func show_pause() -> void:
@@ -450,7 +545,6 @@ func _on_title_action(action: StringName) -> void:
 		&"new_run": new_run_requested.emit()
 		&"continue": continue_requested.emit()
 		&"prologue": prologue_requested.emit()
-		&"classic": classic_requested.emit()
 		&"endless": endless_requested.emit()
 		&"settings": settings_requested.emit()
 		&"quit": quit_requested.emit()
@@ -513,6 +607,17 @@ func _build_hud() -> void:
 	boss_stack.add_child(_boss_bar)
 	_boss_label.hide()
 	_boss_bar.hide()
+	_hud_objective = _label("", 20, GOLD)
+	_hud_objective_detail = _label("", 16, MUTED)
+	_hud_objective_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hud_objective_detail.custom_minimum_size.x = 450
+	_hud_objective_bar = _hud_progress_bar("ObjectiveProgress", GOLD)
+	boss_stack.add_child(_hud_objective)
+	boss_stack.add_child(_hud_objective_detail)
+	boss_stack.add_child(_hud_objective_bar)
+	_hud_objective.hide()
+	_hud_objective_detail.hide()
+	_hud_objective_bar.hide()
 
 	_hud_status = _label("", 20, FOLD)
 	_hud_status.custom_minimum_size.x = 250
@@ -554,7 +659,7 @@ func _build_hud() -> void:
 	fold_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fold_stack.add_theme_constant_override("separation", 3)
 	core_margin.add_child(fold_stack)
-	fold_stack.add_child(_label("折翼    SPACE / A", 15, MUTED))
+	fold_stack.add_child(_label("折翼    SPACE / E / A", 15, MUTED))
 	_hud_fold = _label("", 21, PAPER)
 	fold_stack.add_child(_hud_fold)
 	var focus_row := HBoxContainer.new()
@@ -589,6 +694,11 @@ func _build_hud() -> void:
 	action_band.add_child(weapon_card["panel"])
 	_hud_weapon = weapon_card["state"] as Label
 	_hud_weapon_bar = weapon_card["bar"] as ProgressBar
+	_hud_help = _label("", 15, MUTED)
+	_hud_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hud_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	layout.add_child(_hud_help)
+	_refresh_input_hint()
 
 	_prologue_banner = PanelContainer.new()
 	_prologue_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -671,7 +781,7 @@ func _build_reward() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 22)
 	margin.add_child(stack)
-	var eyebrow := _label("折痕选择 · 本次迷航生效", 20, FOLD)
+	var eyebrow := _label("折痕选择 · 本次航行生效", 20, FOLD)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(eyebrow)
 	_reward_title = _label("", 38, PAPER)
@@ -874,7 +984,7 @@ func _build_pause() -> void:
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	stack.add_theme_constant_override("separation", 16)
 	panel.add_child(stack)
-	var eyebrow := _label("迷航途中", 18, FOLD)
+	var eyebrow := _label("航行途中", 18, FOLD)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(eyebrow)
 	var title := _label("暂停", 48, PAPER)
@@ -884,14 +994,14 @@ func _build_pause() -> void:
 	_pause_browse_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_pause_browse_status.hide()
 	stack.add_child(_pause_browse_status)
-	var resume := _button("继续迷航", 72)
+	var resume := _button("继续航行", 72)
 	resume.theme_type_variation = "PrimaryButton"
 	resume.pressed.connect(func() -> void: resume_requested.emit())
 	stack.add_child(resume)
 	var settings := _button("设置", 64)
 	settings.pressed.connect(func() -> void: settings_requested.emit())
 	stack.add_child(settings)
-	var abandon := _button("结束本次迷航", 64)
+	var abandon := _button("结束本次航行", 64)
 	abandon.pressed.connect(func() -> void: abandon_requested.emit())
 	stack.add_child(abandon)
 	stack.add_child(_label("Esc / Start 继续", 17, MUTED))
@@ -1187,7 +1297,7 @@ func _on_reward_input_state_changed() -> void:
 	var available: bool = _reward_input_guard.can_select()
 	for card in _reward_buttons:
 		card.set_selection_available(available)
-	_reward_hint.text = _t(&"ROGUE_REWARD_HINT", "左右选择   ·   空格 / A 刻下折痕") if available else _reward_input_guard.get_hint()
+	_reward_hint.text = _reward_choice_hint() if available else _reward_input_guard.get_hint()
 	if available:
 		_set_focus_group(_visible_buttons(_reward_buttons))
 

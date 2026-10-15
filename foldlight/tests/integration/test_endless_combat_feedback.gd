@@ -94,11 +94,11 @@ func _run() -> void:
 		await RenderingServer.frame_post_draw
 		before_image = root.get_texture().get_image()
 	check(combat._try_hit_player(Vector2.RIGHT) and slice.player.health == hit_points - 1, "real damage still removes exactly one health point")
-	check(slice.status_label.text.contains("灯芯 %d/%d" % [slice.player.health, slice.player.max_health]), "damage immediately refreshes the visible health count without waiting for the HUD timer")
+	check(slice.presentation._hud_health.text.contains("%d / %d" % [slice.player.health, slice.player.max_health]), "damage immediately refreshes the visible health count without waiting for the HUD timer")
 	check(cues == [&"hurt"], "real damage immediately takes audio priority")
 	check(not audio.play_combat_impact(&"weapon", 1.0) and not audio.play_combat_impact(&"return", 1.0), "weak impacts cannot mask the first 160 milliseconds of the hurt cue")
 	check(is_zero_approx(slice.camera._trauma) and is_zero_approx(slice.camera._hit_kick_remaining) and Vector2(slice.player.get_hit_reaction_snapshot()["offset"]).is_zero_approx(), "zero shake disables camera and body recoil while retaining the hit")
-	check(slice.damage_flash.visible and slice.damage_flash.material is ShaderMaterial and slice.damage_flash.mouse_filter == Control.MOUSE_FILTER_IGNORE, "damage uses a noninteractive edge-only shader overlay")
+	check(slice.presentation.visual_canvas.get_damage_flash_strength() >= 0.99, "damage starts the same bounded edge cue used by the main voyage")
 	var after_hit := cues.size()
 	check(not combat._try_hit_player(Vector2.UP) and cues.size() == after_hit, "an invulnerable collision cannot repeat hurt audio or damage feedback")
 	if before_image != null:
@@ -114,7 +114,8 @@ func _run() -> void:
 		after_image.save_png(output_dir.path_join("endless_damage.png"))
 		print("CAPTURED " + output_dir.path_join("endless_damage.png"))
 	slice._process(0.30)
-	check(not slice.damage_flash.visible, "the edge cue expires promptly instead of leaving a red veil")
+	slice.presentation.visual_canvas._process(0.30)
+	check(slice.presentation.visual_canvas.get_damage_flash_strength() <= 0.01, "the edge cue expires promptly instead of leaving a red veil")
 	audio._process(0.20)
 	check(audio.play_combat_impact(&"weapon", 0.5), "ordinary impact sound resumes after hurt emphasis")
 	slice._feedback_motion_scale = 1.0

@@ -35,6 +35,11 @@ func get_damage_flash_strength() -> float:
 	return _damage_flash
 
 
+func clear_damage_flash() -> void:
+	_damage_flash = 0.0
+	queue_redraw()
+
+
 func _draw() -> void:
 	var viewport_size := size
 	if screen_kind in [&"title", &"result", &"prologue_result"]:

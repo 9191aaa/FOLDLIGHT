@@ -82,7 +82,6 @@ func _ready() -> void:
 	presentation.continue_requested.connect(continue_run)
 	presentation.prologue_requested.connect(start_prologue)
 	presentation.prologue_skip_requested.connect(_on_prologue_skip_requested)
-	presentation.classic_requested.connect(_on_classic_requested)
 	presentation.endless_requested.connect(_on_endless_requested)
 	presentation.quit_requested.connect(func() -> void: get_tree().quit())
 	presentation.settings_requested.connect(_on_settings_requested)
@@ -120,12 +119,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"pause_game"):
-		if _paused:
+		if presentation.screen_kind == &"settings":
+			_on_settings_back_requested(presentation._settings_return)
+		elif _paused:
 			_resume_game()
 		elif mode in [SessionMode.RUN, SessionMode.PROLOGUE] and presentation.screen_kind == &"hud":
 			_pause_game()
-		elif presentation.screen_kind == &"settings":
-			_on_settings_back_requested(presentation._settings_return)
 		get_viewport().set_input_as_handled()
 		return
 	if presentation.screen_kind != &"hud" and _is_gameplay_input(event):
@@ -176,29 +175,14 @@ func enter_title() -> void:
 	player.cancel_fold()
 	player.set_play_enabled(false)
 	player.visible = false
-	var legacy_hud := get_parent().get_node_or_null("HUD")
-	if legacy_hud != null:
-		legacy_hud.hide()
 	presentation.show()
 	presentation.show_title(profile_manager.get_roguelite_snapshot())
 	audio_director.set_intensity(0.045)
 
 
-func deactivate_for_classic() -> void:
-	_reset_boss_clear()
-	_active = false
-	_paused = false
-	mode = SessionMode.INACTIVE
-	presentation.hide()
-	world.deactivate()
-	player.configure_roguelite_combat(false)
-	player.reset_player()
-	player.visible = true
-
-
 func _on_endless_requested() -> void:
 	# The survival slice owns a much larger authored world and its own camera.
-	# Changing scenes keeps campaign/roguelite combat nodes from processing in
+	# Changing scenes keeps two combat worlds from processing in
 	# parallel and gives the mode a clean, deterministic return path to title.
 	_enter_modal_safety()
 	var error := get_tree().change_scene_to_file(ENDLESS_SURVIVAL_SCENE)
@@ -270,9 +254,6 @@ func _activate_gameplay() -> void:
 	_reset_boss_clear()
 	_active = true
 	_paused = false
-	var legacy_hud := get_parent().get_node_or_null("HUD")
-	if legacy_hud != null:
-		legacy_hud.hide()
 	presentation.show()
 	player.set_play_enabled(false)
 	player.reset_player()
@@ -290,12 +271,6 @@ func _on_new_run_requested() -> void:
 		start_prologue()
 	else:
 		start_new_run()
-
-
-func _on_classic_requested() -> void:
-	deactivate_for_classic()
-	if get_parent().has_method("activate_classic_campaign"):
-		get_parent().call("activate_classic_campaign")
 
 
 func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> void:

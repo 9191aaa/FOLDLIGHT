@@ -11,30 +11,31 @@ signal tutorial_completed
 signal tutorial_skipped
 signal step_changed(step_index: int, step_count: int)
 
+const INPUT_CONTRACT = preload("res://scripts/ui/input_contract.gd")
 const MAX_STEPS: int = 3
 const DEFAULT_STEPS: Array[Dictionary] = [
 	{
 		"tag": "01  起步",
 		"title": "先移动，再穿线",
-		"keyboard": "WASD  移动     SHIFT  冲刺",
-		"gamepad": "左摇杆  移动     B  冲刺",
+		"keyboard": INPUT_CONTRACT.KEYBOARD_MOVE + "     " + INPUT_CONTRACT.KEYBOARD_DASH,
+		"gamepad": INPUT_CONTRACT.GAMEPAD_MOVE + "     " + INPUT_CONTRACT.GAMEPAD_DASH,
 		"body": "移动约一小段，再冲刺一次；冲刺 2.0 秒恢复。",
 		"warning": "冲刺期间短暂无敌",
 	},
 	{
 		"tag": "02  核心",
 		"title": "按住收纳，松开追踪",
-		"keyboard": "按住 SPACE  折域     松开  返航",
-		"gamepad": "按住 A  折域     松开 A  返航",
+		"keyboard": INPUT_CONTRACT.KEYBOARD_FOLD,
+		"gamepad": INPUT_CONTRACT.GAMEPAD_FOLD,
 		"body": "基础收纳 8 枚可反射弹；松开后自动变成追踪弹。",
 		"warning": "每轮收纳后，1.5 秒才能再次展开",
 	},
 	{
 		"tag": "03  生存",
 		"title": "你管走位，武器会开火",
-		"keyboard": "自动武器  自动攻击     Q  主动技能",
-		"gamepad": "自动武器  自动攻击     X  主动技能",
-		"body": "自动武器负责输出；主动技能留着解围。",
+		"keyboard": "自动武器  自动攻击     " + INPUT_CONTRACT.KEYBOARD_ACTIVE,
+		"gamepad": "自动武器  自动攻击     " + INPUT_CONTRACT.GAMEPAD_ACTIVE,
+		"body": "武器自动寻敌攻击，返光自动追踪；装上主动技能后，用 Q / X 解围。",
 		"warning": "黑金弹不可反射；脚下地形可能增益，也可能限制走位",
 	},
 ]
@@ -72,7 +73,7 @@ func _ready() -> void:
 	_apply_styles()
 	continue_button.pressed.connect(advance)
 	skip_button.pressed.connect(skip)
-	skip_button.text = "F / L3  跳过并开始"
+	skip_button.text = INPUT_CONTRACT.TUTORIAL_SKIP_HINT
 	set_manual_advance_enabled(manual_advance_enabled)
 	_apply_step(false)
 
@@ -80,12 +81,7 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventJoypadButton and event.is_pressed():
-		set_input_mode(true)
-	elif event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) >= 0.45:
-		set_input_mode(true)
-	elif event is InputEventKey and event.is_pressed() and not event.is_echo():
-		set_input_mode(false)
+	set_input_mode(INPUT_CONTRACT.device_for_event(event, &"gamepad" if _gamepad_mode else &"keyboard") == &"gamepad")
 	if listen_for_skip_action and event.is_action_pressed(&"open_tutorial") and not event.is_echo():
 		skip()
 		get_viewport().set_input_as_handled()

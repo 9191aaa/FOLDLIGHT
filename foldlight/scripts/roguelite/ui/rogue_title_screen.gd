@@ -5,12 +5,14 @@ extends Control
 signal action_requested(action: StringName)
 
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
+const INPUT_CONTRACT = preload("res://scripts/ui/input_contract.gd")
 
 var primary_button: Button
 var continue_button: Button
 var tutorial_button: Button
 var record_label: Label
 var guide_label: Label
+var input_label: Label
 var focus_buttons: Array[Button] = []
 var _content: VBoxContainer
 var _entrance: Tween
@@ -56,9 +58,6 @@ func build(button_factory: Callable) -> void:
 	actions.add_child(continue_button)
 	primary_button = _action(button_factory, "开始迷航", &"new_run", "PrimaryButton", 84)
 	actions.add_child(primary_button)
-	var story := _action(button_factory, "故事航路", &"classic", "FoldlightMenuButton", 66)
-	_add_caption(story, "三章战役")
-	actions.add_child(story)
 	var endless := _action(button_factory, "无尽挑战", &"endless", "FoldlightMenuButton", 66)
 	_add_caption(endless, "生存与进化")
 	actions.add_child(endless)
@@ -82,8 +81,9 @@ func build(button_factory: Callable) -> void:
 	record_label = _label("", 18, Palette.MUTED)
 	_content.add_child(record_label)
 	_space(12)
-	_content.add_child(_label("WASD / 方向键  选择     空格 / A  确认", 17, Color(Palette.MUTED, 0.78)))
-	focus_buttons = [continue_button, primary_button, story, endless, tutorial_button, settings, quit]
+	input_label = _label(INPUT_CONTRACT.menu_hint(), 17, Color(Palette.MUTED, 0.78))
+	_content.add_child(input_label)
+	focus_buttons = [continue_button, primary_button, endless, tutorial_button, settings, quit]
 
 
 func present(profile: Dictionary) -> void:
@@ -105,6 +105,11 @@ func present(profile: Dictionary) -> void:
 	_content.modulate = Color(1.0, 1.0, 1.0, 0.0)
 	_entrance = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 	_entrance.tween_property(_content, "modulate:a", 1.0, 0.38)
+
+
+func set_input_device(gamepad: bool) -> void:
+	if input_label != null:
+		input_label.text = INPUT_CONTRACT.menu_hint(gamepad)
 
 
 func _action(factory: Callable, text_value: String, action: StringName, variation: StringName, height: float) -> Button:

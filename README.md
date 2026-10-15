@@ -11,10 +11,9 @@
 | 入口 | 内容 |
 | --- | --- |
 | 开始／继续迷航 | 分支房间、局内强化与区域首领；首次进入附操作教学 |
-| 故事航路 | 原有三章十二航战役与潮界检查点 |
 | 无尽挑战 | 开放纸海、生存进化与任务奖励 |
 
-三个入口共用深海墨、纸白、折光青与旧金的视觉语言。标题纸蛾、玩家、纸礁与灯台采用程序化矢量绘制。像素 Demo 保留在独立场景和导出预设中。
+迷航与无尽直接复用同一套玩家操作、战斗 HUD、三选一、暂停、设置和结算组件；好友生存保留无尽玩法与联网计分。三章十二航故事模式已移除，旧故事存档字段保留兼容读取。标题纸蛾、玩家、纸礁与灯台采用程序化矢量绘制。像素 Demo 保留在独立场景和导出预设中。
 
 迷航的普通战斗房横向扩展到 3360 像素，两侧「引潮灯」可在靠近并按住折翼后吸收附近可反射敌弹，每灯每房使用一次。无弹或收纳已满时不会消耗，黑金弹仍不可收纳。灯台、沿岸纸礁与潮流都有动态反馈。
 
@@ -64,7 +63,7 @@ Windows 输出为 `foldlight/build/FOLDLIGHT_Refactor_Windows/FOLDLIGHT.exe`。�
 | 主动道具 | Q | X |
 | 暂停／继续 | Esc | Start |
 
-无尽暂停后可继续同一局，或主动结束挑战。故事地图／结算按 Esc 返回主菜单；战斗中先暂停，再按 C／LB 返回，保留最近的潮界存档。
+两模式的菜单均支持 WASD／方向键、左摇杆／十字键选择，Enter／空格／E／A 确认。Esc／B 返回上一层，Esc／Start 暂停或继续；M 静音。暂停菜单提供继续、设置和结束本局。好友竞赛不可手动暂停，奖励选择期间停止计时。
 
 ## 开发与验证
 
@@ -86,8 +85,9 @@ Windows 输出为 `foldlight/build/FOLDLIGHT_Refactor_Windows/FOLDLIGHT.exe`。�
 - `scripts/roguelite/ui/rogue_title_screen.gd`：主菜单构图与动作信号。
 - `scripts/roguelite/rogue_session_controller.gd`：迷航流程与存档协调。
 - `scripts/visuals/paper_art.gd`：共用纸蛾和纸海绘制。
-- `scripts/campaign/story_content_catalog.gd`：故事文案、教义和敌人说明。
-- `scripts/game.gd`：既有故事战斗及与统一主菜单的交接。
-- `scripts/endless/endless_slice_runtime.gd`：无尽模式适配，共用玩家和战斗组件。
+- `scripts/ui/input_contract.gd`：共用操作绑定、导航与提示。
+- `scripts/roguelite/ui/rogue_presentation.gd`：迷航与无尽共用的 HUD、奖励、暂停、设置和结算。
+- `scripts/game.gd`：轻量应用入口，不再载入旧故事战斗或旧 HUD。
+- `scripts/endless/endless_slice_runtime.gd`：无尽任务、生存成长与竞赛适配，共用玩家、战斗和界面组件。
 
 范围与验证说明见 [重构记录](foldlight/docs/godot-prompter/plans/unified_refactor.md)。修改请提交分支和 PR。MIT 许可证见 [LICENSE](LICENSE)。
