@@ -18,6 +18,7 @@ var _active: bool = false
 var _touch_mode: bool = false
 var _native_touch: bool = false
 var _real_touch_seen: bool = false
+var _host_layout: StringName = &""
 var _host_suspended: bool = false
 var _host_cancel_epoch: int = -1
 var _cancel_epoch: int = 0
@@ -113,7 +114,8 @@ func observe_touch(event: InputEventScreenTouch) -> void:
 	elif event.pressed:
 		_held_touches[event.index] = true
 		_real_touch_seen = true
-		_set_touch_mode(true)
+		if _host_layout == &"":
+			_set_touch_mode(true)
 	else:
 		_held_touches.erase(event.index)
 
@@ -330,8 +332,17 @@ func _on_inspection_request(_arguments: Array) -> void:
 
 
 func apply_host_state(state: Dictionary) -> void:
+	# The webpage locks one layout for this engine. Touchscreen laptops must
+	# not replace its desktop UI merely because a real finger touched a menu.
+	var layout := StringName(str(state.get("layout", "")))
+	var mode_changed := false
+	if layout in [&"mobile", &"desktop"]:
+		_host_layout = layout
+		mode_changed = _touch_mode != (layout == &"mobile")
 	var epoch := int(state.get("cancelEpoch", 0))
-	if _host_cancel_epoch >= 0 and epoch != _host_cancel_epoch:
+	if mode_changed or (_host_cancel_epoch >= 0 and epoch != _host_cancel_epoch):
+		# Retire owners before notifying UI; a late release from the previous
+		# layout must never become Fold's normal release/return-light action.
 		cancel_all(&"host_cancel", true)
 	_host_cancel_epoch = epoch
 	_host_suspended = bool(state.get("suspended", false))
@@ -341,7 +352,8 @@ func apply_host_state(state: Dictionary) -> void:
 	var factor := maxf(size.x / maxf(1.0, float(viewport.get("width", size.x))), size.y / maxf(1.0, float(viewport.get("height", size.y))))
 	var previous_insets := _safe_insets
 	_safe_insets = Vector4(float(safe.get("left", 0.0)), float(safe.get("top", 0.0)), float(safe.get("right", 0.0)), float(safe.get("bottom", 0.0))) * factor
-	_set_touch_mode(_native_touch or _real_touch_seen or bool(state.get("enabled", false)))
+	var touch_mode := _host_layout == &"mobile" if _host_layout != &"" else (_native_touch or _real_touch_seen or bool(state.get("enabled", false)))
+	_set_touch_mode(touch_mode)
 	_refresh_active()
 	if not previous_insets.is_equal_approx(_safe_insets):
 		layout_changed.emit()
