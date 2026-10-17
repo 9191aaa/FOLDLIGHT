@@ -65,7 +65,7 @@ func _run() -> void:
 
 	slice.controller._on_objective_completed({"title": "test", "completion_count": 1})
 	var before_reward := slice.controller.evolution.survival_seconds
-	await create_timer(1.15).timeout
+	await create_timer(1.75).timeout
 	bridge._process(1.01)
 	_check(slice._modal_kind == &"reward" and slice.controller.evolution.survival_seconds == before_reward and bridge.last_report.paused and bridge.last_report.pauseReason == "reward", "real reward selection stops score time while wall-clock heartbeats continue")
 	slice.presentation._reward_buttons[0].pressed.emit()
@@ -107,6 +107,8 @@ func _run() -> void:
 		await _frames(5)
 		if ending == "match_finished":
 			ending_slice.controller._on_objective_completed({"title": "test", "completion_count": 1})
+			for transition_step in 6:
+				ending_slice._advance_reward_completion(0.1)
 		var score := ending_slice.controller.evolution.survival_seconds
 		ending_bridge.accept_page_state({"phase": "finished", "reason": ending})
 		await _frames(5)
@@ -160,7 +162,7 @@ func _create_fixture(id: String, durable_attempts: Dictionary = {}) -> Dictionar
 
 
 func _config(id: String) -> Dictionary:
-	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v4"}
+	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v5"}
 
 
 func _enemy_positions(slice: FoldlightEndlessSliceRuntime) -> Array[Vector2]:
@@ -184,7 +186,7 @@ func _valid_reports(messages: Array[Dictionary]) -> bool:
 		if message.method != &"report":
 			continue
 		var payload: Dictionary = JSON.parse_string(message.json)
-		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v4":
+		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v5":
 			return false
 		if int(payload.seq) <= sequence or int(payload.survivalMs) < elapsed or int(payload.kills) < 0:
 			return false

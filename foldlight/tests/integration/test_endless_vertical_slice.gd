@@ -40,6 +40,9 @@ func _run() -> void:
 	# Mission completion must pause action on a real three-choice evolution,
 	# rather than silently auto-claiming the first option.
 	slice.controller._on_objective_completed({"completion_count": 1, "title": "测试任务"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	_check(slice._modal_kind == &"reward" and slice.presentation.screen_kind == &"reward", "mission completion opens a visible three-choice evolution")
 	_check(slice._modal_options.size() == 3, "mission evolution presents exactly three authored rewards")
 	for frame in 180:

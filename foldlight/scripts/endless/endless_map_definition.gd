@@ -11,6 +11,11 @@ extends Resource
 @export var bounds := Rect2(Vector2.ZERO, Vector2(6144.0, 4096.0))
 @export var player_spawn := Vector2(3072.0, 3008.0)
 
+@export_group("Submerged Landmark Art")
+@export var landmark_kind: StringName = &"reef_steps"
+@export var landmark_center := Vector2(3072.0, 2650.0)
+@export var landmark_size := Vector2(1120.0, 760.0)
+
 @export_group("Districts")
 @export var district_names := PackedStringArray()
 @export var district_rects: Array[Rect2] = []
@@ -62,6 +67,10 @@ func validation_errors() -> Array[String]:
 		errors.append("endless map needs enough perimeter pressure positions")
 	if not bounds.has_point(player_spawn):
 		errors.append("player spawn must be inside map bounds")
+	if landmark_kind not in [&"reef_steps", &"archive_tower", &"broken_sun"]:
+		errors.append("endless landmark must use an authored paper silhouette")
+	if landmark_size.x < 240.0 or landmark_size.y < 240.0 or not bounds.encloses(Rect2(landmark_center - landmark_size * 0.5, landmark_size)):
+		errors.append("submerged landmark art must fit inside map bounds")
 	if closure_zone_ids.size() < 4 or closure_zone_names.size() != closure_zone_ids.size() or closure_zone_rects.size() != closure_zone_ids.size():
 		errors.append("endless map needs at least four named closure zones")
 	if safe_corridors.is_empty() or refuge_points.size() < 3:
@@ -107,6 +116,10 @@ func get_contract() -> Dictionary:
 		"closure_zone_count": closure_zone_ids.size(),
 		"permanent_safe_corridors": safe_corridors.duplicate(),
 		"refuge_points": refuge_points,
+		"landmark_kind": landmark_kind,
+		"landmark_center": landmark_center,
+		"landmark_size": landmark_size,
+		"landmark_has_collision": false,
 	}
 
 

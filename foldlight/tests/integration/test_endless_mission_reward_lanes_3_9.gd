@@ -72,6 +72,9 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 	slice.start_slice(39002)
 	first_a = slice.controller.evolution.get_mission_reward_options(0)
 	slice._on_mission_reward_offered(first_a, {"title": "航路校验"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	for index in first_a.size():
 		var option := first_a[index]
 		var card: FoldlightRewardCard = slice.presentation._reward_buttons[index] as FoldlightRewardCard
@@ -207,6 +210,9 @@ func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> v
 	})
 	var hostile := slice.combat_runtime.projectiles[0]
 	slice.controller._on_objective_completed({"completion_count": 2, "title": "modal freeze contract"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	var health_before := slice.player.health
 	var projectile_position := hostile.global_position
 	var projectile_lifetime := hostile.lifetime
@@ -352,6 +358,9 @@ func _place_projectile_on_target(slice: FoldlightEndlessSliceRuntime, projectile
 
 func _offer_and_choose(slice: FoldlightEndlessSliceRuntime, completion_index: int, reward_id: StringName) -> bool:
 	slice.controller._on_objective_completed({"completion_count": (completion_index + 1) * 2, "title": "奖励契约"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	await _wait_for_reward_input(slice)
 	var options := slice.controller.get_pending_mission_rewards()
 	for index in options.size():

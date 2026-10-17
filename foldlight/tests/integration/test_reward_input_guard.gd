@@ -120,6 +120,8 @@ func _test_endless() -> void:
 		_send(input_kind, true, point)
 		completion += 1
 		slice.controller._on_objective_completed({"completion_count": completion, "title": "输入保护"})
+		for transition_step in 6:
+			slice._advance_reward_completion(0.1)
 		if completion == 1:
 			slice._pause_game()
 			_check(slice._modal_kind == &"reward" and slice.presentation._reward_buttons[0].disabled, "a rejected pause request cannot cancel a pending reward's input protection")

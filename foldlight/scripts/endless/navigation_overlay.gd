@@ -304,8 +304,8 @@ func _layout() -> void:
 		_map.position = Vector2(600, _safe_top + 362) if _expanded else Vector2(44, _safe_top + 170)
 		_map.size = Vector2(720, 380) if _expanded else Vector2(360, maxf(120, minf(200, 560 - _map.position.y)))
 		_task.position = Vector2(560, _safe_top + 64)
-		_task.size = Vector2(1150, 148)
-		_danger.position = Vector2(560, _safe_top + 222)
+		_task.size = Vector2(1150, 112)
+		_danger.position = Vector2(560, _safe_top + 186)
 		_danger.size = Vector2(1150, 76)
 		var touch := get_node_or_null("/root/TouchControls")
 		var insets: Vector4 = touch.get_layout_snapshot().get("safe_insets", Vector4.ZERO) if touch != null else Vector4.ZERO
@@ -325,7 +325,7 @@ func _layout() -> void:
 	_danger.max_lines_visible = 2
 	var width := _task.size.x
 	_task_title.position = Vector2(16, 6 if _mobile else 10)
-	_task_title.size = Vector2(width - 166, 44)
+	_task_title.size = Vector2(width - (182 if _mobile else 166), 44)
 	_task_time.position = Vector2(width - 154, 6 if _mobile else 10)
 	_task_time.size = Vector2(138, 44)
 	_task_instruction.position = Vector2(16, 48 if _mobile else 58)
@@ -333,6 +333,7 @@ func _layout() -> void:
 	_task_instruction.max_lines_visible = 1 if _mobile else 2
 	_task_progress.position = Vector2(16, 90 if _mobile else 130)
 	_task_progress.size = Vector2(width - 32, 40)
+	_task_progress.visible = not _mobile
 	_task_bar.position = Vector2(16, _task.size.y - 16)
 	_task_bar.size = Vector2(width - 32, 7)
 	for label in [_task_title, _task_time, _task_instruction, _task_progress, _danger, _indicator_text]:
@@ -356,7 +357,7 @@ func _refresh_task() -> void:
 	_task_instruction.text = str(objective.get("instruction", "留意下一道任务指引。"))
 	if _mobile and state == &"active":
 		match StringName(objective.get("kind", &"")):
-			&"capture_point": _task_instruction.text = "金色圈内持续驻守；离圈进度缓慢回退。"
+			&"capture_point": _task_instruction.text = "圈内驻守；每返4弹助燃2秒，最多6秒。"
 			&"defeat_captain": _task_instruction.text = "沿金色指引击破金冠队长；普通敌人不计。"
 			&"destroy_flag": _task_instruction.text = "靠近红金火力旗，用自动攻击或返光摧毁。"
 			&"relay_route": _task_instruction.text = "依次抵达三个信标，每站驻留 1.2 秒。"
@@ -365,6 +366,15 @@ func _refresh_task() -> void:
 	var progress := maxf(0, float(objective.get("progress", 0)))
 	var required := maxf(0.001, float(objective.get("required", 1)))
 	_task_progress.text = str(objective.get("progress_text", "%s / %s" % [String.num(progress, 1), String.num(required, 1)]))
+	if _mobile:
+		# Keep full progress in the shared snapshot; only the mobile heading gets
+		# a short count so the facility has more room beneath the two-line HUD.
+		var compact := "%d/%d" % [int(progress), int(required)]
+		match StringName(objective.get("kind", &"")):
+			&"capture_point": compact = "%.1f/%.0f秒" % [progress, required]
+			&"relay_route": compact = "%d/%d站 · %.1f/1.2秒" % [int(progress), int(required), float(objective.get("waypoint_hold", 0.0))]
+			&"destroy_flag": compact = "%.0f/%.0f" % [progress, required]
+		_task_title.text += "  " + compact
 	_task_bar.value = clampf(progress / required, 0, 1) * 100
 	var danger: Dictionary = _snapshot.get("danger", {})
 	var danger_state := StringName(danger.get("state", &"safe"))

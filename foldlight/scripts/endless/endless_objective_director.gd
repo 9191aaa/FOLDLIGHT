@@ -12,6 +12,9 @@ const OBJECTIVE_ROTATION: Array[StringName] = [
 	&"relay_route", &"capture_storm", &"clear_swarm",
 ]
 const CAPTURE_RADIUS: float = 170.0
+const RETURN_CHARGE_REQUIRED: int = 4
+const RETURN_BOOST_SECONDS: float = 2.0
+const RETURN_BOOST_MAX_SECONDS: float = 6.0
 const RELAY_RADIUS: float = 90.0
 const RELAY_HOLD_SECONDS: float = 1.2
 const RELAY_COUNT: int = 3
@@ -32,6 +35,7 @@ var _task_serial: int = 0
 var _district_access: Dictionary = {}
 var _site_cursors: Dictionary = {}
 var _defeated_ids: Dictionary = {}
+var _last_return_release_id: int = 0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -59,8 +63,11 @@ func set_district_access(snapshot: Dictionary) -> void:
 
 
 func advance(delta: float, player_position: Vector2) -> void:
-	if config == null or map_definition == null or not is_finite(delta) or delta <= 0.0:
+	if config == null or map_definition == null or not is_finite(delta) or delta <= 0.0 or not player_position.is_finite():
 		return
+	if not current.is_empty():
+		current["player_position"] = player_position
+		current["occupied"] = _is_active() and player_position.distance_to(Vector2(current["target_position"])) <= float(current["capture_radius"])
 	if not _is_active():
 		if current.is_empty():
 			return
@@ -130,6 +137,33 @@ func report_projectiles_absorbed(count: int, player_position: Vector2) -> bool:
 	if player_position.distance_to(Vector2(current["target_position"])) > STORM_RADIUS:
 		return false
 	return _add_progress(float(count))
+
+
+func report_returned_light(count: int, player_position: Vector2, objective_id: StringName, release_id: int) -> bool:
+	# A release belongs to the task that was active when Fold began. Identity
+	# and a consumed release serial reject delayed callbacks and duplicate events.
+	if not _matches_target(&"capture_point", objective_id) or count <= 0 or release_id <= 0 or not player_position.is_finite():
+		return false
+	if float(current["time_remaining"]) <= 0.0 or release_id <= _last_return_release_id:
+		return false
+	# Release serials increase monotonically. Consume even an outside release so
+	# walking into the circle cannot replay it, without retaining an event list.
+	_last_return_release_id = release_id
+	if player_position.distance_to(Vector2(current["target_position"])) > CAPTURE_RADIUS:
+		return false
+	var previous_boost := float(current.get("return_boost_seconds", 0.0))
+	if previous_boost >= RETURN_BOOST_MAX_SECONDS:
+		return false
+	current["player_position"] = player_position
+	current["occupied"] = true
+	var maximum_count := int(RETURN_BOOST_MAX_SECONDS / RETURN_BOOST_SECONDS) * RETURN_CHARGE_REQUIRED
+	current["return_charge_count"] = mini(maximum_count, int(current.get("return_charge_count", 0)) + mini(count, maximum_count))
+	var next_boost := minf(RETURN_BOOST_MAX_SECONDS, floorf(float(current["return_charge_count"]) / float(RETURN_CHARGE_REQUIRED)) * RETURN_BOOST_SECONDS)
+	current["return_boost_seconds"] = next_boost
+	if next_boost > previous_boost:
+		return _add_progress(next_boost - previous_boost)
+	objective_progressed.emit(get_snapshot())
+	return true
 
 
 func report_flag_damage(flag_id: StringName, damage: float) -> bool:
@@ -217,6 +251,8 @@ func _start_current_objective() -> void:
 		"progress": 0.0, "required": _required_for(kind),
 		"time_remaining": config.objective_time_limit,
 		"capture_radius": _radius_for(kind), "completed": false, "failed": false,
+		"occupied": false, "player_position": map_definition.player_spawn,
+		"return_charge_count": 0, "return_boost_seconds": 0.0,
 		"status": &"active", "title": _title_for(kind), "instruction": _instruction_for(kind),
 	}
 	if kind == &"relay_route":
@@ -224,6 +260,7 @@ func _start_current_objective() -> void:
 		current["required"] = float(points.size())
 		current["waypoint_hold"] = 0.0
 	_defeated_ids.clear()
+	_last_return_release_id = 0
 	_progress_emit_clock = 0.0
 	objective_started.emit(get_snapshot())
 
@@ -312,7 +349,7 @@ func _progress_text() -> String:
 	var progress := float(current["progress"])
 	var required := float(current["required"])
 	match StringName(current["kind"]):
-		&"capture_point": return "%.1f / %.0f 秒" % [progress, required]
+		&"capture_point": return "%.1f / %.0f 秒 · 返光助燃 +%.0f 秒" % [progress, required, float(current.get("return_boost_seconds", 0.0))]
 		&"destroy_flag": return "%.0f / %.0f 伤害" % [progress, required]
 		&"relay_route": return "%d / %d 站 · 当前驻留 %.1f / %.1f 秒" % [int(progress), int(required), float(current.get("waypoint_hold", 0.0)), RELAY_HOLD_SECONDS]
 		&"capture_storm": return "%d / %d 发" % [int(progress), int(required)]
@@ -333,7 +370,7 @@ func _title_for(kind: StringName) -> String:
 
 func _instruction_for(kind: StringName) -> String:
 	match kind:
-		&"capture_point": return "进入金色据点持续驻守；离开后进度缓慢回退。"
+		&"capture_point": return "圈内驻守 12 秒；每累计返出 4 发光助燃 2 秒，最多 6 秒。离圈缓慢回退。"
 		&"defeat_captain": return "追踪金冠队长并击破；普通敌人不计入此任务。"
 		&"destroy_flag": return "靠近红金火力旗，以自动武器、返光或主动技能真实命中。"
 		&"relay_route": return "按顺序抵达三个信标，每站停留 1.2 秒；离开当前站会重计驻留。"

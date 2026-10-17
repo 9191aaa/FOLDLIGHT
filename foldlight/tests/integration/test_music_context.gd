@@ -174,6 +174,8 @@ func _test_survival() -> void:
 		slice._physics_process(3.0)
 		_expect(&"reward", themes[index], "reward overlay cannot be overwritten by pressure sampling")
 		_check(slice.controller.evolution.survival_seconds == score_time, "music does not advance rewarded survival time")
+		for transition_step in 6:
+			slice._advance_reward_completion(0.1)
 		var reward_id := StringName(slice._modal_options[0].id)
 		slice._on_reward_chosen(reward_id)
 		_expect(&"endless", themes[index], "real mission reward claim restores the same map score")
@@ -197,7 +199,7 @@ func _test_friend_race() -> void:
 	var bridge := LocalTransportBridge.new()
 	root.add_child(bridge)
 	bridge.set_process(false)
-	_check(bridge.configure_session({"roomId": "music-room", "matchId": "music-match", "playerId": "music-player", "instanceId": "music-instance", "seed": 301, "rulesVersion": "endless_race_v4"}), "race accepts the unchanged multiplayer protocol")
+	_check(bridge.configure_session({"roomId": "music-room", "matchId": "music-match", "playerId": "music-player", "instanceId": "music-instance", "seed": 301, "rulesVersion": "endless_race_v5"}), "race accepts the unchanged multiplayer protocol")
 	var slice := load("res://scenes/endless/endless_survival_slice.tscn").instantiate() as FoldlightEndlessSliceRuntime
 	root.add_child(slice)
 	slice.prepare_web_race(bridge)

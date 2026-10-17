@@ -1,4 +1,4 @@
-import { acceptedElapsed, CODE_PATTERN, COUNTDOWN_MS, DISCONNECT_MS, resultFor, ROOM_TTL_MS, RACE_RULES_VERSION, LEGACY_RACE_RULES_VERSION, terminal, type Player, type Room } from "./race-rules.ts";
+import { acceptedElapsed, CODE_PATTERN, COUNTDOWN_MS, DISCONNECT_MS, resultFor, ROOM_TTL_MS, SUPPORTED_RACE_RULES_VERSIONS, LEGACY_RACE_RULES_VERSION, terminal, type Player, type Room } from "./race-rules.ts";
 
 // Extracted from the verified Sites API; database lifetime is request-scoped.
 export function createRoomService(databaseBinding: D1Database) {
@@ -53,7 +53,7 @@ export function createRoomService(databaseBinding: D1Database) {
   }
   function rulesOf(value: unknown) {
     const version = value ?? LEGACY_RACE_RULES_VERSION;
-    if (version !== RACE_RULES_VERSION && version !== LEGACY_RACE_RULES_VERSION) throw new ApiError(409, "游戏规则已更新，请更新游戏或刷新网页后重新建房。");
+    if (typeof version !== "string" || !SUPPORTED_RACE_RULES_VERSIONS.some(supported => supported === version)) throw new ApiError(409, "游戏规则已更新，请更新游戏或刷新网页后重新建房。");
     return version;
   }
   const roomRules = (room: Room) => room.rules_version ?? LEGACY_RACE_RULES_VERSION;

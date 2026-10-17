@@ -12,6 +12,7 @@ const DASH_COOLDOWN := 2.0
 const MAX_LIVE_ENEMIES := 84
 const BASE_RETURN_DAMAGE := 2.8
 const BASE_RETURN_SPEED := 610.0
+const OBJECTIVE_COMPLETE_SECONDS: float = 0.5
 const ObjectiveTarget = preload("res://scripts/endless/endless_objective_target.gd")
 
 var run_ended: bool = false
@@ -39,6 +40,13 @@ var _return_kick_cooldown: float = 0.0
 var _barrage_elite_introduced: bool = false
 var _bomber_introduced: bool = false
 var _music_sample_clock: float = 0.0
+var _reward_completion_remaining: float = 0.0
+var _reward_objective_title: String = ""
+var _paused_modal_kind: StringName = &""
+var _fold_task_id: StringName = &""
+var _fold_release_serial: int = 0
+var _pending_fold_release_serial: int = 0
+var _application_suspended: bool = false
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
@@ -48,6 +56,7 @@ var _music_sample_clock: float = 0.0
 @onready var combat_runtime: FoldlightRogueCombatRuntime = $RogueWorld/CombatRuntime
 @onready var presentation: FoldlightRoguePresentation = $RoguePresentation
 @onready var profile_manager: FoldlightProfileManager = get_node("/root/ProfileManager") as FoldlightProfileManager
+@onready var _touch_controls: Node = get_node_or_null("/root/TouchControls")
 
 
 func _ready() -> void:
@@ -150,7 +159,7 @@ func get_race_stats() -> Dictionary:
 		pause_reason = "finished"
 	elif not _race_started and _web_race_bridge != null:
 		pause_reason = "waiting"
-	elif _modal_kind == &"reward":
+	elif _modal_kind in [&"reward", &"objective_complete"]:
 		pause_reason = "reward"
 	elif not _modal_kind.is_empty():
 		pause_reason = "manual"
@@ -195,7 +204,7 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 		_build_room_terrain(),
 		Color("55b8a8"),
 		seed,
-		&"paper_reef",
+		controller.map_definition.region_style,
 	)
 	if not room_errors.is_empty():
 		push_error("Endless adapter could not configure the 2.0 room: %s" % "; ".join(room_errors))
@@ -248,6 +257,31 @@ func _process(delta: float) -> void:
 	_capture_sfx_cooldown = maxf(0.0, _capture_sfx_cooldown - delta)
 	_kill_shake_cooldown = maxf(0.0, _kill_shake_cooldown - delta)
 	_return_kick_cooldown = maxf(0.0, _return_kick_cooldown - delta)
+	_advance_reward_completion(delta)
+
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
+		_application_suspended = true
+	elif what in [NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_APPLICATION_RESUMED]:
+		_application_suspended = false
+
+
+func _advance_reward_completion(delta: float) -> void:
+	if run_ended or _transitioning_to_title or not controller.active or _modal_kind != &"objective_complete":
+		return
+	if not is_inside_tree() or is_queued_for_deletion() or get_tree().paused or _application_suspended or not is_finite(delta) or delta <= 0.0:
+		return
+	if _touch_controls != null and bool(_touch_controls.call("is_host_suspended")):
+		return
+	# A background return or one long frame cannot skip the completion beat.
+	var step := minf(minf(delta, 0.10), _reward_completion_remaining)
+	controller.advance_presentation(step)
+	_reward_completion_remaining = maxf(0.0, _reward_completion_remaining - step)
+	if _reward_completion_remaining <= 0.00001:
+		_reward_completion_remaining = 0.0
+		_modal_kind = &"reward"
+		presentation.show_reward(_reward_card_choices(), _reward_objective_title)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -280,9 +314,11 @@ func _pause_game() -> void:
 		else:
 			presentation.show_notice("好友竞赛", "不能手动暂停；奖励选择不计时。弃赛请使用网页房间。")
 		return
-	if run_ended or not _modal_kind.is_empty() or not controller.active:
+	if run_ended or _modal_kind not in [&"", &"objective_complete"] or not controller.active:
 		return
-	_cancel_reward_entry()
+	_paused_modal_kind = _modal_kind
+	if _modal_kind.is_empty():
+		_cancel_reward_entry()
 	_modal_kind = &"pause"
 	_set_combat_suspended(true)
 	presentation.show_pause()
@@ -292,9 +328,13 @@ func _pause_game() -> void:
 func _resume_game() -> void:
 	if _modal_kind != &"pause":
 		return
-	_modal_kind = &""
+	_modal_kind = _paused_modal_kind
+	_paused_modal_kind = &""
 	presentation.show_hud()
-	_set_combat_suspended(false)
+	if _modal_kind != &"objective_complete":
+		_set_combat_suspended(false)
+	else:
+		audio_director.set_music_context(&"reward")
 	_refresh_hud()
 
 
@@ -450,6 +490,9 @@ func _apply_feedback_settings() -> void:
 	_feedback_motion_scale = clampf(float(profile.call("get_setting", &"screen_shake", 1.0)), 0.0, 1.0) if profile != null else 1.0
 	_feedback_vibration = bool(profile.call("get_setting", &"vibration", true)) if profile != null else true
 	player.set_feedback_motion_scale(_feedback_motion_scale)
+	controller.map_runtime.set_motion_reduced(_feedback_motion_scale <= 0.0)
+	if is_instance_valid(_objective_target):
+		_objective_target.set_feedback_motion_scale(_feedback_motion_scale)
 
 
 func _feedback_is_live() -> bool:
@@ -466,10 +509,17 @@ func _on_combat_impact_confirmed(kind: StringName, weight: float) -> void:
 
 func _on_feedback_fold_started() -> void:
 	if _feedback_is_live():
+		_fold_task_id = StringName(controller.objectives.get_snapshot().get("id", &""))
+		_fold_release_serial += 1
+		_pending_fold_release_serial = _fold_release_serial
 		audio_director.play_sfx(&"fold", 1.0, -8.0)
 
 
 func _on_feedback_fold_released(captured_count: int, _charge_ratio: float) -> void:
+	var task_id := _fold_task_id
+	var release_id := _pending_fold_release_serial
+	_fold_task_id = &""
+	_pending_fold_release_serial = 0
 	if not _feedback_is_live():
 		return
 	audio_director.play_sfx(&"release" if captured_count > 0 else &"empty", 0.90 + minf(0.25, float(captured_count) * 0.015), -7.0 if captured_count > 0 else -12.0)
@@ -478,9 +528,12 @@ func _on_feedback_fold_released(captured_count: int, _charge_ratio: float) -> vo
 		if _feedback_vibration:
 			var strength := minf(0.34, 0.16 + float(captured_count) * 0.012)
 			Input.start_joy_vibration(0, strength * 0.55, strength, 0.11)
+		controller.report_returned_light(captured_count, task_id, release_id)
 
 
 func _on_feedback_focus_empty(_captured_count: int, _charge_ratio: float) -> void:
+	_fold_task_id = &""
+	_pending_fold_release_serial = 0
 	if _feedback_is_live():
 		audio_director.play_sfx(&"empty", 0.86, -12.0)
 
@@ -490,13 +543,16 @@ func _on_player_evolution_changed(_snapshot: Dictionary) -> void:
 
 
 func _on_mission_reward_offered(options: Array[Dictionary], objective_snapshot: Dictionary) -> void:
-	if run_ended or options.is_empty():
+	if run_ended or _transitioning_to_title or options.is_empty() or not controller.active or not _modal_kind.is_empty():
 		return
-	_modal_kind = &"reward"
+	_modal_kind = &"objective_complete"
 	_modal_options = options.duplicate(true)
 	_claiming_reward = false
+	_reward_completion_remaining = OBJECTIVE_COMPLETE_SECONDS
+	_reward_objective_title = str(objective_snapshot.get("title", "系统任务"))
 	_set_combat_suspended(true)
-	presentation.show_reward(_reward_card_choices(), str(objective_snapshot.get("title", "系统任务")))
+	presentation.show_hud()
+	_refresh_hud()
 	audio_director.set_music_context(&"reward")
 
 
@@ -557,6 +613,11 @@ func _on_reward_chosen(reward_id: StringName) -> void:
 
 func _cancel_reward_entry() -> void:
 	_claiming_reward = true
+	_reward_completion_remaining = 0.0
+	_reward_objective_title = ""
+	_paused_modal_kind = &""
+	_fold_task_id = &""
+	_pending_fold_release_serial = 0
 	presentation.cancel_reward_selection()
 
 
@@ -587,6 +648,8 @@ func _finish_run(reason: StringName = &"player_defeated") -> void:
 
 func _set_combat_suspended(suspended: bool) -> void:
 	if suspended:
+		_fold_task_id = &""
+		_pending_fold_release_serial = 0
 		player.suspend_for_overlay()
 		combat_runtime.set_active(false)
 	else:
@@ -599,10 +662,9 @@ func _restore_survival_music() -> void:
 	# Music reads the authored map choice; it never consumes the seeded
 	# simulation RNG or changes the identical battlefield used by race peers.
 	var region: StringName = {
-		&"folded_delta": &"paper_reef",
-		&"inverted_canals": &"inverted_ink_city",
-		&"solar_archipelago": &"nameless_sun_court",
-	}.get(controller.map_definition.map_id, &"paper_reef")
+		&"ink_city": &"inverted_ink_city",
+		&"sun_court": &"nameless_sun_court",
+	}.get(controller.map_definition.region_style, controller.map_definition.region_style)
 	audio_director.set_music_context(&"endless", region, _survival_music_pressure())
 	_music_sample_clock = 1.0
 
@@ -731,7 +793,7 @@ func _build_room_terrain() -> Array[Dictionary]:
 			"rotation": 0.0,
 			"strength": 1.0,
 			"direction": Vector2.RIGHT,
-			"visual_style": &"paper_reef",
+			"visual_style": controller.map_definition.region_style,
 		})
 	return placements
 
@@ -744,8 +806,8 @@ func _refresh_hud() -> void:
 	var context := {
 		"region_text": ("好友无尽" if _web_race_bridge != null else "无尽挑战") + " / " + controller.map_definition.title,
 		"voyage_text": "航行 %s  ·  击破 %d" % [_format_time(float(enemy_state.get("survival_seconds", 0.0))), controller.defeated_total],
-		"objective_title": "%s  ·  %d 秒" % [str(objective.get("title", "任务准备中")), ceili(float(objective.get("time_remaining", 0.0)))],
-		"objective_detail": str(objective.get("instruction", "")),
+		"objective_title": "任务完成 · 奖励即将展开" if _modal_kind == &"objective_complete" else "%s  ·  %d 秒" % [str(objective.get("title", "任务准备中")), ceili(float(objective.get("time_remaining", 0.0)))],
+		"objective_detail": "航灯已响应，稍候选择本局强化。" if _modal_kind == &"objective_complete" else str(objective.get("instruction", "")),
 		"objective_progress": float(objective.get("progress_ratio", 0.0)),
 		"race": _web_race_bridge != null,
 		"endless_navigation": true,

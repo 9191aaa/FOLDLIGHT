@@ -38,17 +38,20 @@ function fixture(t) {
   return { sqlite, call };
 }
 
-test('migration retains v3; v4 and legacy matches cannot occupy each other’s player slots', async t => {
+test('migration retains v3; v3/v4/v5 matches reject every other rules version before allocating slots', async t => {
   const { sqlite, call } = fixture(t);
   assert.equal(sqlite.prepare("SELECT rules_version FROM race_rooms WHERE code='OLD2345'").get().rules_version, 'endless_race_v3');
-  for (const version of ['endless_race_v3', 'endless_race_v4']) {
+  const supported = ['endless_race_v3', 'endless_race_v4', 'endless_race_v5'];
+  for (const version of supported) {
     const rules = version === 'endless_race_v3' ? {} : { rulesVersion: version };
     const created = await call({ name: '甲', ...rules });
     assert.equal(created.status, 201);
     const room = created.data.room, code = room.code;
     assert.equal(room.rulesVersion, version);
-    const different = version === 'endless_race_v3' ? 'endless_race_v4' : 'endless_race_v3';
-    assert.equal((await call({ action: 'join', name: '错误版本', rulesVersion: different }, code)).status, 409);
+    const others = supported.filter(candidate => candidate !== version);
+    for (const different of others) {
+      assert.equal((await call({ action: 'join', name: '错误版本', rulesVersion: different }, code)).status, 409);
+    }
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM race_players WHERE room=?').get(code).n, 1);
     const joined = await call({ action: 'join', name: '乙', ...rules }, code);
     assert.equal(joined.status, 200);
@@ -62,7 +65,9 @@ test('migration retains v3; v4 and legacy matches cannot occupy each other’s p
     const beat = await call({ action: 'heartbeat', rulesVersion: version, instanceId: a, seq: 1, elapsed: 0.5, kills: 1, health: 1, status: 'alive' }, code, created.data.token);
     assert.equal(beat.status, 200);
     assert.equal(beat.data.players.find(p => p.id === room.selfId).elapsed, 0.5);
-    assert.equal((await call({ action: 'heartbeat', rulesVersion: different, instanceId: a, seq: 2 }, code, created.data.token)).status, 409);
+    for (const different of others) {
+      assert.equal((await call({ action: 'heartbeat', rulesVersion: different, instanceId: a, seq: 2 }, code, created.data.token)).status, 409);
+    }
   }
   assert.equal((await call({ name: '未知版本', rulesVersion: 'endless_race_v999' })).status, 409);
 });

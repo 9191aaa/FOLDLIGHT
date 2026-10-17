@@ -111,7 +111,10 @@ func run() -> void:
 	var wave_before_reward := slice.controller.wave_sequence
 	var capture_point := Vector2(slice.controller.objectives.get_snapshot().target_position)
 	slice.controller.advance_simulation(12.0, capture_point)
-	check(slice._modal_kind == &"reward" and slice.controller.wave_sequence == wave_before_reward, "synchronous task completion opens reward before any due wave can spawn")
+	check(slice._modal_kind == &"objective_complete" and slice.controller.wave_sequence == wave_before_reward and not slice.combat_runtime.active, "task completion freezes the battlefield before any due wave can spawn")
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
+	check(slice._modal_kind == &"reward" and slice.controller.wave_sequence == wave_before_reward, "facility completion unfolds before reward without spawning the pending wave")
 	slice.queue_free()
 	await process_frame
 	print("FOLDLIGHT_ENDLESS_NAVIGATION_INTEGRATION: %s" % ("PASS" if failures.is_empty() else "FAIL"))

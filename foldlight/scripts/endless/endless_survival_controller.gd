@@ -151,8 +151,9 @@ func stop_run(reason: StringName = &"stopped") -> Dictionary:
 
 
 func advance_simulation(delta: float, player_position: Vector2) -> void:
-	if not active or delta <= 0.0:
+	if not active or not is_finite(delta) or delta <= 0.0 or not player_position.is_finite() or not _pending_mission_rewards.is_empty():
 		return
+	advance_presentation(delta)
 	_last_player_position = player_position
 	evolution.advance_survival(delta)
 	var protected_points: PackedVector2Array = objectives.get_snapshot().get("protected_points", PackedVector2Array())
@@ -168,6 +169,18 @@ func advance_simulation(delta: float, player_position: Vector2) -> void:
 	if _spawn_clock <= 0.0:
 		_emit_next_wave()
 		_spawn_clock += float(evolution.get_enemy_snapshot().get("spawn_interval", config.base_spawn_interval))
+
+
+func advance_presentation(delta: float) -> void:
+	if active and is_finite(delta) and delta > 0.0:
+		map_runtime.advance_presentation(delta)
+
+
+func report_returned_light(count: int, objective_id: StringName, release_id: int) -> bool:
+	if not active or not _pending_mission_rewards.is_empty():
+		return false
+	var position := _external_player.global_position if is_instance_valid(_external_player) else _last_player_position
+	return objectives.report_returned_light(count, position, objective_id, release_id)
 
 
 func report_projectiles_absorbed(projectile_count: int) -> void:

@@ -51,6 +51,9 @@ func _run() -> void:
 	_check(slice.get_slice_snapshot().modal_kind == &"", "continue button resumes the same run")
 	var options := slice.controller.evolution.get_mission_reward_options(0)
 	slice._on_mission_reward_offered(options, {"title": "折光任务"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	_check_mute_context(slice, "reward")
 	slice._unhandled_input(pause_event)
 	_check(slice.get_slice_snapshot().modal_kind == &"reward", "Esc cannot dismiss a pending reward or resume combat behind it")

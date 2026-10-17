@@ -324,6 +324,10 @@ func _on_host_callback(arguments: Array) -> void:
 		apply_host_state(state)
 
 
+func is_host_suspended() -> bool:
+	return _host_suspended
+
+
 func get_debug_snapshot() -> Dictionary:
 	var snapshot := {"touch_mode": _touch_mode, "active": _active, "held_touch_count": _held_touches.size(), "owned_touch_count": _owned_touches.size(), "cancel_epoch": _cancel_epoch, "suspended": _host_suspended}
 	var layout := get_layout_snapshot()

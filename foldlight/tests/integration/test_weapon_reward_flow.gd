@@ -118,6 +118,9 @@ func _test_endless_rewards() -> void:
 	var profile_before := var_to_str(slice.profile_manager.get_public_snapshot())
 	var first := {"completion_count": 1, "title": "首次任务"}
 	slice.controller._on_objective_completed(first)
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	var options := slice.controller.get_pending_mission_rewards()
 	_check(options.size() == 3 and options.all(func(choice: Dictionary) -> bool: return StringName(choice.get("choice_kind", &"")) == &"weapon"), "first endless task offers the shared weapon draft")
 	_check(slice._modal_kind == &"reward" and not slice.player.play_enabled and not slice.combat_runtime.active, "weapon choices suspend real endless combat")
@@ -130,6 +133,9 @@ func _test_endless_rewards() -> void:
 	var earned := slice.controller.weapon_levels.duplicate(true)
 	_check(slice.controller.claim_mission_reward(selected).is_empty(), "a second direct claim is rejected after a reward was consumed")
 	slice.controller._on_objective_completed(first)
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	_check(slice.controller.get_pending_mission_rewards().is_empty() and slice.controller.weapon_levels == earned and slice._modal_kind.is_empty(), "a stale completion event cannot reopen or duplicate a finished task reward")
 	slice._pause_game()
 	_check(slice._modal_kind == &"pause", "endless pause remains available after a weapon reward")
@@ -137,14 +143,23 @@ func _test_endless_rewards() -> void:
 	_check(slice.controller.weapon_levels == earned and slice.player.weapon_mount.definitions.size() == 2, "endless resume preserves weapon ranks and mount contents")
 
 	slice.controller._on_objective_completed({"completion_count": 2, "title": "成长任务"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	options = slice.controller.get_pending_mission_rewards()
 	_check(options.size() == 3 and options.all(func(choice: Dictionary) -> bool: return StringName(choice.get("choice_kind", &"")) != &"weapon"), "second endless task retains the three firepower, fold, and sustain lanes")
 	var pending_before := options.duplicate(true)
 	slice.controller._on_objective_completed({"completion_count": 3, "title": "意外抢先事件"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	_check(slice.controller.get_pending_mission_rewards() == pending_before, "a new event cannot replace choices while the player is deciding")
 	slice._on_reward_chosen(StringName(options[0]["id"]))
 	_check(slice.controller.weapon_levels == earned and not (slice.controller.evolution.get_mission_snapshot()["reward_levels"] as Dictionary).is_empty(), "growth task improves its own lane without replacing collected weapons")
 	slice.controller._on_objective_completed({"completion_count": 3, "title": "继续武器补给"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	options = slice.controller.get_pending_mission_rewards()
 	var upgrade_id := &""
 	for option in options:
@@ -158,6 +173,9 @@ func _test_endless_rewards() -> void:
 	for weapon_id in _all_weapon_ids():
 		slice.controller.weapon_levels[String(weapon_id)] = FoldlightWeaponProgression.MAX_LEVEL
 	slice.controller._on_objective_completed({"completion_count": 5, "title": "满阶补给"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	options = slice.controller.get_pending_mission_rewards()
 	_check(not options.is_empty() and options.all(func(choice: Dictionary) -> bool: return StringName(choice.get("choice_kind", &"")) != &"weapon"), "mastered endless arsenal uses growth cards instead of an empty reward modal")
 	if not options.is_empty():
@@ -166,6 +184,9 @@ func _test_endless_rewards() -> void:
 	slice.start_slice(313701)
 	_check(slice.controller.weapon_levels == {"crease_lantern": 1} and slice.player.weapon_mount.definitions.size() == 1 and slice.controller.get_pending_mission_rewards().is_empty(), "new endless run clears extra weapons, ranks, and pending choices")
 	slice.controller._on_objective_completed(first)
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	_check(slice.controller.get_pending_mission_rewards().size() == 3, "restarting resets the completion guard so task one can reward again")
 	slice.queue_free()
 	await process_frame

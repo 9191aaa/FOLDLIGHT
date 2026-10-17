@@ -3,6 +3,8 @@ extends Node2D
 
 const PaperArt = preload("res://scripts/visuals/paper_art.gd")
 const Seascape = preload("res://scripts/visuals/paper_seascape.gd")
+const ObjectiveVisual = preload("res://scripts/endless/endless_objective_visual.gd")
+const Landmarks = preload("res://scripts/endless/endless_map_landmarks.gd")
 
 const WALL_COLLISION_LAYER := 1
 const WALL_COLLISION_MASK := 0
@@ -23,6 +25,9 @@ var _wall_container: Node2D
 var _route_grid: AStarGrid2D
 var _ground_canvas: Node2D
 var _static_draw_count: int = 0
+var _objective_canvas: Node2D
+var _landmark_canvas: Node2D
+var _motion_reduced: bool = false
 
 
 func _ready() -> void:
@@ -33,9 +38,17 @@ func _ready() -> void:
 
 func configure(definition: FoldlightEndlessMapDefinition) -> Array[String]:
 	map_definition = definition
+	_active_objective.clear()
+	if is_instance_valid(_objective_canvas):
+		_objective_canvas.reset()
+	if is_instance_valid(_landmark_canvas):
+		_landmark_canvas.configure(definition)
 	_zone_snapshot.clear()
 	_zone_geometry.clear()
 	_safe_query_origin = Vector2.INF
+	if is_instance_valid(_ground_canvas):
+		_ground_canvas.queue_redraw()
+	queue_redraw()
 	var errors: Array[String] = []
 	if map_definition == null:
 		errors.append("handcrafted endless map definition is missing")
@@ -51,17 +64,45 @@ func configure(definition: FoldlightEndlessMapDefinition) -> Array[String]:
 	if not is_instance_valid(_ground_canvas):
 		_ground_canvas = Node2D.new()
 		_ground_canvas.name = "CachedPaperGround"
+		_ground_canvas.z_index = -2
 		_ground_canvas.show_behind_parent = true
 		_ground_canvas.draw.connect(_draw_static_ground)
 		add_child(_ground_canvas)
 	_ground_canvas.queue_redraw()
+	if not is_instance_valid(_landmark_canvas):
+		_landmark_canvas = Landmarks.new()
+		_landmark_canvas.name = "SubmergedPaperLandmark"
+		add_child(_landmark_canvas)
+		_landmark_canvas.configure(map_definition)
+	if not is_instance_valid(_objective_canvas):
+		_objective_canvas = ObjectiveVisual.new()
+		_objective_canvas.name = "PaperObjectiveFacilities"
+		_objective_canvas.z_index = 14
+		add_child(_objective_canvas)
+	_objective_canvas.set_motion_reduced(_motion_reduced)
 	queue_redraw()
 	return errors
 
 
 func set_active_objective(snapshot: Dictionary) -> void:
 	_active_objective = snapshot.duplicate(true)
-	queue_redraw()
+	if is_instance_valid(_objective_canvas):
+		_objective_canvas.set_snapshot(snapshot)
+
+
+func advance_presentation(delta: float) -> void:
+	if is_instance_valid(_objective_canvas):
+		_objective_canvas.advance(delta)
+
+
+func set_motion_reduced(value: bool) -> void:
+	_motion_reduced = value
+	if is_instance_valid(_objective_canvas):
+		_objective_canvas.set_motion_reduced(value)
+
+
+func get_objective_visual_snapshot() -> Dictionary:
+	return _objective_canvas.get_visual_snapshot() if is_instance_valid(_objective_canvas) else {}
 
 
 func set_zone_snapshot(snapshot: Dictionary) -> void:
@@ -340,7 +381,6 @@ func _segment_hits_rect(from: Vector2, to: Vector2, rect: Rect2) -> bool:
 func _draw() -> void:
 	if map_definition != null:
 		_draw_zone_states()
-		_draw_active_objective()
 
 
 func _draw_static_ground() -> void:
@@ -457,15 +497,3 @@ func get_objective_marker_snapshot() -> Dictionary:
 	if kind in [&"capture_point", &"capture_storm", &"relay_route"]:
 		radius = maxf(1.0, float(_active_objective.get("capture_radius", 170.0)))
 	return {"position": Vector2(_active_objective.get("target_position", Vector2.ZERO)), "radius": radius, "color": PaperArt.FOLD if kind == &"capture_storm" else PaperArt.GOLD}
-
-
-func _draw_active_objective() -> void:
-	var marker := get_objective_marker_snapshot()
-	if marker.is_empty():
-		return
-	var position: Vector2 = marker["position"]
-	var color: Color = marker["color"]
-	var radius: float = marker["radius"]
-	draw_circle(position, radius, Color(color, 0.08))
-	draw_arc(position, radius, -PI * 0.5, PI * 1.5, 64, Color(color, 0.86), 3.5, true)
-	draw_arc(position, radius + 21.0, 0.0, TAU, 48, Color(PaperArt.FOLD, 0.30), 1.5, true)
