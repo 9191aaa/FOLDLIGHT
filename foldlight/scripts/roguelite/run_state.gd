@@ -1,7 +1,7 @@
 class_name FoldlightRogueRunState
 extends Node
 
-const SNAPSHOT_VERSION: int = 2
+const SNAPSHOT_VERSION: int = 3
 
 var seed: int = 0
 var route: Dictionary = {}
@@ -15,6 +15,8 @@ var max_health: int = 5
 var weapon_ids: Array[StringName] = []
 var weapon_levels: Dictionary = {}
 var active_item_id: StringName = &""
+var active_item_ids: Array[StringName] = []
+var active_item_cooldowns: Dictionary = {}
 var upgrade_levels: Dictionary = {}
 var cleared_node_ids: Array[StringName] = []
 
@@ -34,6 +36,8 @@ func begin_run(run_seed: int, route_snapshot: Dictionary) -> void:
 	# The second cleared room teaches active items as a deliberate reward. The
 	# HUD starts with an empty slot instead of silently gifting an unexplained Q.
 	active_item_id = &""
+	active_item_ids.clear()
+	active_item_cooldowns.clear()
 	upgrade_levels.clear()
 	cleared_node_ids.clear()
 
@@ -77,8 +81,40 @@ func mark_room_cleared(node_id: StringName) -> void:
 	room_count += 1
 
 
+func acquire_active_item(item_id: StringName) -> bool:
+	set_active_collection(get_active_collection())
+	if FoldlightRogueContentCatalog.active_item_by_id(item_id) == null or active_item_ids.has(item_id):
+		return false
+	active_item_ids.append(item_id)
+	active_item_cooldowns[String(item_id)] = 0.0
+	active_item_id = item_id
+	return true
+
+
+func select_active_item(item_id: StringName) -> bool:
+	if not active_item_ids.has(item_id):
+		return false
+	active_item_id = item_id
+	return true
+
+
+func get_active_collection() -> Dictionary:
+	return FoldlightActiveItemSlot.sanitize_collection({
+		"active_item_ids": active_item_ids, "active_item_id": active_item_id,
+		"active_item_cooldowns": active_item_cooldowns,
+	})
+
+
+func set_active_collection(source: Dictionary) -> void:
+	var clean := FoldlightActiveItemSlot.sanitize_collection(source)
+	active_item_ids = _name_array(clean["active_item_ids"])
+	active_item_id = StringName(clean["active_item_id"])
+	active_item_cooldowns = (clean["active_item_cooldowns"] as Dictionary).duplicate(true)
+
+
 func make_checkpoint() -> Dictionary:
 	_sync_weapon_inventory()
+	set_active_collection(get_active_collection())
 	return {
 		"version": SNAPSHOT_VERSION,
 		"seed": seed,
@@ -93,6 +129,8 @@ func make_checkpoint() -> Dictionary:
 		"weapon_ids": _string_array(weapon_ids),
 		"weapon_levels": weapon_levels.duplicate(true),
 		"active_item_id": String(active_item_id),
+		"active_item_ids": _string_array(active_item_ids),
+		"active_item_cooldowns": active_item_cooldowns.duplicate(true),
 		"upgrade_levels": upgrade_levels.duplicate(true),
 		"cleared_node_ids": _string_array(cleared_node_ids),
 	}
@@ -122,7 +160,7 @@ func restore_checkpoint(source: Dictionary) -> bool:
 	var source_levels: Variant = source.get("weapon_levels", {}) if version >= 2 else {}
 	weapon_levels = FoldlightWeaponProgression.sanitize_levels(source_levels if source_levels is Dictionary else {}, weapon_ids)
 	_sync_weapon_inventory()
-	active_item_id = StringName(source.get("active_item_id", &""))
+	set_active_collection(source if version >= 3 else {"active_item_id": source.get("active_item_id", "")})
 	var source_upgrades: Variant = source.get("upgrade_levels", {})
 	upgrade_levels = (source_upgrades as Dictionary).duplicate(true) if source_upgrades is Dictionary else {}
 	cleared_node_ids = _name_array(source.get("cleared_node_ids", []))

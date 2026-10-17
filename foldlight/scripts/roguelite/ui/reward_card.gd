@@ -7,6 +7,7 @@ signal selection_confirmed(upgrade_id: StringName)
 
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
 const CONFIRM_SECONDS: float = 0.20
+const SkillArt = preload("res://scripts/roguelite/ui/active_skill_art.gd")
 
 var title_label: Label
 var description_label: Label
@@ -34,11 +35,13 @@ var _touch_layout := false
 var _choice_action := "刻下折痕  →"
 var _choice_confirmed := "折痕已刻下"
 var _weapon_choice := false
+var _active_choice := false
+var _reduced_motion: bool = false
 
 
 func set_touch_layout(enabled: bool) -> void:
 	_touch_layout = enabled
-	custom_minimum_size = Vector2(550, 710) if enabled else Vector2(420, 520)
+	custom_minimum_size = Vector2(550, 660) if enabled else Vector2(420, 520)
 	for pair: Array in [[title_label, 40, 31], [description_label, 34, 21], [rarity_label, 32, 18], [level_label, 30, 17], [_action_label, 32, 18]]:
 		(pair[0] as Label).add_theme_font_size_override("font_size", pair[1] if enabled else pair[2])
 	_update_content_layout()
@@ -76,10 +79,18 @@ func configure(choice: Dictionary, index: int) -> void:
 	level_label.text = str(choice.get("display_level", "刻印  %d / %d" % [int(choice.get("next_level", 1)), int(choice.get("maximum_level", 1))]))
 	var weapon := StringName(choice.get("choice_kind", &"upgrade")) == &"weapon"
 	_weapon_choice = weapon
+	_active_choice = StringName(choice.get("choice_kind", &"upgrade")) == &"active"
 	set_meta("choice_kind", StringName(choice.get("choice_kind", &"upgrade")))
 	var upgrading := int(choice.get("next_level", 1)) > 1
 	_choice_action = ("强化武器  →" if upgrading else "加入同行  →") if weapon else "刻下折痕  →"
 	_choice_confirmed = ("武器已强化" if upgrading else "已加入同行") if weapon else "折痕已刻下"
+	if _active_choice:
+		var equipped := bool(choice.get("equipped", false))
+		var collected := bool(choice.get("collected", false))
+		rarity_label.text = ("当前装备" if equipped else "已收藏" if collected else "新技能") + " · " + str(choice.get("usage_label", "主动释放"))
+		level_label.text = "冷却 %.0f 秒" % float(choice.get("cooldown_duration", choice.get("cooldown", 0.0)))
+		_choice_action = "已装备" if equipped else "切换装备 →" if collected else "收藏并装备 →"
+		_choice_confirmed = "技能已装备" if collected else "已收藏并装备"
 	_action_label.text = _choice_action
 	tooltip_text = "%s：%s" % [title_label.text, description_label.text]
 	_locked = false
@@ -88,6 +99,8 @@ func configure(choice: Dictionary, index: int) -> void:
 	_attention = 0.0
 	_confirm = 0.0
 	_dim = 1.0
+	var profile := get_node_or_null("/root/ProfileManager")
+	_reduced_motion = profile != null and float(profile.get_setting("screen_shake", 0.7)) <= 0.0
 	disabled = false
 	_update_content_layout()
 	queue_redraw()
@@ -95,6 +108,11 @@ func configure(choice: Dictionary, index: int) -> void:
 
 func reveal(delay: float = 0.0) -> void:
 	_kill(_entrance_tween)
+	if _reduced_motion:
+		_set_reveal(1.0)
+		set_process(false)
+		_refresh_attention()
+		return
 	_set_reveal(0.0)
 	set_process(is_visible_in_tree())
 	_entrance_tween = _motion()
@@ -107,7 +125,7 @@ func set_selection_available(available: bool) -> void:
 	if _locked or _confirming:
 		return
 	disabled = not available
-	_action_label.text = _choice_action if available else "细看折痕…"
+	_action_label.text = _choice_action if available else "请先查看…"
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if available else Control.CURSOR_ARROW
 
 
@@ -175,18 +193,26 @@ func _draw() -> void:
 	draw_colored_polygon(shadow, Color(Palette.INK, 0.65 * opacity))
 	var base := Palette.SURFACE.lerp(Palette.SURFACE_SOFT, _attention * 0.65)
 	draw_colored_polygon(shape, Color(base, opacity * 0.98))
+	# The folded cover is the identifying surface; the lower ink sheet stays
+	# quiet for the actual effect. A cut seam carries the same paper material
+	# as the game's moth, rather than adding another decorative border.
+	var cover_y := 237.0 if _touch_layout else 205.0
+	draw_colored_polygon(PackedVector2Array([Vector2(12, 12), Vector2(w - cut - 8, 12), Vector2(w - 12, cut + 8), Vector2(w - 12, cover_y), Vector2(w * 0.45, cover_y + 14), Vector2(12, cover_y - 18)]), Color(_accent.lerp(Palette.PAPER, 0.16), 0.13 * opacity))
+	draw_colored_polygon(PackedVector2Array([Vector2(12, 12), Vector2(w * 0.45, cover_y + 14), Vector2(12, cover_y - 18)]), Color(Palette.PAPER, 0.035 * opacity))
 	# A thin paper edge and a turned corner give the card an actual material.
 	draw_polyline(PackedVector2Array([Vector2(0, h), Vector2.ZERO, Vector2(w - cut, 0), Vector2(w, cut), Vector2(w, h), Vector2(0, h)]), Color(_accent, (0.30 + _attention * 0.48) * opacity), 1.3, true)
 	draw_colored_polygon(PackedVector2Array([Vector2(w - cut, 0), Vector2(w - cut, cut), Vector2(w, cut)]), Color(_accent, (0.16 + _attention * 0.12) * opacity))
-	var compact_emblem := _weapon_choice and not _touch_layout
+	var compact_emblem := not _touch_layout
 	var divider_y := 218.0 if compact_emblem else 260.0
 	draw_line(Vector2(30, divider_y), Vector2(w - 30, divider_y), Color(_accent, 0.20 * opacity), 1.0, true)
 	draw_line(Vector2(30, h - 78), Vector2(w - 30, h - 78), Color(Palette.MUTED, 0.16 * opacity), 1.0, true)
 	_draw_paper_grain(w, h, opacity)
 	var emblem_scale := 0.75 if compact_emblem else 1.0
 	var emblem_center := Vector2(w * 0.5, (122.0 if compact_emblem else 154.0) + sin(_clock * 1.1) * 3.0)
-	_draw_emblem_field(emblem_center, opacity, emblem_scale)
-	_draw_symbol(emblem_center, emblem_scale * (1.0 + _attention * 0.045 + sin(_confirm * PI) * 0.055), opacity)
+	if _active_choice:
+		SkillArt.draw_icon(self, _content_id, emblem_center, 77.0 * emblem_scale, _accent, opacity)
+	else:
+		_draw_symbol(emblem_center, emblem_scale * (1.0 + _attention * 0.045 + sin(_confirm * PI) * 0.055), opacity)
 	if _attention > 0.001:
 		var flow := fposmod(_clock * 0.28, 1.0)
 		var start := Vector2(30 + flow * (w - 100), divider_y)
@@ -194,7 +220,8 @@ func _draw() -> void:
 	if _confirm > 0.0:
 		var flare := sin(_confirm * PI)
 		draw_rect(Rect2(Vector2.ZERO, size), Color(Palette.PAPER, flare * 0.08 * opacity))
-		draw_arc(emblem_center, 83.0 + _confirm * 28.0, -PI, PI, 72, Color(Palette.PAPER, (1.0 - _confirm) * opacity), 2.0, true)
+		if not _reduced_motion:
+			draw_arc(emblem_center, 83.0 + _confirm * 28.0, -PI, PI, 72, Color(Palette.PAPER, (1.0 - _confirm) * opacity), 2.0, true)
 	draw_set_transform(Vector2.ZERO)
 
 
@@ -305,7 +332,7 @@ func _build_content() -> void:
 	rarity_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title_label = _label(31, Palette.PAPER)
 	title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	description_label = _label(21, Palette.MUTED)
+	description_label = _label(21, Color(Palette.PAPER, 0.85))
 	description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	level_label = _label(17, Palette.MUTED)
 	_action_label = _label(18, Palette.PAPER)
@@ -339,7 +366,7 @@ func _update_content_layout() -> void:
 	level_label.size = Vector2(width * 0.54, 28)
 	_action_label.position = Vector2(32 + width * 0.54, size.y - 57)
 	_action_label.size = Vector2(width * 0.46, 28)
-	if _weapon_choice:
+	if not _touch_layout:
 		title_label.position.y = 240
 		description_label.position.y = 292
 		description_label.size.y = maxf(140, size.y - 380)
@@ -347,15 +374,16 @@ func _update_content_layout() -> void:
 		rarity_label.size.y = 44
 		title_label.position.y = 281
 		title_label.size.y = 60
-		description_label.position.y = 352
+		description_label.position.y = 344
 		description_label.size.y = maxf(150, size.y - 450)
 		level_label.position.y = size.y - 62
-		level_label.size = Vector2(width * 0.54, 44)
-		_action_label.position = Vector2(32 + width * 0.54, size.y - 62)
-		_action_label.size = Vector2(width * 0.46, 44)
+		level_label.size = Vector2(width * (0.46 if _active_choice else 0.54), 44)
+		_action_label.position = Vector2(32 + level_label.size.x, size.y - 62)
+		_action_label.size = Vector2(width - level_label.size.x, 44)
 
 
 func _surface_offset() -> float:
+	if _reduced_motion: return 0.0
 	return (1.0 - _reveal) * 32.0 - _attention * 8.0 - sin(_confirm * PI) * 4.0
 
 

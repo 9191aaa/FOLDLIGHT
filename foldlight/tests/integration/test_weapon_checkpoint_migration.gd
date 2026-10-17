@@ -25,7 +25,7 @@ func _run() -> void:
 	state.acquire_weapon(&"tide_bell")
 	state.acquire_weapon(&"tide_bell")
 	var saved := state.make_checkpoint()
-	_check(int(saved["version"]) == 2 and int((saved["weapon_levels"] as Dictionary)["tide_bell"]) == 3, "new checkpoints record every weapon rank with a migrated schema")
+	_check(int(saved["version"]) == 3 and int((saved["weapon_levels"] as Dictionary)["tide_bell"]) == 3, "new checkpoints record every weapon rank with the active-collection schema")
 	var serialized: Variant = JSON.parse_string(JSON.stringify(saved))
 	var restored := FoldlightRogueRunState.new()
 	_check(serialized is Dictionary and restored.restore_checkpoint(serialized as Dictionary), "ranked inventory survives the actual JSON save representation")

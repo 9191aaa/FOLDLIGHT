@@ -94,6 +94,7 @@ func _ready() -> void:
 	presentation.setting_adjust_requested.connect(_on_setting_adjust_requested)
 	presentation.settings_back_requested.connect(_on_settings_back_requested)
 	presentation.reward_chosen.connect(_on_reward_chosen)
+	presentation.active_relic_selected.connect(_on_active_relic_selected)
 	presentation.route_chosen.connect(_on_route_chosen)
 	presentation.retry_requested.connect(start_new_run)
 	presentation.title_requested.connect(_on_result_title_requested)
@@ -494,6 +495,8 @@ func _on_encounter_cleared(performance: Dictionary) -> void:
 
 func _on_run_room_cleared(room_node: Dictionary, performance: Dictionary) -> void:
 	_enter_modal_safety()
+	_sync_active_run_state()
+	_refresh_active_inventory()
 	run_controller.run_state.health = player.health
 	run_controller.run_state.max_health = player.max_health
 	var duration := maxf(1.0, float(performance.get("duration", 1.0)))
@@ -583,7 +586,8 @@ func _on_reward_chosen(upgrade_id: StringName) -> void:
 			if not _apply_weapon_choice(upgrade_id):
 				return
 		&"active":
-			_apply_active_choice(upgrade_id)
+			if not _apply_active_choice(upgrade_id):
+				return
 		_:
 			if not reward_director.apply_upgrade_choice(run_controller.run_state, upgrade_id):
 				return
@@ -625,6 +629,10 @@ func _on_route_chosen(destination_id: StringName) -> void:
 
 func _on_checkpoint_ready(snapshot: Dictionary) -> void:
 	if mode == SessionMode.RUN:
+		_sync_active_run_state()
+		var collection := run_controller.run_state.get_active_collection()
+		for key: String in collection:
+			snapshot[key] = collection[key]
 		if persist_profile:
 			var enriched := snapshot.duplicate(true)
 			if StringName(enriched.get("session_phase", &"")) == &"reward" and not _current_reward_kind.is_empty():
@@ -838,9 +846,11 @@ func _draft_room_reward(category: StringName, rogue: Dictionary, forced_kind: St
 	elif reward_kind == &"active":
 		for item_id in _name_array(rogue.get("unlocked_active_items", [])):
 			var item := FoldlightRogueContentCatalog.active_item_by_id(item_id)
-			if item == null:
+			if item == null or run_controller.run_state.active_item_ids.has(item_id):
 				continue
-			choices.append({"content_id": item.content_id, "choice_kind": &"active", "title": item.title, "description": item.description, "rarity": 1, "accent": item.accent, "next_level": 1, "maximum_level": 1, "offensive": item.effect_id in [&"radial_push", &"anchor_shield", &"weapon_overdrive"]})
+			choices.append(FoldlightActiveItemSlot.make_choice(item_id))
+		if choices.is_empty():
+			return _draft_room_reward(category, rogue, &"upgrade")
 	else:
 		var unlocked := _name_array(rogue.get("unlocked_upgrades", []))
 		choices = reward_director.draft_upgrades(run_controller.run_state.seed, run_controller.run_state.room_count, run_controller.run_state.upgrade_levels, unlocked, 3)
@@ -882,12 +892,13 @@ func _show_next_reward_stage(rogue: Dictionary) -> void:
 func _reward_stage_title(kind: StringName, room_title: String) -> String:
 	match kind:
 		&"upgrade": return "%s · 先选一项强化" % room_title
-		&"active": return "%s · 再带走一件主动道具" % room_title
+		&"active": return "%s · 再获得一种主动技能" % room_title
 		&"weapon": return "%s · 选择自动武器" % room_title
 	return room_title
 
 
 func _commit_reward_checkpoint() -> void:
+	_sync_active_run_state()
 	if not persist_profile:
 		return
 	var snapshot := run_controller.run_state.make_checkpoint()
@@ -924,25 +935,57 @@ func _sample_reward_choices(source: Array[Dictionary]) -> Array[Dictionary]:
 func _apply_weapon_choice(weapon_id: StringName) -> bool:
 	if not run_controller.run_state.acquire_weapon(weapon_id):
 		return false
+	_sync_active_run_state()
 	_equip_run_loadout()
 	return true
 
 
-func _apply_active_choice(item_id: StringName) -> void:
+func _apply_active_choice(item_id: StringName) -> bool:
 	var definition := FoldlightRogueContentCatalog.active_item_by_id(item_id)
 	if definition == null:
-		return
-	run_controller.run_state.active_item_id = item_id
-	player.active_item_slot.replace(definition)
+		return false
+	_sync_active_run_state()
+	if not run_controller.run_state.acquire_active_item(item_id):
+		return false
+	player.active_item_slot.acquire(definition)
+	_sync_active_run_state()
+	_refresh_active_inventory()
+	return true
 
 
 func _equip_run_loadout() -> void:
 	var state := run_controller.run_state
 	player.weapon_mount.set_weapon_levels(FoldlightWeaponProgression.sanitize_levels(state.weapon_levels, state.weapon_ids))
-	player.active_item_slot.unequip()
-	var active := FoldlightRogueContentCatalog.active_item_by_id(run_controller.run_state.active_item_id)
-	if active != null:
-		player.active_item_slot.replace(active)
+	player.active_item_slot.restore_collection(state.get_active_collection())
+	_refresh_active_inventory()
+
+
+func _sync_active_run_state() -> void:
+	if mode == SessionMode.RUN:
+		run_controller.run_state.set_active_collection(player.active_item_slot.get_save_snapshot())
+
+
+func _refresh_active_inventory() -> void:
+	presentation.set_active_inventory(player.get_active_inventory_snapshot())
+
+
+func _on_active_relic_selected(item_id: StringName) -> void:
+	var selecting_reward := mode == SessionMode.RUN and run_controller.phase == FoldlightRogueRunController.Phase.REWARD and presentation.screen_kind == &"reward"
+	var selecting_pause := _paused and presentation.screen_kind == &"pause" and (mode == SessionMode.PROLOGUE or run_controller.phase in [FoldlightRogueRunController.Phase.ENTERING_ROOM, FoldlightRogueRunController.Phase.COMBAT])
+	if mode not in [SessionMode.RUN, SessionMode.PROLOGUE] or _scene_transitioning or not (selecting_reward or selecting_pause):
+		return
+	if not player.active_item_slot.select(item_id):
+		return
+	_sync_active_run_state()
+	_refresh_active_inventory()
+	if mode != SessionMode.RUN or not persist_profile:
+		return
+	if selecting_reward:
+		_commit_reward_checkpoint()
+	else:
+		var snapshot := run_controller.run_state.make_checkpoint()
+		snapshot["session_phase"] = "room"
+		profile_manager.commit_roguelite_checkpoint(snapshot)
 
 
 func _update_prologue(delta: float) -> void:
@@ -1258,10 +1301,11 @@ func _enter_modal_safety() -> void:
 
 
 func _pause_game() -> void:
-	if _paused or mode not in [SessionMode.RUN, SessionMode.PROLOGUE] or (mode == SessionMode.RUN and run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR):
+	if _paused or presentation.screen_kind != &"hud" or mode not in [SessionMode.RUN, SessionMode.PROLOGUE] or (mode == SessionMode.RUN and run_controller.phase not in [FoldlightRogueRunController.Phase.ENTERING_ROOM, FoldlightRogueRunController.Phase.COMBAT]):
 		return
 	_paused = true
 	_enter_modal_safety()
+	_refresh_active_inventory()
 	presentation.show_pause()
 	audio_director.set_music_context(&"paused")
 

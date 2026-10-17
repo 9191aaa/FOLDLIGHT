@@ -4,7 +4,8 @@
 script = ExtResource("1")
 content_id = &"mirror_step"
 title = "镜步"
-description = "补满全部冲刺、获得一秒安全，并留下四秒吸引普通弹幕的纸影。"
+description = "补满冲刺次数并获得 1 秒无敌。原地纸影持续 4 秒，引开部分敌人的瞄准，帮助换位脱身。"
+usage_label = "脱身 · 诱敌"
 accent = Color(0.48, 0.78, 1, 1)
 tags = Array[StringName]([&"mobility", &"decoy"])
 cooldown = 14.0

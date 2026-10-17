@@ -54,7 +54,7 @@ func _run() -> void:
 	_check(ui._reward_buttons[0].disabled, "mobile cards retain the entry reading guard")
 	await create_timer(1.2).timeout
 	_targets(ui, "reward")
-	_check(ui._reward_buttons[0].size.x >= 550 and ui._reward_buttons[0].size.y >= 710, "horizontal cards gain readable mobile text area")
+	_check(ui._reward_buttons[0].size.x >= 550 and ui._reward_buttons[0].size.y >= 660, "horizontal cards keep readable text while leaving room for the collection entry")
 	_check(ui._reward_buttons[0].description_label.get_theme_font_size("font_size") == 34, "reward descriptions remain legible at phone scale")
 	await _save("reward")
 	var region := {"id": "paper_reef", "title": "纸礁浅海", "nodes": [

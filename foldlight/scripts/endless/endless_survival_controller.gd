@@ -47,6 +47,9 @@ var run_seed: int = 0
 var wave_sequence: int = 0
 var defeated_total: int = 0
 var weapon_levels: Dictionary = {"crease_lantern": 1}
+var active_item_ids: Array[StringName] = [&"paper_burst"]
+var active_item_id: StringName = &"paper_burst"
+var active_item_cooldowns: Dictionary = {"paper_burst": 0.0}
 var _spawn_clock: float = 0.0
 var _last_player_position := Vector2.ZERO
 var _external_player: Node2D
@@ -118,6 +121,9 @@ func start_run(seed: int = 1) -> Dictionary:
 	wave_sequence = 0
 	defeated_total = 0
 	weapon_levels = {"crease_lantern": 1}
+	active_item_ids = [&"paper_burst"]
+	active_item_id = &"paper_burst"
+	active_item_cooldowns = {"paper_burst": 0.0}
 	_spawn_clock = 1.2
 	_last_player_position = map_definition.player_spawn
 	_pending_mission_rewards.clear()
@@ -222,6 +228,8 @@ func get_pending_mission_rewards() -> Array[Dictionary]:
 
 
 func claim_mission_reward(reward_id: StringName) -> Dictionary:
+	if not active:
+		return {}
 	var legal := false
 	var selected: Dictionary = {}
 	for option in _pending_mission_rewards:
@@ -239,6 +247,10 @@ func claim_mission_reward(reward_id: StringName) -> Dictionary:
 		weapon_levels[String(reward_id)] = level + 1
 		applied = selected.duplicate(true)
 		applied["level"] = level + 1
+	elif StringName(selected.get("choice_kind", &"")) == &"active":
+		if not acquire_active_item(reward_id):
+			return {}
+		applied = selected.duplicate(true)
 	else:
 		applied = evolution.apply_mission_reward(reward_id)
 	if applied.is_empty():
@@ -263,6 +275,9 @@ func get_snapshot() -> Dictionary:
 		"wave_sequence": wave_sequence,
 		"defeated_total": defeated_total,
 		"weapon_levels": weapon_levels.duplicate(true),
+		"active_item_ids": active_item_ids.duplicate(),
+		"active_item_id": active_item_id,
+		"active_item_cooldowns": active_item_cooldowns.duplicate(true),
 		"map": map_runtime.get_map_contract() if is_instance_valid(map_runtime) else {},
 		"evolution": evolution.get_snapshot() if is_instance_valid(evolution) else {},
 		"objective": objectives.get_snapshot() if is_instance_valid(objectives) else {},
@@ -418,6 +433,7 @@ func _draft_mission_rewards(completion: int) -> Array[Dictionary]:
 	# Equal starting pool for solo and friends: no account unlocks enter races.
 	# Odd completions build the weapon array, even completions retain the three
 	# Fold/firepower/sustain lanes. One task still grants exactly one choice.
+	var options: Array[Dictionary] = []
 	if completion % 2 == 1:
 		var ids: Array[StringName] = []
 		for definition in FoldlightRogueContentCatalog.WEAPONS:
@@ -428,8 +444,45 @@ func _draft_mission_rewards(completion: int) -> Array[Dictionary]:
 				choice["id"] = choice.content_id
 				choice["lane_id"] = &"power"
 				choice["lane_title"] = "武器阵列"
-			return weapons
-	return evolution.get_mission_reward_options(maxi(0, (completion - 2) / 2))
+			options = weapons
+	if options.is_empty():
+		options = evolution.get_mission_reward_options(maxi(0, (completion - 2) / 2))
+	# A skill supply occupies one optional card at tasks 3, 7, 11, ...;
+	# weapons remain available and collecting the full set restores that card.
+	if completion % 4 == 3:
+		var candidates: Array[StringName] = []
+		for item in FoldlightRogueContentCatalog.ACTIVE_ITEMS:
+			if not active_item_ids.has(item.content_id):
+				candidates.append(item.content_id)
+		if not candidates.is_empty():
+			var rng := RandomNumberGenerator.new()
+			rng.seed = run_seed ^ completion * 2654435761
+			var choice := FoldlightActiveItemSlot.make_choice(candidates[rng.randi_range(0, candidates.size() - 1)])
+			choice["lane_id"] = &"active"
+			choice["lane_title"] = "主动技能"
+			if options.size() >= 3:
+				options[2] = choice
+			else:
+				options.append(choice)
+	return options
+
+
+func acquire_active_item(item_id: StringName) -> bool:
+	if FoldlightRogueContentCatalog.active_item_by_id(item_id) == null or active_item_ids.has(item_id):
+		return false
+	active_item_ids.append(item_id)
+	active_item_cooldowns[String(item_id)] = 0.0
+	active_item_id = item_id
+	return true
+
+
+func set_active_collection(source: Dictionary) -> void:
+	var clean := FoldlightActiveItemSlot.sanitize_collection(source)
+	active_item_ids.clear()
+	for item_id: String in clean["active_item_ids"]:
+		active_item_ids.append(StringName(item_id))
+	active_item_id = StringName(clean["active_item_id"])
+	active_item_cooldowns = (clean["active_item_cooldowns"] as Dictionary).duplicate(true)
 
 
 func _on_objective_failed(snapshot: Dictionary) -> void:

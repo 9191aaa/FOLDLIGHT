@@ -1,4 +1,5 @@
 extends Control
+const SkillArt = preload("res://scripts/roguelite/ui/active_skill_art.gd")
 
 var controller: Node
 var _font: Font = FoldlightTheme.body_font()
@@ -25,6 +26,8 @@ func _draw() -> void:
 		var held := pressed.has(action)
 		var color := FoldlightTheme.FOLD if action == &"fold" else FoldlightTheme.GOLD
 		var status_text := ""
+		var active_title := "技能"
+		var active_id: StringName = &""
 		var cooldown := 0.0
 		if is_instance_valid(player):
 			if action == &"dash":
@@ -36,6 +39,9 @@ func _draw() -> void:
 					status_text = "未装备"
 					color = FoldlightTheme.MUTED
 				else:
+					active_title = player.active_item_slot.definition.title
+					active_id = player.active_item_slot.definition.content_id
+					color = FoldlightTheme.comfort_accent(player.active_item_slot.definition.accent)
 					status_text = "%.1f 秒" % player.active_item_slot.cooldown_remaining if cooldown > 0.0 else "就绪"
 			elif action == &"fold":
 				var duration: float = maxf(0.01, player.fold_component.roguelite_cooldown * player.fold_component.cooldown_multiplier)
@@ -53,8 +59,9 @@ func _draw() -> void:
 				_label(center + Vector2(0, -4), "冲刺", 29, color)
 				_label(center + Vector2(0, 30), status_text, 22, FoldlightTheme.PAPER)
 			&"active":
-				_label(center + Vector2(0, -4), "技能", 29, color)
-				_label(center + Vector2(0, 30), status_text, 22, FoldlightTheme.PAPER)
+				SkillArt.draw_icon(self, active_id, center + Vector2(0, -27), 18, color)
+				_label(center + Vector2(0, 10), active_title, 22, color)
+				_label(center + Vector2(0, 37), status_text, 20, FoldlightTheme.PAPER)
 
 
 func _label(center: Vector2, text: String, font_size: int, color: Color) -> void:

@@ -1,6 +1,7 @@
 class_name FoldlightRogueActiveItemDefinition
 extends FoldlightRogueContentDefinition
 
+@export var usage_label: String = ""
 @export_range(0.5, 60.0, 0.1) var cooldown: float = 8.0
 @export var effect_id: StringName = &""
 @export_range(0.0, 100.0, 0.1) var power: float = 1.0

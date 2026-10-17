@@ -667,7 +667,7 @@ func _draw_island(node: Dictionary) -> void:
 		_draw_text(tag, center + Vector2(-tag_width * 0.5, radius + 39), 12, Color(Palette.FOLD if current else Palette.GOLD, _unfold))
 	if not _touch_layout and reachable and zoom >= 0.7:
 		var info := get_node_preview(id)
-		var reward_text := "武器" if info.get("reward_kind") == &"weapon" else ("主动道具" if info.get("reward_kind") == &"active" else ("强化＋主动" if info.get("reward_kind") == &"first_active" else ("终潮" if category == &"boss" else "强化")))
+		var reward_text := "武器" if info.get("reward_kind") == &"weapon" else ("主动技能" if info.get("reward_kind") == &"active" else ("强化＋技能" if info.get("reward_kind") == &"first_active" else ("终潮" if category == &"boss" else "强化")))
 		var caption := "威胁 %d  /  %s" % [int(node.get("risk", 1)), reward_text]
 		var caption_width := _font.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
 		_draw_text(caption, center + Vector2(-caption_width * 0.5, radius + 61), 15, Color(Palette.MUTED, _unfold))

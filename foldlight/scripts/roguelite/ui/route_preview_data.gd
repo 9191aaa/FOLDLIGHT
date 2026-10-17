@@ -14,7 +14,7 @@ static func describe(node: Dictionary, context: Dictionary, reachable: bool, reg
 		&"cache": "遗落的纸匣沉在浅滩。敌潮较缓，澄清后选择一道强化。",
 		&"event": "不同的潮声在此交汇。这里仍有战斗，澄清后选择一道强化。",
 		&"forge": "折纸坊的锋面尚待重铸。澄清敌潮后，选择一把自动武器。",
-		&"shop": "漂灯汇成一座海上市集。澄清敌潮后，选择一件主动道具。",
+		&"shop": "漂灯汇成一座海上市集。澄清敌潮后，选择一种主动技能。",
 		&"rest": "增援较慢的静水航段，仍需战斗。这里不会自动回复灯芯。",
 		&"boss": "终潮守候在航路尽头。击败首领，完成这片海域的航程。",
 	}
@@ -24,17 +24,17 @@ static func describe(node: Dictionary, context: Dictionary, reachable: bool, reg
 		reward = "选择自动武器"
 		reward_kind = &"weapon"
 	elif category == &"shop":
-		reward = "选择主动道具"
+		reward = "选择主动技能"
 		reward_kind = &"active"
 	elif category == &"boss":
 		reward = "完成本次迷航" if region_index + 1 >= int(context.get("region_count", 3)) else "启航下一海域"
 		reward_kind = &"passage"
 	if reachable and category != &"boss" and context.has("room_count") and int(context["room_count"]) + 1 == 2 and str(context.get("active_item_id", "")).is_empty():
-		reward = "强化 ＋ 首次主动道具"
+		reward = "强化 ＋ 首个主动技能"
 		reward_kind = &"first_active"
 	var description := String(descriptions.get(category, descriptions[&"combat"]))
 	if reward_kind == &"first_active":
-		description = "下一房是本次航程的第二次澄清。战斗结束后，先选强化，再带走首次主动道具。"
+		description = "下一房是本次航程的第二次澄清。战斗结束后，先选强化，再获得首个主动技能。"
 	var boss := FoldlightRogueContentCatalog.boss_by_id(StringName(node.get("boss_id", &""))) if category == &"boss" else null
 	if boss != null:
 		title = "%s · %s" % [title, boss.title]

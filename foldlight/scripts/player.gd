@@ -452,6 +452,10 @@ func get_active_item_cooldown_ratio() -> float:
 	return active_item_slot.get_cooldown_ratio()
 
 
+func get_active_inventory_snapshot() -> Array[Dictionary]:
+	return active_item_slot.get_inventory_snapshot()
+
+
 func capture_one() -> bool:
 	if not folding or captured >= get_capture_capacity():
 		return false

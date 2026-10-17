@@ -20,6 +20,7 @@ signal mechanic_card_dismissed(content_id: StringName)
 signal pause_navigation(event: InputEventKey)
 signal pause_requested
 signal screen_changed(kind: StringName)
+signal active_relic_selected(id: StringName)
 
 const FOLD := FoldlightRogueUITheme.FOLD
 const GOLD := FoldlightRogueUITheme.GOLD
@@ -38,6 +39,8 @@ const INPUT_CONTRACT := preload("res://scripts/ui/input_contract.gd")
 const MOBILE_LAYOUT := preload("res://scripts/roguelite/ui/mobile_presentation_layout.gd")
 const MOBILE_HUD := preload("res://scripts/roguelite/ui/mobile_combat_hud.gd")
 const WEAPON_ARSENAL := preload("res://scripts/roguelite/ui/weapon_arsenal_strip.gd")
+const ACTIVE_COLLECTION := preload("res://scripts/roguelite/ui/active_skill_collection.gd")
+const ACTIVE_BADGE := preload("res://scripts/roguelite/ui/active_skill_badge.gd")
 
 var _touch_layout: bool = false
 var _mobile_layout := MOBILE_LAYOUT.new()
@@ -49,6 +52,13 @@ var _settings_minus: Array[Button] = []
 var _touch_safe_top: float = -1.0
 var _touch_safe_insets: Vector4 = Vector4.ZERO
 var _navigation_overlay: Control
+var _active_inventory: Array[Dictionary] = []
+var _active_collection: Control
+var _reward_collection_button: Button
+var _pause_collection_button: Button
+var _collection_return_blocked: bool = false
+var _collection_neutral: float = 0.0
+var _collection_input_guard: Node
 
 var screen_kind: StringName = &"title"
 var _screens: Dictionary = {}
@@ -79,6 +89,7 @@ var _hud_inventory: Array[Dictionary] = []
 var _hud_resonance: Dictionary = {}
 var _hud_active: Label
 var _hud_active_bar: ProgressBar
+var _hud_active_badge: Control
 var _hud_status: Label
 var _hud_objective: Label
 var _hud_objective_detail: Label
@@ -160,6 +171,16 @@ func _ready() -> void:
 	_build_settings()
 	_build_mechanic_toast()
 	_build_mechanic_briefing()
+	_active_collection = ACTIVE_COLLECTION.new()
+	_active_collection.name = "ActiveSkillCollection"
+	interface.add_child(_active_collection)
+	_active_collection.skill_selected.connect(_on_active_skill_selected)
+	_active_collection.closed.connect(close_active_collection)
+	_active_collection.hide()
+	_collection_input_guard = REWARD_INPUT_GUARD.new()
+	_collection_input_guard.name = "SkillCollectionInputGuard"
+	add_child(_collection_input_guard)
+	_collection_input_guard.state_changed.connect(_on_collection_input_state_changed)
 	var touch := get_node_or_null("/root/TouchControls")
 	if touch != null:
 		touch.touch_mode_changed.connect(set_touch_layout)
@@ -187,6 +208,8 @@ func set_touch_layout(enabled: bool) -> void:
 	_refresh_input_hint()
 	_touch_safe_top = MOBILE_LAYOUT.safe_top(self) if enabled else -1.0
 	_touch_safe_insets = MOBILE_LAYOUT.safe_insets(self) if enabled else Vector4.ZERO
+	if is_active_collection_open():
+		_active_collection.present(_active_inventory, _touch_layout, MOBILE_LAYOUT.safe_insets(self), screen_kind)
 
 
 func _on_touch_layout_changed() -> void:
@@ -196,6 +219,8 @@ func _on_touch_layout_changed() -> void:
 		_mobile_layout.apply(self, true)
 		if is_instance_valid(_navigation_overlay):
 			_navigation_overlay.set_touch_layout(true, _touch_safe_top)
+		if is_active_collection_open():
+			_active_collection.present(_active_inventory, true, _touch_safe_insets, screen_kind)
 
 
 ## Modes may attach read-only navigation without depending on private UI nodes.
@@ -244,6 +269,15 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	if _collection_return_blocked:
+		var touch := get_node_or_null("/root/TouchControls")
+		var held: bool = Input.is_anything_pressed() or (touch != null and touch.has_held_touches())
+		for action: StringName in REWARD_INPUT_GUARD.AXIS_ACTIONS:
+			if Input.is_action_pressed(action): held = true
+		_collection_neutral = 0.0 if held else _collection_neutral + minf(delta, 0.1)
+		if _collection_neutral >= 0.12:
+			_collection_return_blocked = false
+			_on_reward_input_state_changed()
 	if _mechanic_remaining > 0.0:
 		_mechanic_remaining = maxf(0.0, _mechanic_remaining - delta)
 		if _mechanic_remaining <= 0.0:
@@ -282,7 +316,17 @@ func _handle_menu_input(event: InputEvent) -> void:
 	var viewport := get_viewport()
 	if not is_instance_valid(viewport) or not viewport.is_inside_tree():
 		return
+	if is_active_collection_open() and (event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"pause_game")):
+		viewport.set_input_as_handled()
+		close_active_collection()
+		return
+	if is_active_collection_open() and not _collection_input_guard.can_select():
+		viewport.set_input_as_handled()
+		return
 	if screen_kind == &"reward" and not _reward_input_guard.can_select():
+		return
+	if screen_kind == &"reward" and _collection_return_blocked:
+		viewport.set_input_as_handled()
 		return
 	if screen_kind == &"result" and not event.is_action_pressed(&"mute_audio") and not is_result_ready():
 		viewport.set_input_as_handled()
@@ -314,7 +358,7 @@ func _handle_menu_input(event: InputEvent) -> void:
 		return
 	var direction := INPUT_CONTRACT.navigation_step(event, screen_kind != &"settings")
 	if direction != 0:
-		if screen_kind == &"pause" and event is InputEventKey:
+		if screen_kind == &"pause" and event is InputEventKey and not is_active_collection_open():
 			pause_navigation.emit(event)
 		viewport.set_input_as_handled()
 		_move_focus(direction)
@@ -343,6 +387,8 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 	if player == null:
 		return
 	_hud_player = player
+	if player.has_method("get_active_inventory_snapshot"):
+		set_active_inventory(player.get_active_inventory_snapshot())
 	_sync_touch_context()
 	_hud_region.text = "%s  /  %s" % [region_title, _category_title(StringName(room_node.get("category", &"combat")))]
 	_hud_room.text = _t(&"ROGUE_HUD_ROOM", "房间 %d  ·  微光 %d") % [int(snapshot.get("room_count", 0)) + 1, int(snapshot.get("glimmer", 0))]
@@ -385,9 +431,12 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 	_hud_weapon_bar.max_value = maxf(0.01, float(_hud_resonance.get("duration", 3.0))) if resonance_active else maxi(1, int(_hud_resonance.get("required", 8)))
 	_hud_weapon_bar.value = float(_hud_resonance.get("remaining", 0.0)) if resonance_active else float(_hud_resonance.get("charge", 0))
 	_hud_weapon_bar.add_theme_stylebox_override("fill", SHARED_THEME.bar_style(GOLD if resonance_active else FOLD))
-	var active_title := _t(&"ROGUE_HUD_EMPTY_ACTIVE", "未装备主动道具")
+	var active_title := _t(&"ROGUE_HUD_EMPTY_ACTIVE", "未装备主动技能")
 	if player.active_item_slot.definition != null:
 		active_title = player.active_item_slot.definition.title
+		_hud_active_badge.configure(player.active_item_slot.definition.content_id, player.active_item_slot.definition.accent)
+	else:
+		_hud_active_badge.configure(&"", MUTED)
 	var active_ratio := player.get_active_item_cooldown_ratio()
 	var active_ready := active_ratio <= 0.01 and player.active_item_slot.definition != null
 	if player.active_item_slot.definition == null:
@@ -449,7 +498,7 @@ func show_reward(choices: Array[Dictionary], room_title: String) -> void:
 	_reward_selection_locked = false
 	_pending_reward_id = &""
 	visual_canvas.configure(&"reward", FOLD)
-	_reward_title.text = _t(&"ROGUE_REWARD_TITLE", "%s 已澄清 · 选择一道折痕") % room_title
+	_reward_title.text = _t(&"ROGUE_REWARD_TITLE", "%s · 选择一项奖励") % room_title
 	for index in _reward_buttons.size():
 		var button := _reward_buttons[index]
 		if index >= choices.size():
@@ -469,6 +518,7 @@ func show_reward(choices: Array[Dictionary], room_title: String) -> void:
 		button.reveal(float(index) * 0.085)
 	_set_focus_group([])
 	_reward_input_guard.begin(_screens[&"reward"])
+	_reward_collection_button.visible = not _active_inventory.is_empty()
 
 
 func show_route(region_snapshot: Dictionary, current_id: StringName, exits: Array[String]) -> void:
@@ -581,6 +631,8 @@ func reset_feedback() -> void:
 
 
 func cancel_reward_selection() -> void:
+	if is_instance_valid(_active_collection): _active_collection.hide()
+	_collection_return_blocked = false
 	_cancel_reward_motion()
 	_set_focus_group([])
 
@@ -606,7 +658,7 @@ func _reward_choice_hint() -> String:
 			arsenal_hint = "  ·  武器全部保留，重选升阶"
 			break
 	if _touch_layout:
-		return "轻触一张折痕，确认本次强化" + arsenal_hint
+		return "轻触一张卡片，领取奖励" + arsenal_hint
 	# Rewards cannot be dismissed, so show only the shared selection/confirm
 	# bindings and omit the menu's Back action.
 	var hint := INPUT_CONTRACT.menu_hint(_input_device == &"gamepad")
@@ -620,6 +672,66 @@ func show_pause() -> void:
 	if _pause_browse_status != null:
 		_pause_browse_status.visible = _browse_mode_enabled
 	_set_focus_group(_visible_buttons(_focus_groups.get(&"pause", [])))
+
+
+func set_active_inventory(snapshot: Array[Dictionary]) -> void:
+	_active_inventory = snapshot.duplicate(true)
+	if is_instance_valid(_pause_collection_button):
+		var title := "未装备"
+		for entry in _active_inventory:
+			if bool(entry.get("equipped", false)): title = str(entry.get("title", ""))
+		_pause_collection_button.text = "主动技能册 · %d 件\n当前：%s" % [_active_inventory.size(), title]
+	if is_instance_valid(_reward_collection_button):
+		_reward_collection_button.text = "技能册 · %d 件" % _active_inventory.size()
+		_reward_collection_button.visible = not _active_inventory.is_empty()
+	if is_active_collection_open():
+		_active_collection.present(_active_inventory, _touch_layout, MOBILE_LAYOUT.safe_insets(self), screen_kind)
+		_on_collection_input_state_changed()
+
+
+func is_active_collection_open() -> bool:
+	return is_instance_valid(_active_collection) and _active_collection.visible
+
+
+func open_active_collection() -> bool:
+	if not visible or screen_kind not in [&"pause", &"reward"] or _reward_selection_locked and screen_kind == &"reward":
+		return false
+	if screen_kind == &"reward" and (not _reward_input_guard.can_select() or _collection_return_blocked):
+		return false
+	_active_collection.present(_active_inventory, _touch_layout, MOBILE_LAYOUT.safe_insets(self), screen_kind)
+	_set_focus_group([])
+	_collection_input_guard.begin(_active_collection)
+	if screen_kind == &"reward":
+		for button in _reward_buttons: button.set_selection_available(false)
+	return true
+
+
+func close_active_collection() -> void:
+	if not is_active_collection_open(): return
+	_collection_input_guard.cancel()
+	_active_collection.hide()
+	_set_focus_group([])
+	if screen_kind == &"reward":
+		# The original reward guard and draft remain intact. Only wait for the
+		# book's closing input to become neutral before restoring card focus.
+		_collection_return_blocked = true
+		_collection_neutral = 0.0
+	else:
+		_set_focus_group(_visible_buttons(_focus_groups.get(&"pause", [])))
+
+
+func _on_collection_input_state_changed() -> void:
+	if not is_active_collection_open(): return
+	var available: bool = _collection_input_guard.can_select()
+	for button in _active_collection._buttons:
+		button.disabled = not available
+	if available:
+		_set_focus_group(_active_collection.focus_buttons)
+
+
+func _on_active_skill_selected(id: StringName) -> void:
+	if is_active_collection_open() and _collection_input_guard.can_select():
+		active_relic_selected.emit(id)
 
 
 func _refresh_pause_arsenal() -> void:
@@ -925,10 +1037,21 @@ func _build_hud() -> void:
 	_hud_dash = dash_card["state"] as Label
 	_hud_dash_bar = dash_card["bar"] as ProgressBar
 
-	var active_card := _hud_action_card("主动道具", "Q / X", GOLD, 280.0)
+	var active_card := _hud_action_card("主动技能", "Q / X", GOLD, 280.0)
 	action_band.add_child(active_card["panel"])
 	_hud_active = active_card["state"] as Label
 	_hud_active_bar = active_card["bar"] as ProgressBar
+	var active_stack := _hud_active.get_parent()
+	var state_index := _hud_active.get_index()
+	active_stack.remove_child(_hud_active)
+	var active_row := HBoxContainer.new()
+	active_row.add_theme_constant_override("separation", 8)
+	active_stack.add_child(active_row)
+	active_stack.move_child(active_row, state_index)
+	_hud_active_badge = ACTIVE_BADGE.new()
+	active_row.add_child(_hud_active_badge)
+	_hud_active.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	active_row.add_child(_hud_active)
 
 	var weapon_panel := PanelContainer.new()
 	weapon_panel.name = "WeaponArsenalCard"
@@ -1041,7 +1164,7 @@ func _build_reward() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 22)
 	margin.add_child(stack)
-	var eyebrow := _label("折痕选择 · 本次航行生效", 20, FOLD)
+	var eyebrow := _label("航行补给 · 本局生效", 20, FOLD)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(eyebrow)
 	_reward_title = _label("", 38, PAPER)
@@ -1062,9 +1185,18 @@ func _build_reward() -> void:
 		button.focus_entered.connect(_on_reward_focused.bind(button))
 		_reward_buttons.append(button)
 		_reward_content.append({"title": button.title_label, "description": button.description_label, "rarity": button.rarity_label, "level": button.level_label})
+	var reward_footer := HBoxContainer.new()
+	reward_footer.add_theme_constant_override("separation", 24)
+	stack.add_child(reward_footer)
 	_reward_hint = _label("", 18, MUTED)
+	_reward_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_reward_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_reward_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stack.add_child(_reward_hint)
+	reward_footer.add_child(_reward_hint)
+	_reward_collection_button = _button("技能册", 64)
+	_reward_collection_button.custom_minimum_size.x = 280
+	_reward_collection_button.pressed.connect(open_active_collection)
+	reward_footer.add_child(_reward_collection_button)
 	_reward_input_guard = REWARD_INPUT_GUARD.new()
 	_reward_input_guard.name = "RewardInputGuard"
 	add_child(_reward_input_guard)
@@ -1293,6 +1425,11 @@ func _build_pause() -> void:
 	_pause_arsenal_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_pause_arsenal_hint.custom_minimum_size.x = 530
 	inventory.add_child(_pause_arsenal_hint)
+	_pause_collection_button = _button("主动技能册", 96)
+	_pause_collection_button.add_theme_font_size_override("font_size", 23)
+	_pause_collection_button.pressed.connect(open_active_collection)
+	inventory.add_child(_pause_collection_button)
+	_focus_groups[&"pause"].append(_pause_collection_button)
 
 
 func _build_leave_confirmation() -> void:
@@ -1541,6 +1678,9 @@ func _button(text_value: String, minimum_height: float) -> Button:
 
 
 func _show_only(kind: StringName) -> void:
+	if is_instance_valid(_active_collection): _active_collection.hide()
+	if is_instance_valid(_collection_input_guard): _collection_input_guard.cancel()
+	_collection_return_blocked = false
 	if screen_kind == &"reward" and kind != &"reward":
 		_cancel_reward_motion()
 	if screen_kind == &"result" and kind != &"result":
@@ -1609,7 +1749,7 @@ func _visible_buttons(source: Variant) -> Array:
 
 
 func _on_reward_pressed(button: Button) -> void:
-	if screen_kind != &"reward" or _reward_selection_locked or not _reward_input_guard.can_select() or button.disabled or not button.is_visible_in_tree():
+	if screen_kind != &"reward" or _reward_selection_locked or is_active_collection_open() or _collection_return_blocked or not _reward_input_guard.can_select() or button.disabled or not button.is_visible_in_tree():
 		return
 	if not button.confirm_selection():
 		return
@@ -1618,7 +1758,7 @@ func _on_reward_pressed(button: Button) -> void:
 	for card in _reward_buttons:
 		card.lock_choice(card == button)
 	_set_focus_group([])
-	_reward_hint.text = "折痕已刻下"
+	_reward_hint.text = "奖励已确认"
 	audio_director.play_sfx(&"act", 1.08, -3.0)
 
 
@@ -1641,12 +1781,15 @@ func _cancel_reward_motion() -> void:
 func _on_reward_input_state_changed() -> void:
 	if screen_kind != &"reward" or _reward_selection_locked:
 		return
-	var available: bool = _reward_input_guard.can_select()
+	var available: bool = _reward_input_guard.can_select() and not is_active_collection_open() and not _collection_return_blocked
+	_reward_collection_button.disabled = not available
 	for card in _reward_buttons:
 		card.set_selection_available(available)
 	_reward_hint.text = _reward_choice_hint() if available else _reward_input_guard.get_hint()
 	if available:
-		_set_focus_group(_visible_buttons(_reward_buttons))
+		var choices := _visible_buttons(_reward_buttons)
+		if _reward_collection_button.visible: choices.append(_reward_collection_button)
+		_set_focus_group(choices)
 
 
 func _on_reward_focused(button: Button) -> void:
@@ -1693,7 +1836,7 @@ func _rarity_title(rarity: int) -> String:
 
 
 func _choice_kind_title(kind: StringName) -> String:
-	return {&"weapon": "自动武器 · 同行与升阶", &"active": "主动道具 · 替换当前槽位"}.get(kind, "局内升级")
+	return {&"weapon": "自动武器 · 同行与升阶", &"active": "主动技能 · 收藏并装备"}.get(kind, "局内升级")
 
 
 func _risk_title(risk: int) -> String:

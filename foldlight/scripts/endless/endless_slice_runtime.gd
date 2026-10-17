@@ -65,6 +65,7 @@ func _ready() -> void:
 	_navigation = preload("res://scripts/endless/navigation_overlay.gd").new()
 	presentation.attach_navigation_overlay(_navigation)
 	presentation.reward_chosen.connect(_on_reward_chosen)
+	presentation.active_relic_selected.connect(_on_active_relic_selected)
 	presentation.resume_requested.connect(_resume_game)
 	presentation.pause_requested.connect(_pause_game)
 	presentation.settings_requested.connect(_on_settings_requested)
@@ -224,6 +225,8 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	_transitioning_to_title = false
 	var snapshot := controller.enter_mode(seed, player)
 	player.weapon_mount.set_weapon_levels(controller.weapon_levels)
+	player.active_item_slot.restore_collection(snapshot)
+	_refresh_active_inventory()
 	_refresh_combined_modifiers()
 	controller.force_next_wave()
 	_restore_survival_music()
@@ -281,6 +284,7 @@ func _advance_reward_completion(delta: float) -> void:
 	if _reward_completion_remaining <= 0.00001:
 		_reward_completion_remaining = 0.0
 		_modal_kind = &"reward"
+		_refresh_active_inventory()
 		presentation.show_reward(_reward_card_choices(), _reward_objective_title)
 
 
@@ -321,6 +325,7 @@ func _pause_game() -> void:
 		_cancel_reward_entry()
 	_modal_kind = &"pause"
 	_set_combat_suspended(true)
+	_refresh_active_inventory()
 	presentation.show_pause()
 	audio_director.set_music_context(&"paused")
 
@@ -561,7 +566,7 @@ func _reward_card_choices() -> Array[Dictionary]:
 	for option: Dictionary in _modal_options:
 		var choice := option.duplicate(true)
 		choice["content_id"] = StringName(option.get("id", &""))
-		if StringName(option.get("choice_kind", &"")) != &"weapon":
+		if StringName(option.get("choice_kind", &"")) not in [&"weapon", &"active"]:
 			choice["display_rarity"] = "%s · 任务进化" % str(option.get("lane_title", "成长"))
 			choice["display_level"] = "刻印  Lv.%d · 本局累积" % int(option.get("next_level", 1))
 			choice["accent"] = FoldlightTheme.GOLD if StringName(option.get("lane_id", &"")) == &"sustain" else FoldlightTheme.FOLD
@@ -573,6 +578,10 @@ func _on_mission_reward_claimed(reward: Dictionary) -> void:
 	var health_before := player.health
 	if StringName(reward.get("choice_kind", &"")) == &"weapon":
 		player.weapon_mount.set_weapon_levels(controller.weapon_levels)
+	elif StringName(reward.get("choice_kind", &"")) == &"active":
+		player.active_item_slot.acquire(FoldlightRogueContentCatalog.active_item_by_id(StringName(reward.get("id", &""))))
+	controller.set_active_collection(player.active_item_slot.get_save_snapshot())
+	_refresh_active_inventory()
 	_refresh_combined_modifiers()
 	var reward_modifiers_variant: Variant = reward.get("modifiers", {})
 	var reward_modifiers := reward_modifiers_variant as Dictionary if reward_modifiers_variant is Dictionary else {}
@@ -619,6 +628,22 @@ func _cancel_reward_entry() -> void:
 	_fold_task_id = &""
 	_pending_fold_release_serial = 0
 	presentation.cancel_reward_selection()
+
+
+func _refresh_active_inventory() -> void:
+	presentation.set_active_inventory(player.get_active_inventory_snapshot())
+
+
+func _on_active_relic_selected(item_id: StringName) -> void:
+	if run_ended or _transitioning_to_title or not controller.active:
+		return
+	var selecting_reward := _modal_kind == &"reward" and presentation.screen_kind == &"reward" and not _claiming_reward
+	var selecting_pause := _modal_kind == &"pause" and presentation.screen_kind == &"pause" and _web_race_bridge == null
+	if not (selecting_reward or selecting_pause) or not player.active_item_slot.select(item_id):
+		return
+	controller.set_active_collection(player.active_item_slot.get_save_snapshot())
+	_refresh_active_inventory()
+	_refresh_hud()
 
 
 func _finish_run(reason: StringName = &"player_defeated") -> void:
