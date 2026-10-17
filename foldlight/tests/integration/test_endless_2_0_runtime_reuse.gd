@@ -27,6 +27,10 @@ func _run() -> void:
 	_check(slice.combat_runtime is FoldlightRogueCombatRuntime, "endless combat is the shared 2.0 runtime")
 	_check(slice.combat_runtime.player == slice.player, "shared combat runtime is bound to the shared player")
 	_check(slice.combat_runtime.room == slice.world.room_runtime, "shared combat runtime is bound to the shared room")
+	# Enemy creation now follows a visible warning and a bounded two-actor
+	# arrival step. Advance that real queue before checking the reused factory.
+	for warning_step in 12:
+		slice._advance_spawn_queue(0.1)
 	_check(slice.combat_runtime.enemies.size() > 0, "the first endless wave reaches the shared enemy factory")
 	for enemy in slice.combat_runtime.enemies:
 		_check(enemy is FoldlightRogueEnemyActor, "every initial endless enemy is a reusable 2.0 actor")

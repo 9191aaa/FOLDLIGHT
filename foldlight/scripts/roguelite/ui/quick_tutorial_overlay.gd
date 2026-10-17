@@ -11,30 +11,31 @@ signal tutorial_completed
 signal tutorial_skipped
 signal step_changed(step_index: int, step_count: int)
 
+const INPUT_CONTRACT = preload("res://scripts/ui/input_contract.gd")
 const MAX_STEPS: int = 3
 const DEFAULT_STEPS: Array[Dictionary] = [
 	{
 		"tag": "01  起步",
 		"title": "先移动，再穿线",
-		"keyboard": "WASD  移动     SHIFT  冲刺",
-		"gamepad": "左摇杆  移动     B  冲刺",
+		"keyboard": INPUT_CONTRACT.KEYBOARD_MOVE + "     " + INPUT_CONTRACT.KEYBOARD_DASH,
+		"gamepad": INPUT_CONTRACT.GAMEPAD_MOVE + "     " + INPUT_CONTRACT.GAMEPAD_DASH,
 		"body": "移动约一小段，再冲刺一次；冲刺 2.0 秒恢复。",
 		"warning": "冲刺期间短暂无敌",
 	},
 	{
 		"tag": "02  核心",
 		"title": "按住收纳，松开追踪",
-		"keyboard": "按住 SPACE  折域     松开  返航",
-		"gamepad": "按住 A  折域     松开 A  返航",
+		"keyboard": INPUT_CONTRACT.KEYBOARD_FOLD,
+		"gamepad": INPUT_CONTRACT.GAMEPAD_FOLD,
 		"body": "基础收纳 8 枚可反射弹；松开后自动变成追踪弹。",
 		"warning": "每轮收纳后，1.5 秒才能再次展开",
 	},
 	{
 		"tag": "03  生存",
 		"title": "你管走位，武器会开火",
-		"keyboard": "自动武器  自动攻击     Q  主动技能",
-		"gamepad": "自动武器  自动攻击     X  主动技能",
-		"body": "自动武器负责输出；主动技能留着解围。",
+		"keyboard": "自动武器  自动攻击     " + INPUT_CONTRACT.KEYBOARD_ACTIVE,
+		"gamepad": "自动武器  自动攻击     " + INPUT_CONTRACT.GAMEPAD_ACTIVE,
+		"body": "武器自动寻敌攻击，返光自动追踪；装上主动技能后，用 Q / X 解围。",
 		"warning": "黑金弹不可反射；脚下地形可能增益，也可能限制走位",
 	},
 ]
@@ -48,6 +49,13 @@ var _step_index: int = 0
 var _gamepad_mode: bool = false
 var _finished: bool = false
 var _transition: Tween
+var _touch_layout := false
+
+
+func set_touch_layout(enabled: bool) -> void:
+	_touch_layout = enabled
+	skip_button.text = "跳过教学" if enabled else INPUT_CONTRACT.TUTORIAL_SKIP_HINT
+	_apply_step(false)
 
 @onready var card: PanelContainer = %Card
 @onready var content: VBoxContainer = %Content
@@ -72,7 +80,7 @@ func _ready() -> void:
 	_apply_styles()
 	continue_button.pressed.connect(advance)
 	skip_button.pressed.connect(skip)
-	skip_button.text = "F / LB  跳过并开始"
+	skip_button.text = INPUT_CONTRACT.TUTORIAL_SKIP_HINT
 	set_manual_advance_enabled(manual_advance_enabled)
 	_apply_step(false)
 
@@ -80,12 +88,7 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventJoypadButton and event.is_pressed():
-		set_input_mode(true)
-	elif event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) >= 0.45:
-		set_input_mode(true)
-	elif event is InputEventKey and event.is_pressed() and not event.is_echo():
-		set_input_mode(false)
+	set_input_mode(INPUT_CONTRACT.device_for_event(event, &"gamepad" if _gamepad_mode else &"keyboard") == &"gamepad")
 	if listen_for_skip_action and event.is_action_pressed(&"open_tutorial") and not event.is_echo():
 		skip()
 		get_viewport().set_input_as_handled()
@@ -104,7 +107,7 @@ func begin(prefer_gamepad: bool = false) -> void:
 	_transition.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	_transition.tween_property(self, "modulate:a", 1.0, transition_duration)
 	if manual_advance_enabled:
-		continue_button.call_deferred("grab_focus")
+		_focus_continue.call_deferred()
 
 
 ## Replaces the built-in copy while keeping the three-step limit.
@@ -184,7 +187,14 @@ func set_manual_advance_enabled(enabled: bool) -> void:
 	continue_button.focus_mode = Control.FOCUS_ALL if enabled else Control.FOCUS_NONE
 	skip_button.focus_mode = Control.FOCUS_ALL if enabled else Control.FOCUS_NONE
 	if enabled and visible:
-		continue_button.call_deferred("grab_focus")
+		_focus_continue.call_deferred()
+
+
+func _focus_continue() -> void:
+	if not is_inside_tree() or is_queued_for_deletion() or not is_visible_in_tree() or _finished or not manual_advance_enabled:
+		return
+	if is_instance_valid(continue_button) and continue_button.is_inside_tree() and not continue_button.is_queued_for_deletion() and continue_button.is_visible_in_tree() and not continue_button.disabled:
+		continue_button.grab_focus()
 
 
 func get_current_step() -> int:
@@ -207,6 +217,9 @@ func _apply_step(animate_change: bool) -> void:
 	title_label.text = str(step.get("title", "新手提示"))
 	device_label.text = "手柄" if _gamepad_mode else "单手键盘"
 	controls_label.text = str(step.get("gamepad" if _gamepad_mode else "keyboard", ""))
+	if _touch_layout:
+		device_label.text = "触屏"
+		controls_label.text = ["左下摇杆移动 · 轻触冲刺穿过弹线", "按住右侧收纳 · 松开返光追踪", "武器自动开火 · 黑金弹不可收纳 · 技能可解围"][mini(_step_index, 2)]
 	body_label.text = str(step.get("body", ""))
 	warning_label.text = "◆  %s" % str(step.get("warning", ""))
 	page_label.text = "%d / %d" % [_step_index + 1, _steps.size()]
@@ -236,45 +249,27 @@ func _apply_styles() -> void:
 	device_label.add_theme_font_size_override("font_size", 18)
 	controls_label.add_theme_color_override("font_color", FoldlightRogueUITheme.GOLD)
 	controls_label.add_theme_font_size_override("font_size", 25)
-	body_label.add_theme_color_override("font_color", Color(0.75, 0.86, 0.84, 1.0))
+	body_label.add_theme_color_override("font_color", FoldlightTheme.PAPER)
 	body_label.add_theme_font_size_override("font_size", 21)
-	warning_label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.42, 1.0))
+	warning_label.add_theme_color_override("font_color", FoldlightTheme.GOLD)
 	warning_label.add_theme_font_size_override("font_size", 18)
 	page_label.add_theme_color_override("font_color", FoldlightRogueUITheme.MUTED)
 	page_label.add_theme_font_size_override("font_size", 18)
-	step_progress.add_theme_stylebox_override("background", _bar_style(Color(0.08, 0.14, 0.17, 0.9)))
+	step_progress.add_theme_stylebox_override("background", _bar_style(FoldlightTheme.INK))
 	step_progress.add_theme_stylebox_override("fill", _bar_style(FoldlightRogueUITheme.FOLD))
 
 
 func _card_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.012, 0.030, 0.060, 0.96)
-	style.border_color = Color(0.29, 0.88, 0.83, 0.64)
-	style.border_width_left = 5
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 2
-	style.corner_radius_top_left = 3
-	style.corner_radius_top_right = 18
-	style.corner_radius_bottom_left = 3
-	style.corner_radius_bottom_right = 18
-	style.content_margin_left = 30.0
-	style.content_margin_top = 22.0
-	style.content_margin_right = 26.0
-	style.content_margin_bottom = 20.0
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.48)
-	style.shadow_size = 18
-	style.shadow_offset = Vector2(0.0, 8.0)
+	var style := FoldlightTheme.panel_style()
+	style.border_color = Color(FoldlightTheme.FOLD, 0.50)
+	style.border_width_left = 3
 	return style
 
 
 func _badge_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = FoldlightRogueUITheme.FOLD
-	style.corner_radius_top_left = 2
-	style.corner_radius_top_right = 9
-	style.corner_radius_bottom_left = 2
-	style.corner_radius_bottom_right = 9
+	style.set_corner_radius_all(2)
 	style.content_margin_left = 13.0
 	style.content_margin_right = 13.0
 	style.content_margin_top = 7.0
@@ -284,11 +279,9 @@ func _badge_style() -> StyleBoxFlat:
 
 func _warning_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.075, 0.035, 0.58)
-	style.border_color = Color(1.0, 0.68, 0.26, 0.58)
-	style.border_width_left = 3
-	style.corner_radius_top_right = 8
-	style.corner_radius_bottom_right = 8
+	style.bg_color = Color(FoldlightTheme.GOLD, 0.07)
+	style.border_color = Color(FoldlightTheme.GOLD, 0.50)
+	style.border_width_left = 2
 	style.content_margin_left = 13.0
 	style.content_margin_right = 13.0
 	style.content_margin_top = 8.0
@@ -297,13 +290,7 @@ func _warning_style() -> StyleBoxFlat:
 
 
 func _bar_style(color: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = 3
-	style.corner_radius_top_right = 3
-	style.corner_radius_bottom_left = 3
-	style.corner_radius_bottom_right = 3
-	return style
+	return FoldlightTheme.bar_style(color)
 
 
 func _animate_out() -> void:

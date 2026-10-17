@@ -1,11 +1,7 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
-[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="3_hud"]
-[ext_resource type="Script" path="res://scripts/components/tip_queue.gd" id="4_tip_queue"]
-[ext_resource type="Script" path="res://scripts/components/objective_tracker.gd" id="5_objective"]
-[ext_resource type="Script" path="res://scripts/components/challenge_director.gd" id="6_challenge"]
 [ext_resource type="Script" path="res://scripts/roguelite/run_controller.gd" id="7_rogue_controller"]
 [ext_resource type="Script" path="res://scripts/roguelite/route_generator.gd" id="8_route_generator"]
 [ext_resource type="Script" path="res://scripts/roguelite/run_state.gd" id="9_run_state"]
@@ -19,15 +15,6 @@
 script = ExtResource("1_game")
 
 [node name="Player" parent="." instance=ExtResource("2_player")]
-
-[node name="TipQueue" type="Node" parent="."]
-script = ExtResource("4_tip_queue")
-
-[node name="ObjectiveTracker" type="Node" parent="."]
-script = ExtResource("5_objective")
-
-[node name="ChallengeDirector" type="Node" parent="."]
-script = ExtResource("6_challenge")
 
 [node name="RogueRunController" type="Node" parent="."]
 script = ExtResource("7_rogue_controller")
@@ -51,7 +38,5 @@ script = ExtResource("13_reward_director")
 
 [node name="MechanicIntroductionTracker" type="Node" parent="RogueSession"]
 script = ExtResource("14_mechanic_tracker")
-
-[node name="HUD" parent="." instance=ExtResource("3_hud")]
 
 [node name="RoguePresentation" parent="." instance=ExtResource("15_rogue_presentation")]

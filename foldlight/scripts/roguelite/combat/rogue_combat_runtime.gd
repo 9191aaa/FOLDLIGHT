@@ -1,12 +1,15 @@
 class_name FoldlightRogueCombatRuntime
 extends Node2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal enemy_spawned(actor: Node2D, entry: Dictionary)
 signal enemy_defeated(enemy_id: StringName)
 signal enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary)
 signal projectile_spawned(projectile: FoldlightRogueProjectile)
 signal projectile_captured(captured_count: int, position: Vector2)
 signal player_hit(health_remaining: int)
+signal impact_confirmed(kind: StringName, weight: float)
 signal active_item_resolved(item_id: StringName, snapshot: Dictionary)
 
 const PROJECTILE_SCENE: PackedScene = preload("res://scenes/roguelite/combat/rogue_projectile.tscn")
@@ -14,21 +17,41 @@ const TELEGRAPH_SCENE: PackedScene = preload("res://scenes/roguelite/combat/spaw
 const ZONE_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/ink_denial_zone.tscn")
 const BOSS_SCENE: PackedScene = preload("res://scenes/roguelite/bosses/rogue_boss_actor.tscn")
 const BOSS_TELEGRAPH_SCENE: PackedScene = preload("res://scenes/roguelite/bosses/boss_attack_telegraph.tscn")
+const MIASMA_CLOUD = preload("res://scripts/roguelite/enemies/miasma_cloud.gd")
+const MAX_POISON_CLOUDS: int = 12
 const MAX_PROJECTILES: int = 260
+const MAX_AUTOMATIC_PROJECTILES: int = 64
+const MAX_PROJECTILES_PER_WEAPON: int = 16
 const HIT_VFX_BUDGET_MAX: float = 8.0
 const HIT_VFX_REFILL_PER_SECOND: float = 18.0
 const HIT_VFX_MAX_BURSTS: int = 18
+const MAX_ACTIVE_FLASHES: int = 24
 const HIT_VFX_DURATION: float = 0.22
 const RETURN_NAV_CELL_SIZE: float = 52.0
 const RETURN_NAV_CLEARANCE: float = 18.0
 const RETURN_NAV_CACHE_LIMIT: int = 256
 const RETURN_NAV_TARGET_LIMIT: int = 10
+const ENEMY_QUERY_CELL: float = 160.0
+const PROJECTILE_RADIUS_LIMIT: float = 22.0
 
 var active: bool = false
 var room: FoldlightRoomRuntime
 var player: FoldlightPlayer
 var enemies: Array[Node2D] = []
 var projectiles: Array[FoldlightRogueProjectile] = []
+var last_boss_defeat: Dictionary = {}
+var _boss_aftermath_active: bool = false
+## Endless supplies a live shared allowance (including pending spawns).
+## Negative means the authored roguelite encounter owns population limits.
+var directed_spawn_allowance: int = -1
+var directed_threat_allowance: int = -1
+var directed_spawn_validator: Callable
+var effect_suspension_guard: Callable
+var _poison_clouds: Array[FoldlightMiasmaCloud] = []
+var _poison_hit_remaining: float = 0.0
+var _command_links_active: bool = false
+var _last_dash_blast_serial: int = -1
+var _last_dash_blast: Dictionary = {}
 
 var _spawn_serial: int = 0
 var _support_refresh: float = 0.0
@@ -53,29 +76,39 @@ var _release_hit_stop_remaining: float = 0.0
 var _active_flashes: Array[Dictionary] = []
 var _enemy_hit_bursts: Array[Dictionary] = []
 var _hit_vfx_tokens: float = HIT_VFX_BUDGET_MAX
+var _impact_cooldowns: Dictionary = {}
 var _return_navigation_grid: AStarGrid2D
 var _return_navigation_size: Vector2i = Vector2i.ZERO
 var _return_route_cache: Dictionary = {}
 var _return_nav_queries: int = 0
 var _return_nav_cache_hits: int = 0
 var _return_nav_rebuilds: int = 0
+var _collision_index_active: bool = false
+var _collision_index_dirty: bool = true
+var _enemy_collision_cells: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_INHERIT
 	_rng.seed = 330031
+	set_process(false)
 
 
 func bind(new_room: FoldlightRoomRuntime, new_player: FoldlightPlayer, run_seed: int = 330031) -> void:
 	_unbind_signals()
 	clear_combat()
+	directed_spawn_allowance = -1
+	directed_threat_allowance = -1
+	directed_spawn_validator = Callable()
+	effect_suspension_guard = Callable()
 	room = new_room
 	player = new_player
 	_rng.seed = run_seed
 	if room != null:
 		room.encounter_spawn_telegraph.connect(_on_spawn_telegraph)
 		room.encounter_enemy_requested.connect(_on_enemy_requested)
+		room.beacon_pulse_requested.connect(_on_beacon_pulse_requested)
 	if player != null:
 		player.weapon_mount.shot_requested.connect(_on_player_shot_requested)
 		player.fold_released.connect(_on_player_fold_released)
@@ -91,6 +124,44 @@ func bind(new_room: FoldlightRoomRuntime, new_player: FoldlightPlayer, run_seed:
 func set_active(value: bool) -> void:
 	active = value
 	set_physics_process(active)
+	set_process(active and not _poison_clouds.is_empty())
+	for cloud in _poison_clouds:
+		if is_instance_valid(cloud): cloud.set_simulation_active(active)
+	for enemy in enemies:
+		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.has_method("set_simulation_active"):
+			enemy.call("set_simulation_active", active)
+	if is_instance_valid(room):
+		room.set_interactions_active(active)
+		# These effects own render-frame clocks, unlike actors advanced by this
+		# runtime. Preserve those clocks across pause, rewards and introductions.
+		for child in room.get_children():
+			if child is FoldlightSpawnTelegraph:
+				child.set_simulation_active(active)
+			elif child.is_in_group(&"boss_remnants") and not child.is_queued_for_deletion() and child.has_method("set_simulation_active"):
+				child.call("set_simulation_active", active)
+		for child in room.projectile_container.get_children():
+			if child is FoldlightInkDenialZone or child is FoldlightBossAttackTelegraph:
+				child.set_simulation_active(active)
+
+
+func _on_beacon_pulse_requested(beacon: FoldlightTideBeacon) -> void:
+	if not active or not is_instance_valid(player) or not is_instance_valid(room) or not room.get_tide_beacons().has(beacon) or not beacon.can_pulse(player):
+		return
+	var origins := PackedVector2Array()
+	for projectile in projectiles.duplicate():
+		if origins.size() >= beacon.capture_limit or not player.can_capture():
+			break
+		if not is_instance_valid(projectile) or projectile.is_queued_for_deletion() or not projectile.hostile or not projectile.reflectable:
+			continue
+		if projectile.global_position.distance_to(beacon.global_position) > beacon.capture_radius:
+			continue
+		if player.capture_one():
+			origins.append(projectile.global_position)
+			projectile_captured.emit(player.captured, projectile.global_position)
+			_remove_projectile(projectile)
+	if not origins.is_empty():
+		beacon.resolve_pulse(origins)
+		player.grant_invulnerability(0.65)
 
 
 func apply_build_stats(stats: Dictionary) -> void:
@@ -125,6 +196,17 @@ func get_glimmer_gain_multiplier() -> float:
 
 
 func clear_combat() -> void:
+	_clear_poison_clouds()
+	_poison_hit_remaining = 0.0
+	_command_links_active = false
+	_last_dash_blast_serial = -1
+	_last_dash_blast.clear()
+	_enemy_collision_cells.clear()
+	_collision_index_dirty = true
+	last_boss_defeat.clear()
+	_boss_aftermath_active = false
+	_clear_transient_nodes()
+	_clear_boss_remnants()
 	for enemy in enemies:
 		if is_instance_valid(enemy):
 			enemy.queue_free()
@@ -142,6 +224,7 @@ func clear_combat() -> void:
 	_fold_lock_remaining = 0.0
 	if player != null:
 		player.fold_temporarily_locked = false
+		player.weapon_mount.reset_resonance()
 	_decoy_remaining = 0.0
 	_shield_charges = 0
 	_shield_remaining = 0.0
@@ -152,13 +235,70 @@ func clear_combat() -> void:
 	_active_flashes.clear()
 	_enemy_hit_bursts.clear()
 	_hit_vfx_tokens = HIT_VFX_BUDGET_MAX
+	_impact_cooldowns.clear()
 	_return_route_cache.clear()
 	_return_nav_queries = 0
 	_return_nav_cache_hits = 0
-	queue_redraw()
+	RenderRedraw.request(self)
+
+
+func _clear_transient_nodes() -> void:
+	if not is_instance_valid(room):
+		return
+	# Warnings and denial zones are not registered in the projectile array.
+	# Retire them at the same boundary as actors so a new room/attempt cannot
+	# inherit their geometry or remaining lifetime before deferred frees run.
+	for container in [room.projectile_container, room]:
+		for child in container.get_children():
+			if child is FoldlightRogueProjectile or child is FoldlightInkDenialZone or child is FoldlightSpawnTelegraph or child is FoldlightBossAttackTelegraph:
+				if child.has_method("set_simulation_active"):
+					child.set_simulation_active(false)
+				child.hide()
+				child.queue_free()
+
+
+func _clear_boss_remnants() -> void:
+	if not is_instance_valid(room):
+		return
+	for child in room.get_children():
+		if child.is_in_group(&"boss_remnants"):
+			if child.has_method("set_simulation_active"):
+				child.call("set_simulation_active", false)
+			if child is CanvasItem:
+				child.hide()
+			child.queue_free()
+
+
+func begin_boss_aftermath(origin: Vector2, motion_scale: float = 1.0) -> void:
+	# Only the roguelite session calls this; endless boss waves keep running.
+	_boss_aftermath_active = true
+	set_active(false)
+	_clear_poison_clouds()
+	for enemy in enemies:
+		if is_instance_valid(enemy):
+			enemy.hide()
+			enemy.queue_free()
+	enemies.clear()
+	projectiles.clear()
+	_clear_transient_nodes()
+	_active_flashes.clear()
+	if motion_scale > 0.0:
+		_add_active_flash(origin, FoldlightTheme.GOLD, lerpf(110.0, 390.0, clampf(motion_scale, 0.0, 1.0)), 1.8)
+	RenderRedraw.request(self)
+
+
+func advance_aftermath_feedback(delta: float) -> void:
+	if not active:
+		_update_visual_feedback(maxf(0.0, delta))
+		if _boss_aftermath_active and is_instance_valid(room):
+			for child in room.get_children():
+				if child.is_in_group(&"boss_remnants") and not child.is_queued_for_deletion() and child.has_method("advance_simulation"):
+					child.call("advance_simulation", maxf(0.0, delta))
 
 
 func spawn_hostile_volley(snapshot: Dictionary) -> int:
+	if _boss_aftermath_active:
+		return 0
 	var count := clampi(int(snapshot.get("projectile_count", 1)), 1, 18)
 	var origin := Vector2(snapshot.get("origin", Vector2.ZERO))
 	var exact_projectiles: Array = snapshot.get("projectiles", [])
@@ -228,6 +368,45 @@ func spawn_hostile_volley(snapshot: Dictionary) -> int:
 ## Adapter entry for modes that add scheduling around the 2.0 combat runtime.
 ## Callers choose when and where a wave appears; the factory, actors, attacks,
 ## projectiles, damage and hit feedback remain the original combat chain.
+func register_objective_target(actor: Node2D, entry: Dictionary = {}) -> bool:
+	if not is_instance_valid(room) or not is_instance_valid(actor) or actor.is_queued_for_deletion() or enemies.has(actor):
+		return false
+	if not actor.has_method("take_damage") or not actor.has_signal("defeated"):
+		return false
+	if actor.get_parent() != null and actor.get_parent() != room.enemy_container:
+		return false
+	if actor.get_parent() == null:
+		room.enemy_container.add_child(actor)
+	actor.global_position = Vector2(entry.get("spawn_position", actor.get("target_position")))
+	var metadata := entry.duplicate(true)
+	metadata["is_objective_target"] = true
+	actor.set_meta("counts_for_room", false)
+	actor.set_meta("directed_spawn_entry", metadata)
+	actor.connect("defeated", _on_enemy_defeated)
+	enemies.append(actor)
+	_collision_index_dirty = true
+	if actor.has_method("set_simulation_active"):
+		actor.call("set_simulation_active", active)
+	enemy_spawned.emit(actor, metadata.duplicate(true))
+	return true
+
+
+func unregister_objective_target(actor: Node2D) -> bool:
+	if not is_instance_valid(actor) or not enemies.has(actor):
+		return false
+	var metadata: Dictionary = actor.get_meta("directed_spawn_entry", {})
+	if not bool(metadata.get("is_objective_target", false)):
+		return false
+	enemies.erase(actor)
+	if actor.is_connected("defeated", _on_enemy_defeated):
+		actor.disconnect("defeated", _on_enemy_defeated)
+	if actor.has_method("set_simulation_active"):
+		actor.call("set_simulation_active", false)
+	actor.hide()
+	actor.queue_free()
+	return true
+
+
 func spawn_directed_wave(entries: Array[Dictionary]) -> Array[Node2D]:
 	var spawned: Array[Node2D] = []
 	for source_entry in entries:
@@ -240,11 +419,42 @@ func spawn_directed_wave(entries: Array[Dictionary]) -> Array[Node2D]:
 	return spawned
 
 
+## Retiring distant endless actors is population maintenance, never a kill.
+## Campaign encounter quota, captains, bosses and task fixtures are protected.
+func retire_directed_enemy(actor: Node2D, allow_expired_captain: bool = false) -> bool:
+	if not is_instance_valid(actor) or actor.is_queued_for_deletion() or not enemies.has(actor):
+		return false
+	if actor is FoldlightRogueBossActor or bool(actor.get_meta("counts_for_room", true)):
+		return false
+	var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+	if entry.is_empty() or bool(entry.get("is_objective_target", false)):
+		return false
+	if bool(entry.get("is_captain", false)) and not allow_expired_captain:
+		return false
+	enemies.erase(actor)
+	_collision_index_dirty = true
+	_clear_poison_clouds(StringName(actor.get("actor_id")))
+	if actor.is_connected("defeated", _on_enemy_defeated):
+		actor.disconnect("defeated", _on_enemy_defeated)
+	if actor.has_method("set_simulation_active"):
+		actor.call("set_simulation_active", false)
+	actor.hide()
+	actor.queue_free()
+	# Tethers are references by actor ID; rebuild their buffs immediately.
+	_support_refresh = 0.0
+	_update_support_links(0.0)
+	return true
+
+
 func damage_all_enemies(amount: float) -> void:
+	var was_active := active
 	for enemy in enemies.duplicate():
-		if is_instance_valid(enemy) and enemy.has_method("take_damage"):
+		if was_active and not active:
+			return
+		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.has_method("take_damage"):
+			var before := float(enemy.get("health"))
 			enemy.call("take_damage", amount)
-			_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, Vector2.ZERO, amount)
+			_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, Vector2.ZERO, before - float(enemy.get("health")))
 
 
 func _physics_process(delta: float) -> void:
@@ -258,12 +468,34 @@ func _physics_process(delta: float) -> void:
 	player.tick_automatic_weapons(delta * _weapon_haste, not enemies.is_empty())
 	_update_support_links(delta)
 	_update_enemies(delta)
+	if not active:
+		return
 	_update_dash_trail(delta)
+	if not active:
+		return
 	_update_projectiles(delta)
+	if not active:
+		return
 	_update_denial_zones()
+	if active: _update_poison_damage()
+
+
+func _process(delta: float) -> void:
+	if not active or not is_finite(delta) or delta <= 0.0 or (effect_suspension_guard.is_valid() and bool(effect_suspension_guard.call())):
+		return
+	_poison_hit_remaining = maxf(0.0, _poison_hit_remaining - minf(delta, 0.1))
+	for cloud in _poison_clouds.duplicate():
+		if not is_instance_valid(cloud) or cloud.is_queued_for_deletion():
+			_poison_clouds.erase(cloud)
+		elif cloud.advance_simulation(minf(delta, 0.1)):
+			_retire_poison_cloud(cloud)
+	if _poison_clouds.is_empty(): set_process(false)
 
 
 func _update_temporary_effects(delta: float) -> void:
+	player.weapon_mount.advance_resonance(delta)
+	for kind in _impact_cooldowns:
+		_impact_cooldowns[kind] = maxf(0.0, float(_impact_cooldowns[kind]) - delta)
 	_hostile_slow_remaining = maxf(0.0, _hostile_slow_remaining - delta)
 	_hostile_time_scale = _hostile_slow_scale if _hostile_slow_remaining > 0.0 else 1.0
 	_weapon_overdrive_remaining = maxf(0.0, _weapon_overdrive_remaining - delta)
@@ -276,20 +508,27 @@ func _update_temporary_effects(delta: float) -> void:
 	_terrain_hurt_remaining = maxf(0.0, _terrain_hurt_remaining - delta)
 	if _shield_remaining <= 0.0:
 		_shield_charges = 0
+	_update_visual_feedback(delta)
+
+
+func _update_visual_feedback(delta: float) -> void:
 	if not _active_flashes.is_empty():
 		for index in range(_active_flashes.size() - 1, -1, -1):
 			var flash := _active_flashes[index]
 			flash["remaining"] = maxf(0.0, float(flash.get("remaining", 0.0)) - delta)
 			if float(flash.get("remaining", 0.0)) <= 0.0:
 				_active_flashes.remove_at(index)
-		queue_redraw()
+		RenderRedraw.request(self)
 	_update_enemy_hit_vfx(delta)
 
 
 func _update_enemies(delta: float) -> void:
+	var was_active := active
 	var target := _decoy_position if _decoy_remaining > 0.0 else player.global_position
 	var ally_center := _enemy_center()
 	for enemy in enemies.duplicate():
+		if was_active and not active:
+			return
 		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion():
 			continue
 		if enemy is FoldlightBellBinder:
@@ -308,14 +547,23 @@ func _update_enemies(delta: float) -> void:
 			(enemy as FoldlightRogueBossActor).advance_simulation(delta, player.global_position, _hostile_time_scale)
 		elif enemy is FoldlightRogueEnemyActor:
 			(enemy as FoldlightRogueEnemyActor).advance_simulation(delta, target, _hostile_time_scale)
+		elif enemy.has_method("advance_simulation"):
+			# Independent elite actors use the same target/time-scale contract.
+			enemy.call("advance_simulation", delta, target, _hostile_time_scale)
 		if enemy is CharacterBody2D:
 			var contact_radius := float(enemy.call("get_contact_radius")) if enemy.has_method("get_contact_radius") else 24.0
 			var dangerous := bool(enemy.call("is_contact_dangerous")) if enemy.has_method("is_contact_dangerous") else true
-			if dangerous and enemy.global_position.distance_to(player.global_position) <= player.get_hit_radius() + contact_radius:
+			var contact_point: Vector2 = enemy.global_position
+			if dangerous and enemy.has_method("get_contact_sweep"):
+				var sweep: Dictionary = enemy.call("get_contact_sweep")
+				if not sweep.is_empty():
+					contact_point = Geometry2D.get_closest_point_to_segment(player.global_position, sweep.start, sweep.end)
+			if dangerous and contact_point.distance_to(player.global_position) <= player.get_hit_radius() + contact_radius:
 				_try_hit_player(player.global_position - enemy.global_position)
 
 
 func _update_support_links(delta: float) -> void:
+	_update_command_links()
 	_support_refresh -= delta
 	if _support_refresh > 0.0:
 		return
@@ -342,16 +590,56 @@ func _update_support_links(delta: float) -> void:
 				(target_variant as Node).call("set_support_buff", float(buff.get("attack_interval_multiplier", 0.78)))
 
 
+func _update_command_links() -> void:
+	var commanders: Array[Dictionary] = []
+	for actor in enemies:
+		if actor is FoldlightRogueBossActor and is_instance_valid(actor) and not actor.is_queued_for_deletion():
+			var aura: Dictionary = actor.get_command_aura_snapshot()
+			actor.set_command_targets(PackedVector2Array())
+			if not aura.is_empty(): commanders.append({"actor": actor, "aura": aura, "targets": PackedVector2Array()})
+	if commanders.is_empty() and not _command_links_active: return
+	_command_links_active = not commanders.is_empty()
+	for actor in enemies:
+		if not is_instance_valid(actor) or actor.is_queued_for_deletion() or not actor.has_method("set_command_buff"): continue
+		var combined := {"move_multiplier": 1.0, "projectile_speed_multiplier": 1.0, "attack_interval_multiplier": 1.0}
+		if float(actor.get("health")) > 0.0:
+			for commander in commanders:
+				var aura: Dictionary = commander.aura
+				if actor.global_position.distance_squared_to(Vector2(aura.position)) > pow(float(aura.radius), 2.0): continue
+				combined.move_multiplier = maxf(float(combined.move_multiplier), float(aura.move_multiplier))
+				combined.projectile_speed_multiplier = maxf(float(combined.projectile_speed_multiplier), float(aura.projectile_speed_multiplier))
+				combined.attack_interval_multiplier = minf(float(combined.attack_interval_multiplier), float(aura.attack_interval_multiplier))
+				if (commander.targets as PackedVector2Array).size() < 12:
+					var targets: PackedVector2Array = commander.targets
+					targets.append(actor.global_position)
+					commander.targets = targets
+		actor.call("set_command_buff", combined)
+	for commander in commanders:
+		(commander.actor as FoldlightRogueBossActor).set_command_targets(commander.targets)
+
+
 func _update_projectiles(delta: float) -> void:
+	# Enemy movement has finished for this fixed step. Build a broad phase once
+	# for all friendly bullets, retaining actor order and exact shape checks.
+	_collision_index_active = true
+	_collision_index_dirty = true
+	_advance_projectiles(delta)
+	_collision_index_active = false
+
+
+func _advance_projectiles(delta: float) -> void:
+	var was_active := active
 	for projectile in projectiles.duplicate():
+		if was_active and not active:
+			return
 		if not is_instance_valid(projectile) or projectile.is_queued_for_deletion():
 			projectiles.erase(projectile)
 			continue
 		var projectile_scale := _hostile_time_scale if projectile.hostile else 1.0
 		if not projectile.hostile and projectile.style == &"return_light":
 			_update_return_light_navigation(projectile, delta)
-		elif not projectile.hostile and projectile.homing_strength > 0.0 and not projectile.has_valid_homing_target():
-			projectile.set_homing_target(_select_homing_target(projectile.global_position, projectile.homing_range))
+		elif not projectile.hostile and projectile.homing_strength > 0.0:
+			_update_automatic_homing(projectile)
 		if projectile.hostile and player.folding and projectile.global_position.distance_to(player.global_position) <= player.get_fold_radius():
 			var fold_radius := maxf(1.0, player.get_fold_radius())
 			var fold_distance: float = projectile.global_position.distance_to(player.global_position)
@@ -368,11 +656,17 @@ func _update_projectiles(delta: float) -> void:
 		if projectile.advance_simulation(delta, projectile_scale):
 			_remove_projectile(projectile)
 			continue
+		if not projectile.hostile and projectile.style == &"tide_bell" and projectile.destination_reached:
+			_detonate_tide_bell(projectile)
+			continue
 		if not room.room_bounds.grow(120.0).has_point(projectile.global_position):
 			_remove_projectile(projectile)
 			continue
 		if _resolve_projectile_terrain(projectile, delta):
-			_remove_projectile(projectile)
+			if not projectile.hostile and projectile.style == &"tide_bell":
+				_detonate_tide_bell(projectile)
+			else:
+				_remove_projectile(projectile)
 			continue
 		if projectile.hostile:
 			if projectile.global_position.distance_to(player.global_position) <= projectile.radius + player.get_hit_radius():
@@ -386,6 +680,21 @@ func _update_projectiles(delta: float) -> void:
 				_resolve_friendly_collision(projectile)
 
 
+func _update_automatic_homing(projectile: FoldlightRogueProjectile) -> void:
+	if projectile.has_valid_homing_target() and not projectile.hit_actor_ids.has(StringName(projectile.homing_target.get("actor_id"))):
+		return
+	var selected: Node2D = null
+	var nearest := projectile.homing_range * projectile.homing_range
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or float(enemy.get("health")) <= 0.0 or projectile.hit_actor_ids.has(StringName(enemy.get("actor_id"))):
+			continue
+		var distance := projectile.global_position.distance_squared_to(enemy.global_position)
+		if distance < nearest:
+			nearest = distance
+			selected = enemy
+	projectile.set_homing_target(selected)
+
+
 func _update_terrain_effects(delta: float) -> void:
 	if room == null or player == null:
 		return
@@ -393,6 +702,10 @@ func _update_terrain_effects(delta: float) -> void:
 		if is_instance_valid(enemy):
 			enemy.set_meta("thorn_cooldown", maxf(0.0, float(enemy.get_meta("thorn_cooldown", 0.0)) - delta))
 	for piece in room.get_terrain_pieces():
+		# Solid cover and sun/ink effects never act on enemies. In particular a
+		# large all-wall endless arena must not scan every enemy for every wall.
+		if piece.kind in [FoldlightRogueTerrainDefinition.TerrainKind.PAPER_WALL, FoldlightRogueTerrainDefinition.TerrainKind.REFRACTION_PILLAR]:
+			continue
 		var player_inside := piece.contains_world_point(player.global_position)
 		if piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.INK_POOL and player_inside and _terrain_cleanse_remaining <= 0.0:
 			player.apply_status(&"wet_ink", 0.28)
@@ -404,7 +717,9 @@ func _update_terrain_effects(delta: float) -> void:
 		elif piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.THORN_PAPER and player_inside and _terrain_cleanse_remaining <= 0.0 and _terrain_hurt_remaining <= 0.0:
 			_try_hit_player(-player.velocity)
 			_terrain_hurt_remaining = 0.9
-		for enemy in enemies:
+		if not piece.kind in [FoldlightRogueTerrainDefinition.TerrainKind.CURRENT_LANE, FoldlightRogueTerrainDefinition.TerrainKind.THORN_PAPER]:
+			continue
+		for enemy in enemies.duplicate():
 			if not is_instance_valid(enemy) or not enemy is CharacterBody2D or not piece.contains_world_point((enemy as Node2D).global_position):
 				continue
 			if piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.CURRENT_LANE:
@@ -424,7 +739,9 @@ func _resolve_projectile_terrain(projectile: FoldlightRogueProjectile, delta: fl
 	projectile.set_meta("terrain_grace", grace)
 	if grace > 0.0:
 		return false
-	for piece in room.get_terrain_pieces():
+	for piece: FoldlightTerrainPiece in room.get_terrain_candidates(projectile.global_position):
+		if not is_instance_valid(piece) or piece.is_queued_for_deletion():
+			continue
 		if piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.SUN_PATCH and not projectile.hostile and piece.contains_world_point(projectile.global_position):
 			var accelerated_speed := minf(1500.0, projectile.velocity.length() * (1.0 + 0.75 * delta))
 			projectile.velocity = projectile.velocity.normalized() * accelerated_speed
@@ -447,6 +764,7 @@ func _resolve_projectile_terrain(projectile: FoldlightRogueProjectile, delta: fl
 				tangent = -tangent
 			projectile.velocity = tangent * projectile.velocity.length()
 			projectile.global_position = piece.global_position + radial * (minf(piece.piece_size.x, piece.piece_size.y) * 0.5 + projectile.radius + 6.0)
+			projectile.sync_visual_direction()
 			projectile.set_meta("terrain_grace", 0.16)
 			return false
 		return true
@@ -454,14 +772,20 @@ func _resolve_projectile_terrain(projectile: FoldlightRogueProjectile, delta: fl
 
 
 func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
-	for enemy in enemies.duplicate():
+	if not projectile.can_hit_actor():
+		return
+	var was_active := active
+	for enemy: Node2D in _projectile_enemy_candidates(projectile):
 		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or not enemy.has_method("take_damage"):
 			continue
 		var actor_id := StringName(enemy.get("actor_id"))
 		if projectile.hit_actor_ids.has(actor_id):
 			continue
-		if projectile.global_position.distance_to(enemy.global_position) > projectile.radius + 27.0:
+		if not _projectile_overlaps_actor(projectile, enemy):
 			continue
+		if projectile.style == &"tide_bell":
+			_detonate_tide_bell(projectile)
+			return
 		projectile.hit_actor_ids[actor_id] = true
 		var applied_damage := projectile.damage
 		var enemy_health := float(enemy.get("health"))
@@ -471,20 +795,30 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		if maximum_health > 0.0 and enemy_health / maximum_health <= 0.30:
 			applied_damage *= projectile.execute_damage_multiplier
 		var target_defeated := false
-		if projectile.style == &"tide_bell":
-			_damage_enemies_in_radius(projectile.global_position, 150.0, applied_damage)
-		elif enemy is FoldlightRogueBossActor:
+		var dealt_damage := 0.0
+		if enemy is FoldlightRogueBossActor:
 			var source: StringName = &"return" if projectile.style == &"return_light" else &"weapon"
-			target_defeated = (enemy as FoldlightRogueBossActor).take_damage(applied_damage, source)
+			target_defeated = (enemy as FoldlightRogueBossActor).take_damage(applied_damage, source, projectile.velocity)
 		elif enemy.has_method("take_projectile_damage"):
 			target_defeated = bool(enemy.call("take_projectile_damage", applied_damage, projectile.velocity, projectile.style))
 		else:
 			target_defeated = bool(enemy.call("take_damage", applied_damage))
-		if projectile.style != &"tide_bell":
-			_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, applied_damage)
+		dealt_damage = maxf(0.0, enemy_health - float(enemy.get("health")))
+		_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, dealt_damage, &"return" if projectile.style == &"return_light" else &"weapon")
+		# A killing hit can synchronously open a safe victory/reward screen.
+		# Keep its contact feedback, but never mint echoes or relay shots after
+		# that transition has already cleared the projectile collection.
+		if was_active and not active:
+			return
+		# Armor contact consumes the hit, but is not a successful damage event.
+		# Do not roll proc RNG, mint echoes, chain, or award hit feedback for it.
+		if dealt_damage <= 0.0:
+			if projectile.consume_pierce() or projectile.style == &"tide_bell":
+				_remove_projectile(projectile)
+			return
 		if not projectile.is_echo and projectile.echo_chance > 0.0 and _rng.randf() <= projectile.echo_chance:
 			var echo_direction := projectile.velocity.normalized().rotated(0.32 if _rng.randf() > 0.5 else -0.32)
-			_spawn_projectile({"origin": projectile.global_position + echo_direction * 34.0, "velocity": echo_direction * projectile.velocity.length(), "hostile": false, "reflectable": false, "damage": applied_damage * 0.45, "radius": projectile.radius * 0.8, "lifetime": 1.6, "pierce": 0, "style": projectile.style, "echo_chance": 0.0, "is_echo": true})
+			_spawn_projectile({"origin": projectile.global_position + echo_direction * 34.0, "velocity": echo_direction * projectile.velocity.length(), "hostile": false, "reflectable": false, "damage": applied_damage * 0.45, "radius": projectile.radius * 0.8, "lifetime": 1.6, "pierce": 0, "style": projectile.style, "echo_chance": 0.0, "is_echo": true, "automatic_weapon_id": projectile.automatic_weapon_id, "color": projectile.projectile_color})
 		player.feedback_budget.register_impact(0.18, false)
 		if _try_activate_return_chain(projectile):
 			return
@@ -493,6 +827,62 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		if projectile.consume_pierce() or projectile.style == &"tide_bell":
 			_remove_projectile(projectile)
 		return
+
+
+func _detonate_tide_bell(projectile: FoldlightRogueProjectile) -> void:
+	if projectile.explosion_resolved or projectile.is_queued_for_deletion():
+		return
+	projectile.explosion_resolved = true
+	# One pulse damages each enemy once. Its source stays a weapon, so boss
+	# armor and the elite's closed attack window retain their authored rules.
+	_add_active_flash(projectile.global_position, projectile.projectile_color, projectile.area_radius, 0.44)
+	_damage_enemies_in_radius(projectile.global_position, projectile.area_radius, projectile.damage, &"tide_bell", projectile.velocity, projectile.execute_damage_multiplier)
+	_remove_projectile(projectile)
+
+
+func _projectile_overlaps_actor(projectile: FoldlightRogueProjectile, actor: Node2D) -> bool:
+	# Every shipped enemy has a circular body. Reuse that authored shape so a
+	# large boss and a small support unit do not share a fictitious 27 px target.
+	var collision := actor.get_node_or_null("CollisionShape2D") as CollisionShape2D
+	if collision == null or collision.disabled or not collision.shape is CircleShape2D:
+		return false
+	var radius := (collision.shape as CircleShape2D).radius * absf(collision.global_scale.x)
+	var combined_radius := projectile.radius + radius
+	return projectile.global_position.distance_squared_to(collision.global_position) <= combined_radius * combined_radius
+
+
+func _projectile_enemy_candidates(projectile: FoldlightRogueProjectile) -> Array:
+	if not _collision_index_active or _collision_index_dirty:
+		_rebuild_enemy_collision_index()
+	# Public fields may be set directly by diagnostics or future projectiles.
+	# Out-of-contract radii safely fall back to the full exact collision pass.
+	if projectile.radius > PROJECTILE_RADIUS_LIMIT:
+		return enemies.duplicate()
+	return _enemy_collision_cells.get(_enemy_cell(projectile.global_position), [])
+
+
+func _enemy_cell(point: Vector2) -> Vector2i:
+	return Vector2i(floori(point.x / ENEMY_QUERY_CELL), floori(point.y / ENEMY_QUERY_CELL))
+
+
+func _rebuild_enemy_collision_index() -> void:
+	_enemy_collision_cells.clear()
+	_collision_index_dirty = false
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion():
+			continue
+		var collision := enemy.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		if collision == null or collision.disabled or not collision.shape is CircleShape2D:
+			continue
+		var radius := (collision.shape as CircleShape2D).radius * absf(collision.global_scale.x) + PROJECTILE_RADIUS_LIMIT
+		var first := _enemy_cell(collision.global_position - Vector2.ONE * radius)
+		var last := _enemy_cell(collision.global_position + Vector2.ONE * radius)
+		for y in range(first.y, last.y + 1):
+			for x in range(first.x, last.x + 1):
+				var cell := Vector2i(x, y)
+				if not _enemy_collision_cells.has(cell):
+					_enemy_collision_cells[cell] = []
+				(_enemy_collision_cells[cell] as Array).append(enemy)
 
 
 func _try_activate_return_chain(projectile: FoldlightRogueProjectile) -> bool:
@@ -521,17 +911,31 @@ func _try_activate_return_relay(projectile: FoldlightRogueProjectile, defeated_e
 	return projectile.activate_return_relay(target, route)
 
 
-func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, style: StringName = &"") -> void:
+func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, style: StringName = &"", incoming_velocity: Vector2 = Vector2.ZERO, execute_multiplier: float = 1.0) -> float:
+	var was_active := active
+	var total_damage := 0.0
 	for enemy in enemies.duplicate():
-		if not is_instance_valid(enemy) or enemy.global_position.distance_to(center) > radius:
+		if was_active and not active:
+			return total_damage
+		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or enemy.global_position.distance_to(center) > radius:
 			continue
-		if style == &"return_light" and enemy is FoldlightRogueBossActor:
-			(enemy as FoldlightRogueBossActor).take_damage(amount, &"return")
+		var before := float(enemy.get("health"))
+		var applied_damage := amount
+		if execute_multiplier > 1.0 and enemy.has_method("get_combat_snapshot"):
+			var maximum_health := float((enemy.call("get_combat_snapshot") as Dictionary).get("maximum_health", before))
+			if maximum_health > 0.0 and before / maximum_health <= 0.30:
+				applied_damage *= execute_multiplier
+		if not style.is_empty() and enemy is FoldlightRogueBossActor:
+			(enemy as FoldlightRogueBossActor).take_damage(applied_damage, &"return" if style == &"return_light" else &"weapon", enemy.global_position - center)
 		elif style != &"" and enemy.has_method("take_projectile_damage"):
-			enemy.call("take_projectile_damage", amount, Vector2.ZERO, style)
+			var hit_direction: Vector2 = incoming_velocity if not incoming_velocity.is_zero_approx() else enemy.global_position - center
+			enemy.call("take_projectile_damage", applied_damage, hit_direction, style)
 		elif enemy.has_method("take_damage"):
-			enemy.call("take_damage", amount)
-		_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, enemy.global_position - center, amount)
+			enemy.call("take_damage", applied_damage)
+		var dealt_damage := maxf(0.0, before - float(enemy.get("health")))
+		total_damage += dealt_damage
+		_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, enemy.global_position - center, dealt_damage, &"return" if style == &"return_light" else &"weapon")
+	return total_damage
 
 
 func _try_hit_player(impact_direction: Vector2 = Vector2.ZERO) -> bool:
@@ -553,11 +957,12 @@ func _try_hit_player(impact_direction: Vector2 = Vector2.ZERO) -> bool:
 
 
 func _on_spawn_telegraph(entry: Dictionary, duration: float) -> void:
-	if room == null:
+	if room == null or _boss_aftermath_active:
 		return
 	var telegraph := TELEGRAPH_SCENE.instantiate() as FoldlightSpawnTelegraph
 	room.add_child(telegraph)
 	telegraph.configure(entry, duration)
+	telegraph.set_simulation_active(active)
 
 
 func _on_enemy_requested(entry: Dictionary) -> void:
@@ -565,6 +970,9 @@ func _on_enemy_requested(entry: Dictionary) -> void:
 
 
 func _spawn_enemy_from_entry(entry: Dictionary, counts_for_room: bool) -> Node2D:
+	# A defeated boss may still have an opening-support deferred call queued.
+	if _boss_aftermath_active:
+		return null
 	var boss_definition := FoldlightRogueContentCatalog.boss_by_id(StringName(entry.get("boss_id", &"")))
 	if boss_definition != null:
 		return _spawn_boss_actor(boss_definition, entry, counts_for_room)
@@ -588,6 +996,10 @@ func _spawn_enemy_from_entry(entry: Dictionary, counts_for_room: bool) -> Node2D
 		actor.connect("player_pressure_requested", _on_player_pressure_requested)
 	if actor.has_signal("volley_requested"):
 		actor.connect("volley_requested", spawn_hostile_volley)
+	if actor.has_signal("blast_requested"):
+		actor.connect("blast_requested", _on_enemy_blast_requested)
+	if actor.has_signal("poison_requested"):
+		actor.connect("poison_requested", _on_poison_requested.bind(actor_id))
 	if actor.has_signal("zone_requested"):
 		actor.connect("zone_requested", _on_zone_requested)
 	if actor.has_signal("spawn_requested"):
@@ -601,8 +1013,81 @@ func _spawn_enemy_from_entry(entry: Dictionary, counts_for_room: bool) -> Node2D
 		actor.set("health", scaled_health)
 		actor.set_meta("directed_maximum_health", scaled_health)
 	enemies.append(actor)
+	_collision_index_dirty = true
 	enemy_spawned.emit(actor, entry.duplicate(true))
 	return actor
+
+
+func _on_enemy_blast_requested(snapshot: Dictionary) -> void:
+	if not active or not is_instance_valid(player) or _boss_aftermath_active:
+		return
+	var origin := Vector2(snapshot.get("origin", Vector2.ZERO))
+	var radius := clampf(float(snapshot.get("radius", 160.0)), 0.0, 240.0)
+	_add_active_flash(origin, Color("f17665"), radius, 0.38)
+	if origin.distance_to(player.global_position) <= radius + player.get_hit_radius():
+		# Reuse shields, dash invulnerability, mercy frames and one-heart damage.
+		_try_hit_player(player.global_position - origin)
+
+
+func _on_poison_requested(snapshot: Dictionary, source_id: StringName) -> void:
+	if not active or not is_instance_valid(room) or _boss_aftermath_active: return
+	var source_alive := false
+	for actor in enemies:
+		if is_instance_valid(actor) and not actor.is_queued_for_deletion() and StringName(actor.get("actor_id")) == source_id and float(actor.get("health")) > 0.0:
+			source_alive = true
+			break
+	if not source_alive: return
+	var point := Vector2(snapshot.get("position", Vector2.INF))
+	if not point.is_finite(): return
+	for cloud in _poison_clouds:
+		if is_instance_valid(cloud) and not cloud.is_queued_for_deletion() and cloud.source_id == source_id and cloud.global_position.distance_squared_to(point) < 84.0 * 84.0: return
+	if _poison_clouds.size() >= MAX_POISON_CLOUDS:
+		var oldest: FoldlightMiasmaCloud = _poison_clouds[0]
+		for cloud in _poison_clouds:
+			if is_instance_valid(cloud) and cloud.source_id == source_id:
+				oldest = cloud
+				break
+		_retire_poison_cloud(oldest)
+	var cloud: FoldlightMiasmaCloud = MIASMA_CLOUD.new()
+	room.projectile_container.add_child(cloud)
+	var owned := snapshot.duplicate(true)
+	owned.source_id = source_id
+	cloud.configure(owned)
+	cloud.set_simulation_active(active)
+	_poison_clouds.append(cloud)
+	set_process(true)
+
+
+func _retire_poison_cloud(cloud: FoldlightMiasmaCloud) -> void:
+	_poison_clouds.erase(cloud)
+	if is_instance_valid(cloud):
+		cloud.set_simulation_active(false)
+		cloud.hide()
+		cloud.queue_free()
+
+
+func _clear_poison_clouds(source_id: StringName = &"") -> void:
+	for cloud in _poison_clouds.duplicate():
+		if not is_instance_valid(cloud) or source_id.is_empty() or cloud.source_id == source_id: _retire_poison_cloud(cloud)
+	if _poison_clouds.is_empty(): set_process(false)
+
+
+func _update_poison_damage() -> void:
+	if not active or player == null or _poison_hit_remaining > 0.0 or (effect_suspension_guard.is_valid() and bool(effect_suspension_guard.call())): return
+	for cloud in _poison_clouds:
+		if is_instance_valid(cloud) and not cloud.is_queued_for_deletion() and cloud.consume_damage_at(player.global_position):
+			# Overlapping clouds share one exposure window, including shield and
+			# dash protection; twelve clouds cannot strip twelve shield layers.
+			_poison_hit_remaining = maxf(1.2, float(cloud.tick_interval))
+			_try_hit_player(player.global_position - cloud.global_position)
+			return
+
+
+func get_poison_snapshot() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for cloud in _poison_clouds:
+		if is_instance_valid(cloud) and not cloud.is_queued_for_deletion(): result.append(cloud.get_hazard_snapshot())
+	return result
 
 
 func _on_player_pressure_requested(snapshot: Dictionary) -> void:
@@ -633,26 +1118,43 @@ func _spawn_boss_actor(definition: FoldlightRogueBossDefinition, entry: Dictiona
 		return null
 	var boss := BOSS_SCENE.instantiate() as FoldlightRogueBossActor
 	room.enemy_container.add_child(boss)
-	boss.configure(definition, room.room_bounds, _rng.randi())
+	boss.configure(definition, room.room_bounds, _rng.randi(), entry.get("boss_options", {}))
+	_spawn_serial += 1
+	boss.actor_id = StringName("%s_%d" % [definition.content_id, _spawn_serial])
 	boss.global_position = Vector2(entry.get("spawn_position", room.room_bounds.get_center()))
 	boss.defeated.connect(_on_enemy_defeated)
 	boss.volley_requested.connect(_on_boss_volley_requested)
-	boss.telegraph_requested.connect(_on_boss_telegraph_requested)
-	boss.zone_requested.connect(_on_zone_requested)
-	boss.minion_requested.connect(_on_boss_minion_requested)
+	boss.telegraph_requested.connect(_on_boss_telegraph_requested.bind(boss.actor_id))
+	boss.zone_requested.connect(_on_boss_zone_requested.bind(boss.actor_id))
+	boss.minion_requested.connect(_on_boss_minion_requested.bind(boss.actor_id))
 	boss.arena_hit_requested.connect(_try_hit_player)
+	boss.stagger_started.connect(_on_boss_attack_cancelled.bind(boss.actor_id))
+	boss.phase_changed.connect(_on_boss_attack_cancelled.bind(boss.actor_id))
 	boss.set_meta("counts_for_room", counts_for_room)
+	boss.set_meta("directed_spawn_entry", entry.duplicate(true))
 	enemies.append(boss)
+	_collision_index_dirty = true
 	enemy_spawned.emit(boss, entry.duplicate(true))
 	return boss
 
 
-func _on_boss_telegraph_requested(snapshot: Dictionary) -> void:
-	if room == null:
+func _on_boss_telegraph_requested(snapshot: Dictionary, source_id: StringName = &"") -> void:
+	if room == null or _boss_aftermath_active:
 		return
 	var telegraph := BOSS_TELEGRAPH_SCENE.instantiate() as FoldlightBossAttackTelegraph
 	room.projectile_container.add_child(telegraph)
 	telegraph.configure(snapshot)
+	telegraph.set_meta("boss_source", source_id)
+	telegraph.set_simulation_active(active)
+
+
+func _on_boss_attack_cancelled(_state_value: float, source_id: StringName = &"") -> void:
+	_update_command_links()
+	if not is_instance_valid(room):
+		return
+	for child in room.projectile_container.get_children():
+		if child is FoldlightBossAttackTelegraph and StringName(child.get_meta("boss_source", &"")) == source_id:
+			child.queue_free()
 
 
 func _on_boss_volley_requested(snapshot: Dictionary) -> void:
@@ -673,13 +1175,25 @@ func _on_boss_volley_requested(snapshot: Dictionary) -> void:
 func _on_enemy_defeated(actor: Node2D) -> void:
 	if not enemies.has(actor):
 		return
+	var direction := Vector2.ZERO
+	if actor.has_method("get_hit_feedback_snapshot"):
+		direction = Vector2((actor.call("get_hit_feedback_snapshot") as Dictionary).get("direction", Vector2.ZERO))
+	_register_enemy_hit_feedback(_enemy_feedback_key(actor), actor.global_position, direction, 1.0, &"break")
 	var definition_variant: Variant = actor.get("definition")
 	var enemy_id := (definition_variant as FoldlightRogueEnemyDefinition).content_id if definition_variant is FoldlightRogueEnemyDefinition else &"enemy"
 	if actor is FoldlightRogueBossActor:
-		enemy_id = (actor as FoldlightRogueBossActor).definition.content_id
+		var boss := actor as FoldlightRogueBossActor
+		enemy_id = boss.definition.content_id
+		last_boss_defeat = {"title": boss.definition.title, "health": 0.0, "maximum_health": boss.get_maximum_health(), "phase": boss.phase_controller.phase_index + 1, "defeated": true, "position": boss.global_position}
 	var directed_entry_variant: Variant = actor.get_meta("directed_spawn_entry", {})
 	var directed_entry := (directed_entry_variant as Dictionary).duplicate(true) if directed_entry_variant is Dictionary else {}
+	directed_entry["actor_id"] = StringName(actor.get("actor_id"))
+	directed_entry["defeat_reason"] = StringName(actor.get_meta("defeat_reason", &"damage"))
+	directed_entry["grants_kill_credit"] = bool(actor.get_meta("grants_kill_credit", true))
 	enemies.erase(actor)
+	_collision_index_dirty = true
+	_clear_poison_clouds(StringName(actor.get("actor_id")))
+	_update_command_links()
 	enemy_defeated.emit(enemy_id)
 	enemy_defeated_detailed.emit(enemy_id, directed_entry)
 	if actor is FoldlightBroodLantern:
@@ -687,14 +1201,22 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 		for spawned in enemies.duplicate():
 			if is_instance_valid(spawned) and StringName(spawned.get_meta("spawned_by", &"")) == source_id:
 				enemies.erase(spawned)
+				_clear_poison_clouds(StringName(spawned.get("actor_id")))
 				spawned.queue_free()
 	if room != null and bool(actor.get_meta("counts_for_room", true)):
 		room.notify_enemy_defeated()
 	if actor is FoldlightRogueBossActor:
+		var source_id := StringName(actor.get("actor_id"))
+		_on_boss_attack_cancelled(0.0, source_id)
 		for minion in enemies.duplicate():
-			if is_instance_valid(minion) and not bool(minion.get_meta("counts_for_room", true)):
+			if is_instance_valid(minion) and StringName(minion.get_meta("spawned_by", &"")) == source_id:
 				enemies.erase(minion)
+				_clear_poison_clouds(StringName(minion.get("actor_id")))
 				minion.queue_free()
+		if is_instance_valid(room):
+			for child in room.projectile_container.get_children():
+				if child is FoldlightInkDenialZone and StringName(child.get_meta("boss_source", &"")) == source_id:
+					child.queue_free()
 	actor.queue_free()
 
 
@@ -715,11 +1237,11 @@ func _on_minion_requested(snapshot: Dictionary) -> void:
 		var spawn_position := Vector2(position_variant)
 		if room != null:
 			spawn_position = spawn_position.clamp(room.room_bounds.position + Vector2(80, 80), room.room_bounds.end - Vector2(80, 80))
-		_spawn_enemy_from_entry({"enemy_id": enemy_id, "spawn_position": spawn_position, "spawned_by": source_id}, false)
-		existing += 1
+		if _spawn_budgeted_minion({"enemy_id": enemy_id, "spawn_position": spawn_position, "spawned_by": source_id}):
+			existing += 1
 
 
-func _on_boss_minion_requested(snapshot: Dictionary) -> void:
+func _on_boss_minion_requested(snapshot: Dictionary, source_id: StringName = &"") -> void:
 	var enemy_ids: Array[StringName] = []
 	var enemy_ids_variant: Variant = snapshot.get("enemy_ids", [])
 	if enemy_ids_variant is Array:
@@ -735,7 +1257,7 @@ func _on_boss_minion_requested(snapshot: Dictionary) -> void:
 	var total_existing := 0
 	for enemy in enemies:
 		var enemy_definition: Variant = enemy.get("definition") if is_instance_valid(enemy) else null
-		if not enemy_definition is FoldlightRogueEnemyDefinition or bool(enemy.get_meta("counts_for_room", true)):
+		if not enemy_definition is FoldlightRogueEnemyDefinition or bool(enemy.get_meta("counts_for_room", true)) or StringName(enemy.get_meta("spawned_by", &"")) != source_id:
 			continue
 		total_existing += 1
 		if enemy_ids.has((enemy_definition as FoldlightRogueEnemyDefinition).content_id):
@@ -748,25 +1270,51 @@ func _on_boss_minion_requested(snapshot: Dictionary) -> void:
 		if existing >= maximum or total_existing >= total_maximum:
 			break
 		var enemy_id := enemy_ids[spawn_cursor % enemy_ids.size()]
-		_spawn_enemy_from_entry({"enemy_id": enemy_id, "spawn_position": Vector2(position_variant)}, false)
-		existing += 1
-		total_existing += 1
+		if _spawn_budgeted_minion({"enemy_id": enemy_id, "spawn_position": Vector2(position_variant), "spawned_by": source_id}):
+			existing += 1
+			total_existing += 1
 		spawn_cursor += 1
 
 
+func _spawn_budgeted_minion(entry: Dictionary) -> bool:
+	if directed_spawn_allowance == 0:
+		return false
+	var definition := FoldlightRogueContentCatalog.enemy_by_id(StringName(entry.get("enemy_id", &"")))
+	var cost := int(definition.threat_cost) if definition != null else 1
+	if directed_threat_allowance >= 0 and cost > directed_threat_allowance:
+		return false
+	if directed_spawn_validator.is_valid() and not bool(directed_spawn_validator.call(entry)):
+		return false
+	if _spawn_enemy_from_entry(entry, false) == null:
+		return false
+	if directed_spawn_allowance > 0:
+		directed_spawn_allowance -= 1
+	if directed_threat_allowance >= 0:
+		directed_threat_allowance -= cost
+	return true
+
+
+func _on_boss_zone_requested(snapshot: Dictionary, source_id: StringName) -> void:
+	var owned := snapshot.duplicate(true)
+	owned["boss_source"] = source_id
+	_on_zone_requested(owned)
+
+
 func _on_zone_requested(snapshot: Dictionary) -> void:
-	if room == null:
+	if room == null or _boss_aftermath_active:
 		return
 	var zone := ZONE_SCENE.instantiate() as FoldlightInkDenialZone
 	room.projectile_container.add_child(zone)
 	zone.configure(snapshot)
+	zone.set_meta("boss_source", snapshot.get("boss_source", &""))
+	zone.set_simulation_active(active)
 
 
 func _update_denial_zones() -> void:
 	if room == null:
 		return
 	for child in room.projectile_container.get_children():
-		if child is FoldlightInkDenialZone:
+		if child is FoldlightInkDenialZone and not child.is_queued_for_deletion():
 			var zone := child as FoldlightInkDenialZone
 			if zone.global_position.distance_to(player.global_position) <= zone.radius + player.get_hit_radius():
 				player.apply_status(&"bound_crease", 0.3)
@@ -780,31 +1328,65 @@ func _on_player_shot_requested(snapshot: Dictionary) -> void:
 	if int(snapshot.get("targeting", 0)) == FoldlightRogueWeaponDefinition.TargetingMode.FORWARD_CONE and not player.velocity.is_zero_approx():
 		direction = player.velocity.normalized()
 	var count := clampi(int(snapshot.get("volley_count", 1)), 1, 8)
+	var style := StringName(snapshot.get("projectile_style", &"crease_petal"))
+	var weapon_id := StringName(snapshot.get("weapon_id", &""))
 	for index in count:
-		var unit := 0.0 if count <= 1 else float(index) / float(count - 1) - 0.5
-		var shot_direction := direction.rotated(unit * 0.28)
+		# Keep the aimed shot when an upgrade adds an even-numbered projectile.
+		# Extra shots fan out on alternating sides within the existing cone.
+		var spread := 0.0
+		if index > 0:
+			var side_rank := ceili(float(index) * 0.5)
+			var side_count := ceili(float(count - 1) * 0.5)
+			spread = (0.30 if style == &"prism_fan" else 0.14) * float(side_rank) / float(side_count) * (1.0 if index % 2 == 1 else -1.0)
+		var shot_direction := direction.rotated(spread)
 		var shot_damage := float(snapshot.get("damage", 1.0))
 		if _rng.randf() <= float(snapshot.get("critical_chance", 0.0)):
 			shot_damage *= 2.0
-		_spawn_projectile({
+		var shot := {
 			"origin": player.global_position,
 			"velocity": shot_direction * float(snapshot.get("projectile_speed", 800.0)),
 			"hostile": false,
 			"reflectable": false,
 			"damage": shot_damage,
 			"radius": 7.0 * float(snapshot.get("projectile_size_multiplier", 1.0)),
-			"lifetime": 3.0,
+			"lifetime": 0.64 if style == &"prism_fan" else (1.9 if style == &"returning_gull" else 3.0),
 			"pierce": int(snapshot.get("pierce", 0)),
-			"style": StringName(snapshot.get("projectile_style", &"crease_petal")),
+			"style": style,
+			"automatic_weapon_id": weapon_id,
+			"color": Color(snapshot.get("color", Color(0.38, 0.96, 0.86))),
 			"target_position": target.global_position,
 			"echo_chance": float(snapshot.get("projectile_echo_chance", 0.0)),
 			"execute_damage_multiplier": float(snapshot.get("execute_damage_multiplier", 1.0)),
-		})
+		}
+		match style:
+			&"crease_petal":
+				# Keep bonus volley lanes wide; only the aimed lamp tracks its foe.
+				if index == 0:
+					shot.merge({"homing_target": target, "homing_strength": 2.6, "homing_range": 1100.0})
+			&"needle_orbit":
+				shot.merge({"homing_target": target, "homing_strength": 7.0, "homing_range": 1000.0, "launch_delay": 0.65, "orbit_anchor": player, "orbit_radius": 69.0 + float(index % 2) * 12.0, "orbit_angle": direction.angle() + float(index) * TAU / float(count), "orbit_speed": 7.8, "lifetime": 2.3})
+			&"returning_gull":
+				# Its outward leg must cover the same range used to acquire targets,
+				# including a one-step margin before the turn is integrated.
+				var return_after := (float(snapshot.get("targeting_range", 440.0)) + 32.0) / maxf(1.0, float(snapshot.get("projectile_speed", 740.0))) + 1.0 / 60.0
+				shot.merge({"return_anchor": player, "return_after": return_after, "return_damage_multiplier": float(snapshot.get("return_damage_multiplier", 1.0))})
+				shot["lifetime"] = maxf(1.9, return_after * 2.0 + 0.30)
+			&"tide_bell":
+				shot["area_radius"] = 125.0 * float(snapshot.get("area_radius_multiplier", 1.0))
+				# Additional bells spread their landing marks; one projectile owns
+				# one pulse, even when a generic volley upgrade is also equipped.
+				var landing := target.global_position + direction.orthogonal() * spread * 220.0
+				shot["target_position"] = landing
+				shot["velocity"] = player.global_position.direction_to(landing) * float(snapshot.get("projectile_speed", 430.0))
+				shot["echo_chance"] = 0.0
+		_spawn_projectile(shot)
 
 
 func _on_player_fold_released(captured_count: int, charge_ratio: float) -> void:
 	if captured_count <= 0:
 		return
+	if player.weapon_mount.register_returned_light(captured_count):
+		_add_active_flash(player.global_position, Color(0.48, 0.92, 1.0), 170.0, 0.60)
 	var release_duration := minf(0.072, 0.030 + float(captured_count) * 0.0018)
 	_release_hit_stop_remaining = maxf(_release_hit_stop_remaining, release_duration)
 	player.add_hit_stop(release_duration)
@@ -916,39 +1498,57 @@ func _clear_denial_zones() -> int:
 
 
 func _add_active_flash(position_value: Vector2, color: Color, maximum_radius: float, duration: float) -> void:
+	# Flashes are cosmetic; dense captures may replace the oldest ring without
+	# affecting a projectile, collision, score, or warning telegraph.
+	if _active_flashes.size() >= MAX_ACTIVE_FLASHES:
+		_active_flashes.pop_front()
 	_active_flashes.append({"position": position_value, "color": color, "radius": maximum_radius, "duration": maxf(0.1, duration), "remaining": maxf(0.1, duration)})
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
-func _register_enemy_hit_feedback(target_key: StringName, position_value: Vector2, incoming_velocity: Vector2, damage: float) -> void:
+func _register_enemy_hit_feedback(target_key: StringName, position_value: Vector2, incoming_velocity: Vector2, damage: float, kind: StringName = &"weapon") -> void:
+	if damage <= 0.0:
+		return
 	var direction := incoming_velocity.normalized()
 	if direction.is_zero_approx():
-		direction = Vector2.from_angle(_rng.randf_range(0.0, TAU))
+		# Visual choices must never consume the combat RNG (crit/echo/spawns).
+		direction = Vector2.from_angle(float(absi(hash(target_key)) % 360) * PI / 180.0)
+	var tier := 2 if kind == &"break" else (1 if kind == &"return" else 0)
+	var duration := 0.32 if tier == 2 else (0.24 if tier == 1 else 0.14)
 	for burst in _enemy_hit_bursts:
 		if StringName(burst.get("target_key", &"")) != target_key:
 			continue
-		burst["position"] = position_value
-		burst["direction"] = direction
-		burst["remaining"] = maxf(float(burst.get("remaining", 0.0)), HIT_VFX_DURATION * 0.62)
-		burst["strength"] = minf(1.85, float(burst.get("strength", 0.0)) + 0.12 + minf(0.18, damage * 0.012))
 		burst["hit_count"] = int(burst.get("hit_count", 1)) + 1
-		queue_redraw()
+		# A volley shares one impact. Only an escalation may restart its shape.
+		if tier > int(burst.get("tier", 0)):
+			burst["tier"] = tier
+			burst["position"] = position_value
+			burst["direction"] = direction
+			burst["duration"] = duration
+			burst["remaining"] = duration
+		if tier >= int(burst.get("tier", 0)):
+			_emit_confirmed_impact(kind, minf(1.0, 0.35 + damage * 0.025))
+		RenderRedraw.request(self)
 		return
-	if _hit_vfx_tokens < 1.0:
+	_emit_confirmed_impact(kind, minf(1.0, 0.35 + damage * 0.025))
+	if _hit_vfx_tokens < 1.0 and tier == 0:
 		return
-	_hit_vfx_tokens -= 1.0
+	# Death/return cues can replace a weak hit when the small draw budget is full.
+	_hit_vfx_tokens = maxf(0.0, _hit_vfx_tokens - 1.0)
 	if _enemy_hit_bursts.size() >= HIT_VFX_MAX_BURSTS:
 		_enemy_hit_bursts.pop_front()
 	_enemy_hit_bursts.append({
-		"target_key": target_key,
-		"position": position_value,
-		"direction": direction,
-		"duration": HIT_VFX_DURATION,
-		"remaining": HIT_VFX_DURATION,
-		"strength": clampf(0.92 + damage * 0.045, 0.92, 1.48),
-		"hit_count": 1,
+		"target_key": target_key, "position": position_value, "direction": direction,
+		"duration": duration, "remaining": duration, "tier": tier, "hit_count": 1,
 	})
-	queue_redraw()
+	RenderRedraw.request(self)
+
+
+func _emit_confirmed_impact(kind: StringName, weight: float) -> void:
+	if float(_impact_cooldowns.get(kind, 0.0)) > 0.0:
+		return
+	_impact_cooldowns[kind] = 0.06 if kind == &"weapon" else 0.10
+	impact_confirmed.emit(kind, weight)
 
 
 func _update_enemy_hit_vfx(delta: float) -> void:
@@ -960,7 +1560,7 @@ func _update_enemy_hit_vfx(delta: float) -> void:
 		burst["remaining"] = maxf(0.0, float(burst.get("remaining", 0.0)) - delta)
 		if float(burst.get("remaining", 0.0)) <= 0.0:
 			_enemy_hit_bursts.remove_at(index)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func get_enemy_hit_vfx_snapshot() -> Dictionary:
@@ -987,10 +1587,78 @@ func _on_player_dash_started(_direction: Vector2, _duration: float) -> void:
 
 
 func _on_player_dash_ended() -> void:
+	if active and is_instance_valid(player) and player.has_method("get_dash_blast_snapshot"):
+		resolve_player_blast(player.call("get_dash_blast_snapshot"))
 	var haste := float(_build_stats.get("dash_weapon_haste", 0.0))
 	if haste > 0.0:
 		_weapon_haste_value = 1.0 + haste
 		_weapon_overdrive_remaining = maxf(_weapon_overdrive_remaining, float(_build_stats.get("dash_weapon_haste_duration", 0.0)))
+
+
+func resolve_player_blast(snapshot: Dictionary) -> Dictionary:
+	if not active or not is_instance_valid(player) or not player.play_enabled or not bool(snapshot.get("enabled", false)) or _boss_aftermath_active:
+		return {}
+	var serial := int(snapshot.get("dash_serial", -1))
+	if serial < 0 or serial <= _last_dash_blast_serial: return {}
+	var path: PackedVector2Array = snapshot.get("path", PackedVector2Array())
+	if path.is_empty() or path.size() > 64: return {}
+	for point in path:
+		if not point.is_finite(): return {}
+	var radius := clampf(float(snapshot.get("radius", 110.0)), 0.0, 240.0)
+	var amount := clampf(float(snapshot.get("damage", 10.0)), 0.0, 60.0)
+	if radius <= 0.0 or amount <= 0.0: return {}
+	_last_dash_blast_serial = serial
+	var result := {"dash_serial": serial, "radius": radius, "damage": amount, "hit_count": 0, "actual_damage": 0.0, "projectiles_cleared": 0}
+	if bool(snapshot.get("clear_projectiles", true)):
+		for projectile in projectiles.duplicate():
+			if not is_instance_valid(projectile) or projectile.is_queued_for_deletion() or not projectile.hostile: continue
+			if _blast_reachable_origin(path, projectile.global_position, radius).is_finite():
+				_remove_projectile(projectile)
+				result.projectiles_cleared += 1
+	for enemy in enemies.duplicate():
+		if not active: break
+		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or not enemy.has_method("take_damage") or float(enemy.get("health")) <= 0.0: continue
+		var origin := _blast_reachable_origin(path, enemy.global_position, radius)
+		if not origin.is_finite(): continue
+		var before := float(enemy.get("health"))
+		var direction := origin.direction_to(enemy.global_position)
+		if enemy is FoldlightRogueBossActor:
+			enemy.take_damage(amount, &"weapon", direction)
+		elif enemy.has_method("take_projectile_damage"):
+			enemy.call("take_projectile_damage", amount, direction, &"dash_blast")
+		else:
+			enemy.call("take_damage", amount)
+		var dealt := maxf(0.0, before - float(enemy.get("health")))
+		if dealt > 0.0:
+			result.hit_count += 1
+			result.actual_damage += dealt
+			_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, direction, dealt)
+	if active:
+		# A few shared paper pulses describe the travelled route, regardless of
+		# how many recorded path points or overlapping foes were hit.
+		for index in mini(4, path.size()):
+			var point_index := roundi(float(index) * float(path.size() - 1) / float(maxi(1, mini(4, path.size()) - 1)))
+			_add_active_flash(path[point_index], FoldlightTheme.GOLD, radius, 0.32)
+		player.feedback_budget.register_impact(0.28, false)
+	_last_dash_blast = result.duplicate()
+	return result
+
+
+func _blast_reachable_origin(path: PackedVector2Array, target: Vector2, radius: float) -> Vector2:
+	var maximum := radius * radius
+	for index in maxi(1, path.size() - 1):
+		var from := path[index]
+		var to := path[mini(index + 1, path.size() - 1)]
+		var nearest := Geometry2D.get_closest_point_to_segment(target, from, to)
+		if nearest.distance_squared_to(target) > maximum: continue
+		if nearest.distance_squared_to(target) < 0.01: return nearest
+		var query := PhysicsRayQueryParameters2D.create(nearest, target, (1 << 2) | (1 << 3))
+		if get_world_2d().direct_space_state.intersect_ray(query).is_empty(): return nearest
+	return Vector2.INF
+
+
+func get_dash_blast_snapshot() -> Dictionary:
+	return _last_dash_blast.duplicate()
 
 
 func _update_dash_trail(delta: float) -> void:
@@ -1001,14 +1669,15 @@ func _update_dash_trail(delta: float) -> void:
 	if _dash_trail_remaining > 0.0:
 		return
 	_dash_trail_remaining = 0.09
-	_damage_enemies_in_radius(player.global_position, 58.0, trail_damage)
-	player.feedback_budget.register_impact(0.12, false)
+	if _damage_enemies_in_radius(player.global_position, 58.0, trail_damage) > 0.0:
+		player.feedback_budget.register_impact(0.12, false)
 
 
 func _on_room_cleared(_performance: Dictionary) -> void:
 	for enemy in enemies.duplicate():
 		if is_instance_valid(enemy) and not bool(enemy.get_meta("counts_for_room", true)):
 			enemies.erase(enemy)
+			_clear_poison_clouds(StringName(enemy.get("actor_id")))
 			enemy.queue_free()
 	_clear_heal_progress += maxf(0.0, float(_build_stats.get("clear_heal_progress", 0.0)))
 	var heal := int(floor(_clear_heal_progress))
@@ -1260,6 +1929,20 @@ func _spawn_return_missile(origin: Vector2, damage: float, preferred_index: int 
 func _spawn_projectile(snapshot: Dictionary) -> FoldlightRogueProjectile:
 	if room == null:
 		return null
+	var automatic_id := StringName(snapshot.get("automatic_weapon_id", &""))
+	if not automatic_id.is_empty():
+		var automatic_count := 0
+		var weapon_count := 0
+		for existing in projectiles:
+			if not is_instance_valid(existing) or existing.is_queued_for_deletion() or existing.automatic_weapon_id.is_empty():
+				continue
+			automatic_count += 1
+			if existing.automatic_weapon_id == automatic_id:
+				weapon_count += 1
+		# A complete arsenal must not erase hostile bullets or banked return
+		# light to make room for decorative fire; defer only this automatic shot.
+		if automatic_count >= MAX_AUTOMATIC_PROJECTILES or weapon_count >= MAX_PROJECTILES_PER_WEAPON or projectiles.size() >= MAX_PROJECTILES:
+			return null
 	while projectiles.size() >= MAX_PROJECTILES:
 		_remove_projectile(projectiles[0])
 	var projectile := PROJECTILE_SCENE.instantiate() as FoldlightRogueProjectile
@@ -1291,23 +1974,35 @@ func _enemy_center() -> Vector2:
 func _draw() -> void:
 	for burst in _enemy_hit_bursts:
 		var duration := maxf(0.01, float(burst.get("duration", HIT_VFX_DURATION)))
-		var remaining := clampf(float(burst.get("remaining", 0.0)), 0.0, duration)
-		var progress := 1.0 - remaining / duration
+		var progress := 1.0 - clampf(float(burst.get("remaining", 0.0)) / duration, 0.0, 1.0)
 		var center := Vector2(burst.get("position", Vector2.ZERO))
 		var direction := Vector2(burst.get("direction", Vector2.RIGHT)).normalized()
-		var strength := float(burst.get("strength", 1.0))
-		var alpha := pow(1.0 - progress, 1.65)
-		var radius := lerpf(8.0, 33.0 + strength * 7.0, ease(progress, -1.35))
-		draw_circle(center, radius * 0.72, Color(1.0, 0.66, 0.22, alpha * 0.14))
-		draw_arc(center, radius, -PI * 0.88, PI * 0.88, 28, Color(1.0, 0.88, 0.54, alpha * 0.96), 4.2 - progress * 1.8, true)
-		draw_arc(center, radius * 0.72, PI * 0.12, PI * 1.08, 18, Color(0.38, 0.96, 0.90, alpha * 0.62), 2.2, true)
-		for shard_index in 5:
-			var shard_angle := direction.angle() + (float(shard_index) - 2.0) * 0.42
-			var shard_direction := Vector2.from_angle(shard_angle)
-			var shard_start := center + shard_direction * (4.0 + progress * 8.0)
-			var shard_end := center + shard_direction * (19.0 + progress * (24.0 + strength * 6.0))
-			draw_line(shard_start, shard_end, Color(1.0, 0.70 + float(shard_index) * 0.045, 0.28, alpha * (0.96 - float(abs(shard_index - 2)) * 0.08)), 3.8 - progress * 1.5, true)
-			draw_circle(shard_end, maxf(0.8, 2.4 - progress * 1.3), Color(1.0, 0.94, 0.72, alpha * 0.82))
+		var tier := int(burst.get("tier", 0))
+		var alpha := pow(1.0 - progress, 1.6)
+		var gold := Color("d7af70")
+		var paper := Color("e6e4d5")
+		var travel := (12.0 if tier == 0 else (35.0 if tier == 1 else 58.0)) * ease(progress, -1.6)
+		# A small contact nick; the large paper silhouette belongs to the target.
+		if tier < 2:
+			var cross_axis := direction.orthogonal()
+			var half_length := (6.0 if tier == 0 else 14.0) * (1.0 - progress * 0.6)
+			draw_line(center - cross_axis * half_length, center + cross_axis * half_length, Color(paper, alpha), 2.4, true)
+		var shard_count := 2 if tier == 0 else (4 if tier == 1 else 7)
+		for index in shard_count:
+			var angle := float(index) / float(shard_count) * TAU if tier == 2 else (float(index) - float(shard_count - 1) * 0.5) * 0.52
+			var ray := direction.rotated(angle)
+			var tip := center + ray * (7.0 + travel * (0.72 + float(index % 3) * 0.14))
+			var length := (4.0 if tier == 0 else 9.0) * (1.0 - progress * 0.5)
+			var side := ray.orthogonal() * length * 0.33
+			var shard := PackedVector2Array([tip + ray * length, tip + side, tip - ray * length * 0.55, tip - side])
+			draw_colored_polygon(shard, Color(paper if index % 2 == 0 else gold, alpha * 0.9))
+		if tier == 2:
+			# One broken seal acknowledges defeat after the enemy node disappears.
+			var radius := 16.0 + travel * 0.7
+			for arc in 3:
+				var start := direction.angle() + float(arc) * TAU / 3.0
+				draw_arc(center, radius, start, start + 0.75, 8, Color(gold, alpha * 0.6), 1.8, true)
+
 	for flash in _active_flashes:
 		var duration := maxf(0.1, float(flash.get("duration", 0.1)))
 		var remaining := clampf(float(flash.get("remaining", 0.0)), 0.0, duration)
@@ -1327,6 +2022,8 @@ func _unbind_signals() -> void:
 			room.encounter_spawn_telegraph.disconnect(_on_spawn_telegraph)
 		if room.encounter_enemy_requested.is_connected(_on_enemy_requested):
 			room.encounter_enemy_requested.disconnect(_on_enemy_requested)
+		if room.beacon_pulse_requested.is_connected(_on_beacon_pulse_requested):
+			room.beacon_pulse_requested.disconnect(_on_beacon_pulse_requested)
 	if player != null:
 		if player.weapon_mount.shot_requested.is_connected(_on_player_shot_requested):
 			player.weapon_mount.shot_requested.disconnect(_on_player_shot_requested)

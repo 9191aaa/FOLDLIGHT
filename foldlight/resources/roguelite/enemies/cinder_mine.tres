@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FoldlightRogueEnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"cinder_mine"
+title = "烬火纸雷"
+description = "追近后停在原地，点燃纸芯并显示红色爆破圈；倒计时结束只爆破一次。"
+accent = Color(0.95, 0.65, 0.42, 1)
+tags = Array[StringName]([&"mechanic", &"bomber", &"late_game"])
+role = 2
+threat_cost = 3
+minimum_region = 2
+max_simultaneous = 2
+base_health = 5.0
+move_speed = 135.0
+attack_interval = 1.5
+stationary = false
+quota_group = &"ordinary"
+mechanic_rule = "靠近后定点蓄爆 1.5 秒，红圈内受到一次伤害；接触本体不会提前受伤。"
+counterplay = "红圈出现后离圈或冲刺避开；引爆前击破纸芯即可拆除，不会殉爆。"

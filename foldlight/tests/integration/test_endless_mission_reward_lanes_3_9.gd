@@ -1,7 +1,7 @@
 extends SceneTree
 
-## Endless 3.9 mission-reward contract: every completion offers one stable card
-## from each of three readable lanes, all six rewards affect the live slice, and
+## Endless mission-growth contract: every even completion offers one stable card
+## from each of three readable lanes, all six rewards affect shared combat, and
 ## mission choices remain isolated from the two progression axes and Profile.
 
 const EXPECTED_FIRST_IDS: Array[StringName] = [&"surge_return", &"wide_fold", &"steady_lantern"]
@@ -29,13 +29,13 @@ func _run() -> void:
 	slice.set_physics_process(false)
 
 	_test_rotation_determinism_and_card_copy(slice)
-	_test_surge_return_effect(slice)
-	_test_wide_fold_effect(slice)
-	_test_steady_lantern_effect(slice)
-	_test_crosswind_real_pierce(slice)
-	_test_kinetic_paper_effect(slice)
-	_test_clear_current_real_fold_mobility(slice)
-	_test_reward_modal_freezes_combat(slice)
+	await _test_surge_return_effect(slice)
+	await _test_wide_fold_effect(slice)
+	await _test_steady_lantern_effect(slice)
+	await _test_crosswind_real_pierce(slice)
+	await _test_kinetic_paper_effect(slice)
+	await _test_clear_current_real_fold_mobility(slice)
+	await _test_reward_modal_freezes_combat(slice)
 	_test_restart_resets_mission_rewards(slice)
 	_test_absorb_return_chain(slice)
 
@@ -52,9 +52,9 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 	var second_b := slice.controller.evolution.get_mission_reward_options(1)
 	var wrapped := slice.controller.evolution.get_mission_reward_options(2)
 
-	_check(_option_ids(first_a) == EXPECTED_FIRST_IDS, "completion 0 is exactly surge_return / wide_fold / steady_lantern")
-	_check(_option_ids(second_a) == EXPECTED_SECOND_IDS, "completion 1 is exactly crosswind / kinetic_paper / clear_current")
-	_check(_option_ids(wrapped) == EXPECTED_FIRST_IDS, "completion 2 wraps exactly back to the first reward tier")
+	_check(_option_ids(first_a) == EXPECTED_FIRST_IDS, "first growth reward (task 2) is exactly surge_return / wide_fold / steady_lantern")
+	_check(_option_ids(second_a) == EXPECTED_SECOND_IDS, "second growth reward (task 4) is exactly crosswind / kinetic_paper / clear_current")
+	_check(_option_ids(wrapped) == [&"dash_blast", &"quiet_hinge", &"steady_lantern"], "third growth reward (task 6) adds dash blast and shorter Fold cooldown while preserving sustain")
 	_check(var_to_str(first_a) == var_to_str(first_b) and var_to_str(second_a) == var_to_str(second_b), "repeated reward-option calls are deterministic")
 	_check(_option_lane_ids(first_a) == EXPECTED_LANE_IDS and _option_lane_ids(second_a) == EXPECTED_LANE_IDS, "both tiers preserve power / fold_mobility / sustain lane order")
 	_check(_all_unique(_option_ids(first_a)) and _all_unique(_option_ids(second_a)), "each completion offers three unique reward routes")
@@ -64,20 +64,26 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 	_check(_all_next_level(first_a, 1) and _all_next_level(second_a, 1), "fresh reward cards all advertise next_level 1")
 
 	var applied := slice.controller.evolution.apply_mission_reward(&"surge_return")
-	var leveled_wrap := slice.controller.evolution.get_mission_reward_options(2)
+	var leveled_wrap := slice.controller.evolution.get_mission_reward_options(6)
 	_check(int(applied.get("level", 0)) == 1, "claim result reports the granted reward level")
 	_check(_next_level_for(leveled_wrap, &"surge_return") == 2, "a repeated surge_return card advertises next_level 2")
 	_check(_next_level_for(leveled_wrap, &"wide_fold") == 1 and _next_level_for(leveled_wrap, &"steady_lantern") == 1, "unclaimed lanes remain at next_level 1")
 
 	slice.start_slice(39002)
 	first_a = slice.controller.evolution.get_mission_reward_options(0)
-	slice._on_mission_reward_offered(first_a, {"title": "航路校验"})
+	# The presentation now pulls persisted entitlements; an isolated signal is
+	# intentionally not enough to invent a claimable reward.
+	slice.controller._on_objective_completed({"completion_count": 2, "title": "航路校验"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
 	for index in first_a.size():
 		var option := first_a[index]
-		var card_text := slice.modal_buttons[index].text
-		_check(card_text.contains("【%s】" % EXPECTED_LANE_TITLES[index]), "reward card %d shows its lane title" % (index + 1))
+		var card: FoldlightRewardCard = slice.presentation._reward_buttons[index] as FoldlightRewardCard
+		var card_text: String = card.title_label.text + " " + card.description_label.text + " " + card.rarity_label.text + " " + card.level_label.text
+		_check(card_text.contains(EXPECTED_LANE_TITLES[index]), "reward card %d shows its lane title" % (index + 1))
 		_check(card_text.contains(String(option.get("title", ""))), "reward card %d shows the reward name" % (index + 1))
-		_check(card_text.contains("Lv.%d" % int(option.get("next_level", 0))), "reward card %d shows its next level" % (index + 1))
+		_check(card_text.contains(str(int(option.get("next_level", 0)))), "reward card %d shows its next level" % (index + 1))
 		_check(card_text.contains(String(option.get("description", ""))), "reward card %d shows the complete effect description" % (index + 1))
 
 
@@ -85,16 +91,17 @@ func _test_surge_return_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39010)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 0, &"surge_return"), "surge_return can be chosen from the power lane")
+	_check(await _offer_and_choose(slice, 0, &"surge_return"), "surge_return can be chosen from the power lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("return_damage", 0.0)) > float(before.get("return_damage", INF)), "surge_return increases live return-light damage")
 	_check(float(after.get("return_speed", 0.0)) > float(before.get("return_speed", INF)), "surge_return increases live return-light speed")
-
-	var target_position := slice.player_position + Vector2(240.0, 0.0)
-	slice._enemies = [_test_enemy(101, target_position, 20.0)]
-	slice._return_shots = [{"position": target_position, "target_uid": 101, "waypoints": PackedVector2Array([target_position]), "waypoint_index": 0}]
-	slice._update_return_shots(0.01)
-	_check(is_equal_approx(20.0 - float(slice._enemies[0].get("hp", 20.0)), float(after.get("return_damage", 0.0))), "surge_return damage reaches a real endless enemy")
+	var targets := _spawn_test_enemies(slice, [240.0], 20.0)
+	var shot := _release_single_return(slice)
+	_check(shot != null, "surge_return releases a shared return-light projectile")
+	if shot != null:
+		_check(is_equal_approx(shot.homing_speed, float(after["return_speed"])), "surge_return speed reaches the real homing projectile")
+		_place_projectile_on_target(slice, shot, targets[0])
+		_check(is_equal_approx(20.0 - targets[0].health, float(after["return_damage"])), "surge_return damage reaches a real shared enemy")
 	_check(_isolation_unchanged(slice, isolation), "surge_return does not advance waves, absorption, or Profile")
 
 
@@ -102,45 +109,57 @@ func _test_wide_fold_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39020)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 0, &"wide_fold"), "wide_fold can be chosen from the fold-mobility lane")
+	_check(await _offer_and_choose(slice, 0, &"wide_fold"), "wide_fold can be chosen from the fold-mobility lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("fold_radius", 0.0)) > float(before.get("fold_radius", INF)), "wide_fold expands the live fold radius")
 	_check(int(after.get("capture_capacity", 0)) == int(before.get("capture_capacity", 0)) + 1, "wide_fold adds one real capture slot")
+	_check(slice.player.try_begin_fold(), "wide_fold permits a real fold")
+	slice.player.fold_time = FoldlightPlayer.FULL_CHARGE_TIME
+	_check(is_equal_approx(slice.player.get_fold_radius(), float(after["fold_radius"])), "wide_fold expands the player's capture geometry")
+	slice.player.captured = int(before["capture_capacity"])
+	_check(slice.player.capture_one() and not slice.player.capture_one(), "wide_fold accepts exactly one capture beyond the old capacity")
 	_check(_isolation_unchanged(slice, isolation), "wide_fold does not advance waves, absorption, or Profile")
 
 
 func _test_steady_lantern_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39030)
-	slice.player_health = slice.max_health - 2
-	var health_before := slice.player_health
-	var maximum_before := slice.max_health
+	slice.player.health = slice.player.max_health - 2
+	var health_before := slice.player.health
+	var maximum_before := slice.player.max_health
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 0, &"steady_lantern"), "steady_lantern can be chosen from the sustain lane")
-	_check(slice.max_health == maximum_before + 1, "steady_lantern raises the real maximum health by one")
-	_check(slice.player_health == health_before + 1, "steady_lantern immediately heals one real health")
+	_check(await _offer_and_choose(slice, 0, &"steady_lantern"), "steady_lantern can be chosen from the sustain lane")
+	_check(slice.player.max_health == maximum_before + 1, "steady_lantern raises the real maximum health by one")
+	_check(slice.player.health == mini(slice.player.max_health, health_before + 2), "steady_lantern heals one health plus the task's one-time recovery")
 	_check(_isolation_unchanged(slice, isolation), "steady_lantern does not advance waves, absorption, or Profile")
 
 
 func _test_crosswind_real_pierce(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39040)
-	var lane := _find_open_weapon_lane(slice)
-	var first_position := slice.player_position + lane * 210.0
-	var second_position := slice.player_position + lane * 430.0
-	slice._enemies = [_test_enemy(201, first_position, 10.0), _test_enemy(202, second_position, 10.0)]
-	slice._auto_fire_clock = 0.0
-	slice._update_auto_weapon(1.0)
-	_check(is_equal_approx(float(slice._enemies[0].get("hp", 0.0)), 9.0) and is_equal_approx(float(slice._enemies[1].get("hp", 0.0)), 10.0), "without crosswind one automatic shot damages only its first target")
+	var targets := _spawn_test_enemies(slice, [210.0, 430.0], 10.0)
+	var shot := _fire_single_automatic_shot(slice)
+	_check(shot != null, "baseline automatic weapon emits a shared projectile")
+	if shot == null:
+		return
+	var damage := shot.damage
+	_place_projectile_on_target(slice, shot, targets[0])
+	_check(not slice.combat_runtime.projectiles.has(shot) and is_equal_approx(targets[0].health, 10.0 - damage) and is_equal_approx(targets[1].health, 10.0), "without crosswind one automatic shot damages only its first target")
 
-	slice._enemies = [_test_enemy(201, first_position, 10.0), _test_enemy(202, second_position, 10.0)]
+	targets = _spawn_test_enemies(slice, [210.0, 430.0], 10.0)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 1, &"crosswind"), "crosswind can be chosen from the power lane")
+	_check(await _offer_and_choose(slice, 1, &"crosswind"), "crosswind can be chosen from the power lane")
 	var after := slice.get_effective_combat_stats()
 	_check(int(after.get("weapon_pierce", 0)) == int(before.get("weapon_pierce", 0)) + 1, "crosswind grants one live automatic-weapon pierce")
 	_check(float(after.get("auto_fire_interval", INF)) < float(before.get("auto_fire_interval", 0.0)), "crosswind shortens the live automatic-fire interval")
-	slice._auto_fire_clock = 0.0
-	slice._update_auto_weapon(1.0)
-	_check(is_equal_approx(float(slice._enemies[0].get("hp", 0.0)), 9.0) and is_equal_approx(float(slice._enemies[1].get("hp", 0.0)), 9.0), "crosswind makes one real automatic shot damage two collinear enemies")
+	shot = _fire_single_automatic_shot(slice)
+	_check(shot != null and shot.pierce_remaining == 1, "crosswind reaches the shared weapon's actual projectile")
+	if shot != null:
+		damage = shot.damage
+		_place_projectile_on_target(slice, shot, targets[0])
+		_check(slice.combat_runtime.projectiles.has(shot) and shot.pierce_remaining == 0, "crosswind keeps the shot alive after its first collision")
+		_place_projectile_on_target(slice, shot, targets[1])
+		_check(is_equal_approx(targets[0].health, 10.0 - damage) and is_equal_approx(targets[1].health, 10.0 - damage), "crosswind makes one real automatic shot damage two collinear enemies")
+		_check(not slice.combat_runtime.projectiles.has(shot), "the automatic shot stops after consuming its pierce budget")
 	_check(_isolation_unchanged(slice, isolation), "crosswind does not advance waves, absorption, or Profile")
 
 
@@ -148,14 +167,13 @@ func _test_kinetic_paper_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	_prepare_effect_case(slice, 39050)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 1, &"kinetic_paper"), "kinetic_paper can be chosen from the fold-mobility lane")
+	_check(await _offer_and_choose(slice, 1, &"kinetic_paper"), "kinetic_paper can be chosen from the fold-mobility lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("move_speed", 0.0)) > float(before.get("move_speed", INF)), "kinetic_paper raises live movement speed")
 	_check(float(after.get("dash_cooldown", INF)) < float(before.get("dash_cooldown", 0.0)), "kinetic_paper lowers live dash cooldown")
-	slice.dash_remaining = 0.0
-	slice.dash_cooldown_remaining = 0.0
-	slice._try_dash()
-	_check(is_equal_approx(slice.dash_cooldown_remaining, float(after.get("dash_cooldown", -1.0))), "kinetic_paper cooldown is used by an actual dash")
+	slice.player.dash_component.reset()
+	_check(slice.player.request_dash(Vector2.RIGHT), "kinetic_paper starts an actual shared-player dash")
+	_check(is_equal_approx(slice.player.dash_component.cooldown_remaining, float(after.get("dash_cooldown", -1.0))), "kinetic_paper cooldown is used by the actual dash component")
 	_check(_isolation_unchanged(slice, isolation), "kinetic_paper does not advance waves, absorption, or Profile")
 
 
@@ -163,55 +181,73 @@ func _test_clear_current_real_fold_mobility(slice: FoldlightEndlessSliceRuntime)
 	_prepare_effect_case(slice, 39060)
 	var before := slice.get_effective_combat_stats()
 	var isolation := _capture_isolation_snapshot(slice)
-	_check(_offer_and_choose(slice, 1, &"clear_current"), "clear_current can be chosen from the sustain lane")
+	_check(await _offer_and_choose(slice, 1, &"clear_current"), "clear_current can be chosen from the sustain lane")
 	var after := slice.get_effective_combat_stats()
 	_check(float(after.get("fold_move_speed", 0.0)) > float(before.get("fold_move_speed", INF)), "clear_current increases the live expanded-fold movement speed")
 	_check(float(after.get("damage_grace", 0.0)) > float(before.get("damage_grace", INF)), "clear_current increases live post-hit protection")
-
+	_check(slice.player.try_begin_fold(), "clear_current permits expanded-fold movement")
 	Input.action_press(&"move_right")
-	slice.folding = true
-	slice.player_velocity = Vector2.ZERO
-	slice._update_player(0.5)
+	slice.player.velocity = Vector2.ZERO
+	slice.player._physics_process(0.5)
 	Input.action_release(&"move_right")
-	_check(is_equal_approx(slice.player_velocity.length(), float(after.get("fold_move_speed", -1.0))), "clear_current changes actual movement while the fold is expanded")
-	slice.player_health = slice.max_health
-	slice.player_invulnerability = 0.0
-	slice._take_player_damage()
-	_check(is_equal_approx(slice.player_invulnerability, float(after.get("damage_grace", -1.0))), "clear_current applies its longer protection to a real player hit")
+	_check(is_equal_approx(slice.player.velocity.length(), float(after.get("fold_move_speed", -1.0))), "clear_current changes actual shared-player movement while folding")
+	slice.player.cancel_fold()
+	slice.player.health = slice.player.max_health
+	slice.player.invulnerability = 0.0
+	_check(slice.player.take_hit(), "a real hit reaches the shared player after protection expires")
+	_check(is_equal_approx(slice.player.invulnerability, float(after.get("damage_grace", -1.0))), "clear_current applies longer protection to a real player hit")
 	_check(_isolation_unchanged(slice, isolation), "clear_current does not advance waves, absorption, or Profile")
 
 
 func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> void:
-	slice.start_slice(39070)
-	slice.set_physics_process(false)
-	slice.player_velocity = Vector2.ZERO
-	slice.player_health = slice.max_health
-	slice.player_invulnerability = 0.0
-	var lane := _find_open_weapon_lane(slice)
-	slice._enemies = [_test_enemy(301, slice.player_position + lane * 300.0, 99.0)]
-	slice._projectiles = [{
-		"position": slice.player_position,
-		"velocity": Vector2.ZERO,
-		"life": 5.0,
-		"radius": 7.0,
-		"curve": 0.0,
-	}]
-	slice.controller._on_objective_completed({"completion_count": 1, "title": "modal freeze contract"})
-	var health_before := slice.player_health
-	var projectiles_before := var_to_str(slice._projectiles)
-	var enemies_before := var_to_str(slice._enemies)
-	_check(slice._modal_kind == &"reward" and slice.modal_dim.visible, "mission reward opens a blocking modal")
-
+	_prepare_effect_case(slice, 39070)
+	slice.player.velocity = Vector2.ZERO
+	slice.player.health = slice.player.max_health
+	slice.player.invulnerability = 0.0
+	var targets := _spawn_test_enemies(slice, [300.0], 99.0)
+	var open_lane := _find_open_weapon_lane(slice)
+	slice.combat_runtime.spawn_hostile_volley({
+		"origin": slice.player.global_position + open_lane * 150.0,
+		"direction": -open_lane, "speed": 100.0, "projectile_count": 1,
+	})
+	var hostile := slice.combat_runtime.projectiles[0]
+	slice.controller._on_objective_completed({"completion_count": 2, "title": "modal freeze contract"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
+	var health_before := slice.player.health
+	var projectile_position := hostile.global_position
+	var projectile_lifetime := hostile.lifetime
+	var enemy_before := targets[0].get_combat_snapshot()
+	_check(slice._modal_kind == &"reward" and slice.presentation.screen_kind == &"reward", "mission reward opens a blocking modal")
+	_check(not slice.player.play_enabled and not slice.combat_runtime.active, "reward suspension reaches shared player and combat runtime")
 	slice._physics_process(0.25)
-	_check(slice.player_health == health_before, "an open reward modal freezes player health")
-	_check(slice._projectiles.size() == 1 and var_to_str(slice._projectiles) == projectiles_before, "an open reward modal freezes hostile projectile count and position")
-	_check(var_to_str(slice._enemies) == enemies_before, "an open reward modal freezes the complete enemy state")
+	slice.player._physics_process(0.25)
+	slice.combat_runtime._physics_process(0.25)
+	_check(slice.player.health == health_before, "an open reward modal freezes player health")
+	_check(slice.combat_runtime.projectiles.size() == 1 and hostile.global_position == projectile_position and is_equal_approx(hostile.lifetime, projectile_lifetime), "an open reward modal freezes hostile position and lifetime")
+	_check(targets[0].get_combat_snapshot() == enemy_before, "an open reward modal freezes the shared enemy state")
 
-	slice._activate_modal_choice(0)
-	_check(slice._modal_kind.is_empty() and not slice.modal_dim.visible, "choosing a reward closes the blocking modal")
-	slice._physics_process(0.1)
-	_check(slice.player_health == health_before - 1 and slice._projectiles.is_empty(), "combat resumes after selection and the waiting projectile can hit")
-	_check(var_to_str(slice._enemies) != enemies_before, "enemy simulation resumes after reward selection")
+	await _wait_for_reward_input(slice)
+	slice.presentation._reward_buttons[0].pressed.emit()
+	await create_timer(0.28).timeout
+	_check(slice._modal_kind.is_empty() and slice.presentation.screen_kind == &"hud", "choosing a reward closes the blocking modal")
+	_check(slice.player.play_enabled and slice.combat_runtime.active and slice.player.invulnerability >= 0.75, "selection restores shared combat with the overlay safety window")
+	# Resuming re-enables the runtime's scheduled physics. The remainder of this
+	# case advances it explicitly, without depending on the reward tween's tail.
+	slice.combat_runtime.set_physics_process(false)
+	slice.combat_runtime._physics_process(0.1)
+	_check(hostile.global_position != projectile_position and targets[0].get_combat_snapshot() != enemy_before, "hostile projectiles and enemies resume simulation after selection")
+	_check(slice.player.health == health_before, "resuming does not bypass the player safety window")
+	# Use real-sized physics steps: one artificial 0.8 s jump can tunnel this
+	# projectile entirely across the player's small hit circle. The longer clear
+	# lane makes arrival occur after the 0.75 s overlay protection has elapsed.
+	for frame in 120:
+		slice.player._physics_process(1.0 / 60.0)
+		slice.combat_runtime._physics_process(1.0 / 60.0)
+		if slice.player.health < health_before:
+			break
+	_check(slice.player.health == health_before - 1 and not slice.combat_runtime.projectiles.has(hostile), "a waiting hostile projectile can hit after resume protection expires")
 
 
 func _test_restart_resets_mission_rewards(slice: FoldlightEndlessSliceRuntime) -> void:
@@ -233,97 +269,115 @@ func _test_restart_resets_mission_rewards(slice: FoldlightEndlessSliceRuntime) -
 
 
 func _test_absorb_return_chain(slice: FoldlightEndlessSliceRuntime) -> void:
-	slice.start_slice(39080)
-	slice.set_physics_process(false)
+	_prepare_effect_case(slice, 39080)
 	var baseline_stats := slice.get_effective_combat_stats()
 	_check(baseline_stats.has("return_chain") and int(baseline_stats.get("return_chain", -1)) == 0, "effective combat stats expose a zero baseline return_chain")
-	var lane := _find_open_weapon_lane(slice)
-	var first_position := slice.player_position + lane * 140.0
-	var second_position := slice.player_position + lane * 250.0
-	var third_position := slice.player_position + lane * 400.0
-	slice._enemies = [
-		_test_enemy(401, first_position, 30.0),
-		_test_enemy(402, second_position, 30.0),
-	]
-	slice.folding = true
-	slice.captured_buffer = 1
-	slice._release_fold()
-	_check(slice._return_shots.size() == 1 and int(slice._return_shots[0].get("target_uid", -1)) == 401, "a baseline return shot locks the nearest reachable enemy")
-	if not slice._return_shots.is_empty():
-		slice._return_shots[0]["position"] = first_position
-		slice._update_return_shots(0.0)
-	_check(slice._return_shots.is_empty(), "without return_chain one return shot dissipates after its first hit")
-	_check(float(slice._enemies[0].get("hp", 30.0)) < 30.0 and is_equal_approx(float(slice._enemies[1].get("hp", 0.0)), 30.0), "a no-chain return shot damages only its original target")
+	var targets := _spawn_test_enemies(slice, [140.0, 250.0], 30.0)
+	var shot := _release_single_return(slice)
+	_check(shot != null and shot.homing_target == targets[0], "a baseline shared return shot locks the nearest reachable enemy")
+	if shot != null:
+		_place_projectile_on_target(slice, shot, targets[0])
+		_check(not slice.combat_runtime.projectiles.has(shot), "without return_chain the shared shot dissipates after its first hit")
+		_check(targets[0].health < 30.0 and is_equal_approx(targets[1].health, 30.0), "a no-chain return shot damages only its original target")
 
-	slice.start_slice(39081)
-	slice.set_physics_process(false)
-	lane = _find_open_weapon_lane(slice)
-	first_position = slice.player_position + lane * 140.0
-	second_position = slice.player_position + lane * 250.0
-	third_position = slice.player_position + lane * 400.0
+	_prepare_effect_case(slice, 39081)
 	var chain_threshold := int(slice.controller.config.player_absorb_thresholds[3])
 	slice.controller.report_projectiles_absorbed(chain_threshold)
 	var player_evolution := slice.controller.evolution.get_player_snapshot()
 	var chain_stats := slice.get_effective_combat_stats()
 	_check(_unlocked_perk_ids(player_evolution).has(&"chain_light"), "the public absorption entry reaches the chain_light evolution")
 	_check(int(chain_stats.get("return_chain", 0)) == 1, "effective combat stats expose the unlocked return_chain")
-
-	slice._enemies = [
-		_test_enemy(411, first_position, 30.0),
-		_test_enemy(412, second_position, 30.0),
-		_test_enemy(413, third_position, 30.0),
-	]
-	slice.folding = true
-	slice.captured_buffer = 1
-	slice._release_fold()
+	targets = _spawn_test_enemies(slice, [140.0, 250.0, 400.0], 30.0)
+	shot = _release_single_return(slice)
 	var initial_chain := int(chain_stats.get("return_chain", 0))
-	_check(
-		slice._return_shots.size() == 1
-		and int(slice._return_shots[0].get("target_uid", -1)) == 411
-		and int(slice._return_shots[0].get("chains_remaining", -1)) == initial_chain,
-		"a released return shot carries the effective chain budget",
-	)
-	if slice._return_shots.is_empty():
+	_check(shot != null and shot.homing_target == targets[0] and shot.return_chain_remaining == initial_chain, "a released shared return shot carries the effective chain budget")
+	if shot == null:
 		return
-	var return_damage := float(chain_stats.get("return_damage", 0.0))
-	slice._return_shots[0]["position"] = first_position
-	slice._update_return_shots(0.0)
-	var primary_after_first := float(slice._enemies[0].get("hp", 30.0))
+	var return_damage := shot.damage
+	_place_projectile_on_target(slice, shot, targets[0])
+	var primary_after_first := targets[0].health
 	_check(is_equal_approx(30.0 - primary_after_first, return_damage), "the chained return shot damages its original target exactly once")
-	_check(
-		slice._return_shots.size() == 1
-		and int(slice._return_shots[0].get("target_uid", -1)) == 412
-		and int(slice._return_shots[0].get("chains_remaining", -1)) == initial_chain - 1,
-		"the same return-shot slot consumes one chain and retargets the nearest reachable unhit enemy",
-	)
-	if slice._return_shots.is_empty():
-		return
-	slice._return_shots[0]["position"] = second_position
-	slice._update_return_shots(0.0)
-	_check(slice._return_shots.is_empty(), "the return shot dissipates when its chain budget is exhausted")
-	_check(
-		is_equal_approx(float(slice._enemies[0].get("hp", 0.0)), primary_after_first)
-		and is_equal_approx(30.0 - float(slice._enemies[1].get("hp", 30.0)), return_damage)
-		and is_equal_approx(float(slice._enemies[2].get("hp", 0.0)), 30.0),
-		"return chaining never repeats the original target and does not exceed its chain budget",
-	)
+	_check(slice.combat_runtime.projectiles.has(shot) and shot.homing_target == targets[1] and shot.return_chain_remaining == initial_chain - 1, "the shared shot consumes one chain and retargets the nearest reachable unhit enemy")
+	_place_projectile_on_target(slice, shot, targets[1])
+	_check(not slice.combat_runtime.projectiles.has(shot), "the shared shot dissipates when its chain budget is exhausted")
+	_check(is_equal_approx(targets[0].health, primary_after_first) and is_equal_approx(30.0 - targets[1].health, return_damage) and is_equal_approx(targets[2].health, 30.0), "return chaining never repeats the original target or exceeds its chain budget")
 
 
 func _prepare_effect_case(slice: FoldlightEndlessSliceRuntime, seed: int) -> void:
 	slice.start_slice(seed)
+	# Step the actual shared actors explicitly; prevent frame scheduling from
+	# adding shots, input or objective time between deterministic observations.
 	slice.set_physics_process(false)
-	slice.controller.advance_simulation(0.25, slice.player_position)
+	slice.player.set_physics_process(false)
+	slice.combat_runtime.set_physics_process(false)
+	slice.controller.advance_simulation(0.25, slice.player.global_position)
 	slice.controller.report_projectiles_absorbed(3)
+	slice.combat_runtime.clear_combat()
+
+
+func _spawn_test_enemies(slice: FoldlightEndlessSliceRuntime, distances: Array, health: float) -> Array[FoldlightRogueEnemyActor]:
+	slice.combat_runtime.clear_combat()
+	var direction := _find_open_weapon_lane(slice)
+	var entries: Array[Dictionary] = []
+	for distance: float in distances:
+		entries.append({"enemy_id": &"drifter", "spawn_position": slice.player.global_position + direction * distance})
+	var spawned := slice.combat_runtime.spawn_directed_wave(entries)
+	var result: Array[FoldlightRogueEnemyActor] = []
+	for node in spawned:
+		var actor := node as FoldlightRogueEnemyActor
+		actor.health = health
+		result.append(actor)
+	_check(result.size() == distances.size(), "directed wave creates the requested real shared enemies")
+	return result
+
+
+func _release_single_return(slice: FoldlightEndlessSliceRuntime) -> FoldlightRogueProjectile:
+	if not slice.player.try_begin_fold() or not slice.player.capture_one():
+		return null
+	slice.player.fold_time = FoldlightPlayer.FULL_CHARGE_TIME
+	slice.player.release_fold_action()
+	for projectile in slice.combat_runtime.projectiles:
+		if not projectile.hostile and projectile.style == &"return_light":
+			return projectile
+	return null
+
+
+func _fire_single_automatic_shot(slice: FoldlightEndlessSliceRuntime) -> FoldlightRogueProjectile:
+	slice.player.weapon_mount.reset_cadence()
+	slice.player.tick_automatic_weapons(float(slice.get_effective_combat_stats()["auto_fire_interval"]) + 0.01, true)
+	for projectile in slice.combat_runtime.projectiles:
+		if not projectile.hostile:
+			return projectile
+	return null
+
+
+func _place_projectile_on_target(slice: FoldlightEndlessSliceRuntime, projectile: FoldlightRogueProjectile, target: FoldlightRogueEnemyActor) -> void:
+	# Position a real emitted projectile at impact, then exercise the real
+	# collision, hit bookkeeping, pierce and return-chain path without travel.
+	projectile.global_position = target.global_position
+	slice.combat_runtime._update_projectiles(0.0)
 
 
 func _offer_and_choose(slice: FoldlightEndlessSliceRuntime, completion_index: int, reward_id: StringName) -> bool:
-	slice.controller._on_objective_completed({"completion_count": completion_index + 1, "title": "奖励契约"})
+	slice.controller._on_objective_completed({"completion_count": (completion_index + 1) * 2, "title": "奖励契约"})
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
+	await _wait_for_reward_input(slice)
 	var options := slice.controller.get_pending_mission_rewards()
 	for index in options.size():
 		if StringName(options[index].get("id", &"")) == reward_id:
-			slice._activate_modal_choice(index)
+			slice.presentation._reward_buttons[index].pressed.emit()
+			await create_timer(0.28).timeout
 			return int((slice.controller.evolution.get_mission_snapshot().get("reward_levels", {}) as Dictionary).get(reward_id, 0)) == 1
 	return false
+
+
+func _wait_for_reward_input(slice: FoldlightEndlessSliceRuntime) -> void:
+	for frame in 180:
+		if not slice.presentation._reward_buttons[0].disabled:
+			return
+		await create_timer(0.02).timeout
 
 
 func _capture_isolation_snapshot(slice: FoldlightEndlessSliceRuntime) -> Dictionary:
@@ -349,28 +403,11 @@ func _isolation_unchanged(slice: FoldlightEndlessSliceRuntime, before: Dictionar
 func _find_open_weapon_lane(slice: FoldlightEndlessSliceRuntime) -> Vector2:
 	var directions: Array[Vector2] = [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN, Vector2(1, 1).normalized(), Vector2(1, -1).normalized(), Vector2(-1, 1).normalized(), Vector2(-1, -1).normalized()]
 	for direction in directions:
-		var destination := slice.player_position + direction * 430.0
-		if slice.controller.map_definition.bounds.grow(-40.0).has_point(destination) and slice.controller.map_runtime.has_line_of_sight(slice.player_position, destination, 8.0):
+		var destination := slice.player.global_position + direction * 430.0
+		if slice.controller.map_definition.bounds.grow(-40.0).has_point(destination) and slice.controller.map_runtime.has_line_of_sight(slice.player.global_position, destination, 8.0):
 			return direction
 	_check(false, "authored harbor exposes a clear 430-pixel automatic-weapon lane")
 	return Vector2.RIGHT
-
-
-func _test_enemy(uid: int, position: Vector2, health: float) -> Dictionary:
-	return {
-		"uid": uid,
-		"enemy_id": &"drifter",
-		"spawn_role": &"melee",
-		"position": position,
-		"hp": health,
-		"projectile_multiplier": 1.0,
-		"fire_clock": 99.0,
-		"charge_clock": 99.0,
-		"charge_remaining": 0.0,
-		"hit_flash": 0.0,
-		"is_captain": false,
-		"captain_id": &"",
-	}
 
 
 func _option_ids(options: Array[Dictionary]) -> Array[StringName]:

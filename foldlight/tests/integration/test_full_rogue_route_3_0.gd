@@ -30,6 +30,8 @@ func _run() -> void:
 		var wave_guard := 0
 		while session.run_controller.phase == FoldlightRogueRunController.Phase.COMBAT and wave_guard < 100:
 			wave_guard += 1
+			while session._mechanic_intro_active and not session._mechanic_intro_queue.is_empty():
+				session._on_mechanic_card_dismissed(StringName(session._mechanic_intro_queue[0]["content_id"]))
 			session.world.room_runtime.advance_encounter(2.0)
 			for enemy in session.world.combat_runtime.enemies.duplicate():
 				if not is_instance_valid(enemy):
@@ -38,12 +40,23 @@ func _run() -> void:
 					defeated_bosses.append((enemy as FoldlightRogueBossActor).definition.content_id)
 					(enemy as FoldlightRogueBossActor).take_damage(1000000.0, &"weapon")
 				elif enemy.has_method("take_damage"):
+					# Preserve the elite's real immunity contract in this accelerated
+					# route audit: simulate its warning and wait for a firing window.
+					if enemy.has_method("is_damageable"):
+						for _step in 80:
+							if enemy.call("is_damageable"):
+								break
+							enemy.call("advance_simulation", 0.1, session.player.global_position)
 					enemy.call("take_damage", 1000000.0)
 			await process_frame
 		_check(wave_guard < 100, "room %d combat terminates" % room_guard)
 		if session.mode != FoldlightRogueSessionController.SessionMode.RUN:
 			break
 		if category == &"boss":
+			_check(session.run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR and session.world.visible, "boss %d retains its arena until a deliberate continue" % defeated_bosses.size())
+			for step in 24:
+				session._boss_clear_banner._input_guard._process(0.10)
+			session._boss_clear_banner._confirm()
 			await process_frame
 			continue
 		_check(session.run_controller.phase == FoldlightRogueRunController.Phase.REWARD, "room %d reaches reward phase" % room_guard)
@@ -78,13 +91,25 @@ func _run() -> void:
 	_check(room_guard < 40, "complete route finishes without a transition loop")
 	_check(session.mode == FoldlightRogueSessionController.SessionMode.RESULT, "third boss produces final result")
 	_check(visited_regions.size() == 3, "complete voyage visits all three regions")
-	_check(defeated_bosses.size() == 3 and defeated_bosses.has(&"reef_crown_battery") and defeated_bosses.has(&"inverted_archivist") and defeated_bosses.has(&"origami_judge"), "complete voyage fights all three rebuilt bosses")
+	var regional_bosses_valid := defeated_bosses.size() == FoldlightRogueContentCatalog.REGIONS.size()
+	if regional_bosses_valid:
+		for index in defeated_bosses.size():
+			regional_bosses_valid = regional_bosses_valid and FoldlightRogueContentCatalog.REGIONS[index].boss_ids.has(defeated_bosses[index])
+	_check(regional_bosses_valid, "complete voyage fights one valid authored boss from every region")
 	_check(session.run_controller.run_state.room_count >= 18, "branch route delivers a sustained thirty-to-forty-five-minute room count")
 	var total_upgrade_stacks := 0
 	for stack_count in session.run_controller.run_state.upgrade_levels.values():
 		total_upgrade_stacks += int(stack_count)
-	_check(total_upgrade_stacks >= 10, "full route creates a substantial stacked in-run build")
-	_check(session.player.weapon_mount.definitions.size() <= 2, "weapon rewards respect the two-automatic-weapon readability cap")
+	for rank in session.run_controller.run_state.weapon_levels.values():
+		total_upgrade_stacks += int(rank)
+	total_upgrade_stacks -= 1 # The starting lantern is not a room reward.
+	_check(total_upgrade_stacks >= 10, "full route creates a substantial build across weapon ranks and general upgrades")
+	var mounted_ids: Array[StringName] = []
+	for definition in session.player.weapon_mount.definitions:
+		mounted_ids.append(definition.content_id)
+	_check(mounted_ids.size() == session.run_controller.run_state.weapon_ids.size() and mounted_ids.has(&"crease_lantern"), "all collected automatic weapons remain equipped alongside the starter through the final boss")
+	for weapon_id in session.run_controller.run_state.weapon_ids:
+		_check(mounted_ids.has(weapon_id), "completed voyage retains chosen weapon %s" % weapon_id)
 
 	game.queue_free()
 	await process_frame

@@ -1,6 +1,8 @@
 class_name FoldlightBellBinder
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal tethers_changed(target_ids: Array[StringName])
 signal damaged(amount: float, health_remaining: float)
 signal defeated(actor: Node2D)
@@ -24,13 +26,13 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	definition = new_definition
 	actor_id = new_actor_id
 	health = definition.base_health if definition != null else 11.0
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 0) | (1 << 2) | (1 << 3)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func update_tethers(candidates: Array[Dictionary]) -> void:
@@ -60,7 +62,7 @@ func update_tethers(candidates: Array[Dictionary]) -> void:
 		tethers_changed.emit(get_tether_ids())
 	else:
 		_tether_positions = next_positions
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func get_tether_ids() -> Array[StringName]:
@@ -89,7 +91,7 @@ func advance_simulation(delta: float, player_position: Vector2, ally_center: Vec
 		desired = global_position.direction_to(ally_center)
 	velocity = velocity.move_toward(desired * (definition.move_speed if definition != null else 102.0), 520.0 * safe_delta)
 	move_and_slide()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func take_damage(amount: float) -> bool:
@@ -102,7 +104,7 @@ func take_damage(amount: float) -> bool:
 	if health <= 0.0:
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 

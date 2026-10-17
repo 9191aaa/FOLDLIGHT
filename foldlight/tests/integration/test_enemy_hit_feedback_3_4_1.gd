@@ -1,7 +1,7 @@
 extends SceneTree
 
-## 3.4.1 regression contract: every enemy family visibly acknowledges damage,
-## while automatic-weapon hit bursts coalesce instead of multiplying nodes.
+## Every enemy family acknowledges damage. Ordinary fire stays compact while
+## returns and earned boss breaks receive stronger, bounded paper reactions.
 
 var _failures: Array[String] = []
 
@@ -25,13 +25,29 @@ func _test_classic_enemy_feedback() -> void:
 		return
 	root.add_child(actor)
 	actor.global_position = Vector2(400, 300)
+	var original_position: Vector2 = actor.global_position
+	var original_radius: float = actor.get_contact_radius()
+	var original_rng_state: int = actor._rng.state
 	actor.take_projectile_damage(1.0, Vector2.RIGHT * 420.0, &"crease_petal")
 	var hit := actor.get_hit_feedback_snapshot()
-	_check(float(hit.get("flash", 0.0)) >= 0.99 and float(hit.get("punch", 0.0)) >= 0.90 and float(hit.get("ring", 0.0)) >= 0.99, "every classic-enemy hit restores flash, punch, and ring feedback")
+	_check(float(hit.get("flash", 0.0)) > 0.0 and float(hit.get("flash", 1.0)) < 0.60 and float(hit.get("punch", 1.0)) < 0.50 and is_zero_approx(float(hit.get("ring", 1.0))), "ordinary fire uses a short light tap without an expanding ring")
 	_check(Vector2(hit.get("direction", Vector2.ZERO)).dot(Vector2.RIGHT) >= 0.99, "classic-enemy punch follows the incoming projectile direction")
-	actor.advance_simulation(0.08, Vector2(900, 300))
+	for _index in 40:
+		actor.take_projectile_damage(0.01, Vector2.RIGHT * 420.0, &"crease_petal")
+	_check(int(actor.get_hit_feedback_snapshot().get("pulse_count", 0)) == 1 and is_equal_approx(actor.health, 0.60), "a burst applies all damage but does not restart the body flash forty times")
+	_check(actor.global_position.is_equal_approx(original_position) and is_equal_approx(actor.get_contact_radius(), original_radius) and actor._rng.state == original_rng_state, "visual impact leaves physics geometry and gameplay randomness unchanged")
+	actor.advance_simulation(0.035, Vector2(900, 300))
 	var decayed := actor.get_hit_feedback_snapshot()
 	_check(float(decayed.get("flash", 1.0)) < float(hit.get("flash", 0.0)) and float(decayed.get("flash", 0.0)) > 0.0, "classic-enemy feedback decays smoothly instead of spawning tweens")
+	actor.take_projectile_damage(0.10, Vector2.UP * 700.0, &"return_light")
+	var returned := actor.get_hit_feedback_snapshot()
+	_check(int(returned.get("tier", 0)) == 2 and float(returned.get("flash", 0.0)) > float(hit.get("flash", 1.0)) and float(returned.get("punch", 0.0)) > float(hit.get("punch", 1.0)), "return light immediately upgrades an active light tap to a stronger paper reaction")
+	actor.take_projectile_damage(0.01, Vector2.LEFT * 420.0, &"crease_petal")
+	_check(int(actor.get_hit_feedback_snapshot().get("pulse_count", 0)) == 2 and Vector2(actor.get_hit_feedback_snapshot().get("direction", Vector2.ZERO)).is_equal_approx(Vector2.UP), "a following ordinary pellet cannot erase or redirect the return-light reaction")
+	actor.advance_simulation(0.32, Vector2(900, 300))
+	_check(is_zero_approx(float(actor.get_hit_feedback_snapshot().get("remaining", 1.0))), "return paper shards and body deformation settle completely")
+	actor.take_projectile_damage(10.0, Vector2.DOWN, &"crease_petal")
+	_check(int(actor.get_hit_feedback_snapshot().get("tier", 0)) == 3 and actor.health == 0.0, "a lethal hit publishes a directional break reaction before defeat cleanup")
 	actor.queue_free()
 	await process_frame
 
@@ -61,12 +77,26 @@ func _test_boss_feedback() -> void:
 	root.add_child(boss)
 	await process_frame
 	boss.configure(FoldlightRogueContentCatalog.boss_by_id(&"reef_crown_battery"), Rect2(Vector2.ZERO, Vector2(1920, 1080)), 34101)
-	boss.take_damage(1.0)
+	var original_position: Vector2 = boss.global_position
+	var original_rng_state: int = boss._rng.state
+	boss.take_damage(1.0, &"weapon", Vector2.RIGHT)
 	var hit := boss.get_hit_feedback_snapshot()
-	_check(float(hit.get("flash", 0.0)) >= 0.99 and float(hit.get("punch", 0.0)) >= 0.85 and float(hit.get("ring", 0.0)) >= 0.99, "boss damage restores body flash, punch, and hit ring")
+	_check(float(hit.get("flash", 0.0)) > 0.0 and float(hit.get("flash", 1.0)) < 0.60 and is_zero_approx(float(hit.get("ring", 1.0))), "boss ordinary damage acknowledges the hit without a large flashing ring")
+	_check(boss.global_position.is_equal_approx(original_position) and boss._rng.state == original_rng_state, "boss impact remains a visual offset and does not consume attack randomness")
 	boss.advance_simulation(0.08, Vector2(300, 300))
 	var decayed := boss.get_hit_feedback_snapshot()
 	_check(float(decayed.get("flash", 1.0)) < float(hit.get("flash", 0.0)), "boss hit feedback decays without persistent visual state")
+	var health_before_return: float = boss.health
+	boss.take_damage(22.4, &"return", Vector2.UP)
+	var broken := boss.get_hit_feedback_snapshot()
+	_check(int(broken.get("tier", 0)) == 3 and boss.phase_controller.state == FoldlightBossPhaseController.State.STAGGERED, "earning the return window produces the strongest break pose")
+	_check(is_equal_approx(health_before_return - boss.health, 22.4 * boss.definition.return_damage_outside_stagger), "feedback tiers preserve the boss return-damage multiplier")
+	_check(Vector2(broken.get("direction", Vector2.ZERO)).is_equal_approx(Vector2.UP), "boss break pose uses the incoming projectile direction")
+	boss.take_damage(1.0, &"weapon", Vector2.LEFT)
+	_check(boss.get_hit_feedback_snapshot().get("pulse_count") == broken.get("pulse_count"), "automatic fire cannot replace an earned boss break animation")
+	boss.take_damage(99999.0, &"weapon", Vector2.LEFT)
+	var defeated_pose := boss.get_hit_feedback_snapshot()
+	_check(boss.health == 0.0 and int(defeated_pose.get("pulse_count", 0)) == int(broken.get("pulse_count", 0)) + 1 and Vector2(defeated_pose.get("direction", Vector2.ZERO)).is_equal_approx(Vector2.LEFT), "a lethal hit during stagger still publishes its own final break direction")
 	boss.queue_free()
 	await process_frame
 

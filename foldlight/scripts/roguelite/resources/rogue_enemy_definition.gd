@@ -22,7 +22,7 @@ func validation_errors() -> Array[String]:
 		errors.append("enemy %s has invalid combat values" % content_id)
 	if role == EnemyRole.TURRET and not stationary:
 		errors.append("turret %s must be stationary" % content_id)
-	if role in [EnemyRole.TURRET, EnemyRole.BUFFER, EnemyRole.CONTROLLER]:
+	if role in [EnemyRole.TURRET, EnemyRole.BUFFER, EnemyRole.CONTROLLER, EnemyRole.ELITE]:
 		if mechanic_rule.strip_edges().is_empty() or counterplay.strip_edges().is_empty():
 			errors.append("mechanic enemy %s needs a one-rule introduction and counterplay" % content_id)
 	return errors

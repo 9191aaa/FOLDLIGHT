@@ -1,6 +1,11 @@
 class_name FoldlightRogueEnemyActor
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
+const Palette = preload("res://scripts/ui/foldlight_theme.gd")
+const HitReaction = preload("res://scripts/visuals/paper_hit_reaction.gd")
+
 signal attack_requested(snapshot: Dictionary)
 signal player_pressure_requested(snapshot: Dictionary)
 signal damaged(amount: float, health_remaining: float)
@@ -29,6 +34,11 @@ var action_state: ActionState = ActionState.APPROACH
 var target_position: Vector2 = Vector2.ZERO
 var locked_direction: Vector2 = Vector2.RIGHT
 var support_attack_multiplier: float = 1.0
+var command_move_multiplier: float = 1.0
+var command_projectile_speed_multiplier: float = 1.0
+var _command_attack_multiplier: float = 1.0
+var _bell_attack_multiplier: float = 1.0
+var _applied_command_move: float = 1.0
 var classic_archetype: StringName = &"drifter"
 var arena_center: Vector2 = Vector2(960.0, 535.0)
 
@@ -43,9 +53,8 @@ var _state_remaining: float = 0.0
 var _age: float = 0.0
 var _phase: float = 0.0
 var _flash: float = 0.0
-var _hit_punch: float = 0.0
-var _hit_ring: float = 0.0
-var _hit_direction: Vector2 = Vector2.ZERO
+var _hit_reaction := HitReaction.new()
+var _capture_flash: float = 0.0
 var _mirror_remaining: float = 2.4
 var _path_sample_remaining: float = 0.08
 var _path_history: Array[Vector2] = []
@@ -57,7 +66,7 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 0) | (1 << 2) | (1 << 3)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: StringName) -> void:
@@ -65,6 +74,15 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	actor_id = new_actor_id
 	classic_archetype = _resolve_classic_archetype(definition.content_id if definition != null else &"drifter")
 	health = definition.base_health if definition != null else 1.0
+	support_attack_multiplier = 1.0
+	command_move_multiplier = 1.0
+	command_projectile_speed_multiplier = 1.0
+	_command_attack_multiplier = 1.0
+	_bell_attack_multiplier = 1.0
+	_applied_command_move = 1.0
+	_hit_reaction.reset()
+	_flash = 0.0
+	_capture_flash = 0.0
 	_rng.seed = hash(String(actor_id))
 	_attack_remaining = _rng.randf_range(0.75, 1.8)
 	_special_remaining = _rng.randf_range(2.0, 3.8)
@@ -81,18 +99,21 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	if collision != null and collision.shape is CircleShape2D:
 		collision.shape = collision.shape.duplicate()
 		(collision.shape as CircleShape2D).radius = get_contact_radius()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, new_target_position: Vector2, hostile_time_scale: float = 1.0) -> void:
 	if definition == null or health <= 0.0:
 		return
 	var safe_delta := maxf(0.0, delta) * clampf(hostile_time_scale, 0.1, 2.0)
+	# Restore the velocity used by the classic steering equations. Multiplying
+	# the previous already-buffed velocity every tick would grow without bound.
+	velocity /= _applied_command_move
 	target_position = new_target_position
 	_age += safe_delta
-	_flash = maxf(0.0, _flash - safe_delta * 5.5)
-	_hit_punch = maxf(0.0, _hit_punch - safe_delta * 6.8)
-	_hit_ring = maxf(0.0, _hit_ring - safe_delta * 4.6)
+	_hit_reaction.advance(maxf(0.0, delta))
+	_capture_flash = maxf(0.0, _capture_flash - safe_delta * 5.5)
+	_flash = maxf(_capture_flash, _hit_reaction.flash)
 	match classic_archetype:
 		&"drifter":
 			_advance_drifter(safe_delta)
@@ -112,42 +133,75 @@ func advance_simulation(delta: float, new_target_position: Vector2, hostile_time
 			_advance_rewinder(safe_delta)
 		_:
 			_advance_drifter(safe_delta)
+	velocity *= command_move_multiplier
+	_applied_command_move = command_move_multiplier
 	move_and_slide()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
-func take_damage(amount: float) -> bool:
+func take_damage(amount: float, source: StringName = &"weapon", incoming_velocity: Vector2 = Vector2.ZERO) -> bool:
 	if health <= 0.0 or amount <= 0.0:
 		return false
 	health = maxf(0.0, health - amount)
-	_flash = 1.0
-	_hit_punch = 1.0
-	_hit_ring = 1.0
-	if _hit_direction.is_zero_approx():
-		_hit_direction = target_position.direction_to(global_position)
-		if _hit_direction.is_zero_approx():
-			_hit_direction = Vector2.from_angle(_phase)
+	var impact_direction: Vector2 = incoming_velocity
+	if impact_direction.is_zero_approx():
+		impact_direction = target_position.direction_to(global_position)
+		if impact_direction.is_zero_approx():
+			impact_direction = Vector2.from_angle(_phase)
+	_hit_reaction.trigger(impact_direction, source, health <= 0.0)
+	_flash = maxf(_capture_flash, _hit_reaction.flash)
 	damaged.emit(amount, health)
 	if health <= 0.0:
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 
-func take_projectile_damage(amount: float, incoming_velocity: Vector2, _style: StringName) -> bool:
-	if not incoming_velocity.is_zero_approx():
-		_hit_direction = incoming_velocity.normalized()
-	return take_damage(amount)
+func take_projectile_damage(amount: float, incoming_velocity: Vector2, style: StringName) -> bool:
+	return take_damage(amount, style, incoming_velocity)
 
 
 func get_hit_feedback_snapshot() -> Dictionary:
-	return {"flash": _flash, "punch": _hit_punch, "ring": _hit_ring, "direction": _hit_direction}
+	var result: Dictionary = _hit_reaction.snapshot()
+	result["flash"] = _flash
+	return result
 
 
 func set_support_buff(attack_multiplier: float) -> void:
-	support_attack_multiplier = clampf(attack_multiplier, 0.55, 1.0)
-	queue_redraw()
+	_bell_attack_multiplier = clampf(attack_multiplier, 0.55, 1.0)
+	_refresh_attack_multiplier()
+	RenderRedraw.request(self)
+
+
+func set_command_buff(snapshot: Dictionary) -> void:
+	command_move_multiplier = clampf(float(snapshot.get("move_multiplier", 1.0)), 1.0, 1.85)
+	command_projectile_speed_multiplier = clampf(float(snapshot.get("projectile_speed_multiplier", 1.0)), 1.0, 1.6)
+	_command_attack_multiplier = clampf(float(snapshot.get("attack_interval_multiplier", 1.0)), 0.38, 1.0)
+	_refresh_attack_multiplier()
+
+
+func _refresh_attack_multiplier() -> void:
+	var next := minf(_bell_attack_multiplier, _command_attack_multiplier)
+	if is_equal_approx(next, support_attack_multiplier): return
+	var ratio := next / support_attack_multiplier
+	_attack_remaining *= ratio
+	if (classic_archetype == &"ram" and action_state == ActionState.APPROACH) or (classic_archetype == &"rewinder" and rewind_state == RewindState.ROAM):
+		_state_remaining *= ratio
+	support_attack_multiplier = next
+
+
+func get_command_buff_snapshot() -> Dictionary:
+	return {"move_multiplier": command_move_multiplier, "projectile_speed_multiplier": command_projectile_speed_multiplier, "attack_interval_multiplier": _command_attack_multiplier}
+
+
+func _emit_command_attack(snapshot: Dictionary) -> void:
+	if command_projectile_speed_multiplier > 1.0:
+		snapshot = snapshot.duplicate(true)
+		snapshot["speed"] = float(snapshot.get("speed", 160.0)) * command_projectile_speed_multiplier
+		for projectile: Dictionary in snapshot.get("projectiles", []):
+			projectile["speed"] = float(projectile.get("speed", 160.0)) * command_projectile_speed_multiplier
+	attack_requested.emit(snapshot)
 
 
 func get_combat_snapshot() -> Dictionary:
@@ -165,6 +219,7 @@ func get_combat_snapshot() -> Dictionary:
 		"records_rewind_path": classic_archetype == &"rewinder",
 		"contact_dangerous": is_contact_dangerous(),
 		"visual_version": CLASSIC_VISUAL_VERSION,
+		"command_buff": get_command_buff_snapshot(),
 	}
 
 
@@ -204,8 +259,9 @@ func capture_return_light() -> bool:
 	if not can_intercept_return_light():
 		return false
 	stored_light = mini(18, stored_light + 1)
-	_flash = 0.72
-	queue_redraw()
+	_capture_flash = 0.72
+	_flash = maxf(_capture_flash, _hit_reaction.flash)
+	RenderRedraw.request(self)
 	return true
 
 
@@ -476,7 +532,7 @@ func _emit_classic_aimed(shots: Array[Dictionary], color: Color, reflectable: bo
 			"speed": float(shot.get("speed", 160.0)),
 			"curve": float(shot.get("curve", 0.0)),
 		})
-	attack_requested.emit({
+	_emit_command_attack({
 		"origin": global_position,
 		"direction": Vector2.from_angle(base_angle),
 		"projectile_count": absolute_shots.size(),
@@ -503,7 +559,7 @@ func _emit_classic_absolute(shots: Array[Dictionary], color: Color, reflectable:
 			"speed": float(shot.get("speed", 160.0)),
 			"curve": float(shot.get("curve", 0.0)),
 		})
-	attack_requested.emit({
+	_emit_command_attack({
 		"origin": global_position,
 		"direction": absolute_shots[0].get("direction", Vector2.DOWN) if not absolute_shots.is_empty() else Vector2.DOWN,
 		"projectile_count": absolute_shots.size(),
@@ -526,27 +582,18 @@ func _draw() -> void:
 	if definition == null:
 		return
 	var spawn_scale := maxf(0.055, ease(clampf(_age / 0.52, 0.0, 1.0), -2.0))
-	var dark := Color(0.035, 0.025, 0.075).lerp(Color.WHITE, _flash * 0.72)
-	var ink := Color(0.70, 0.18, 0.54).lerp(Color.WHITE, _flash)
-	if _hit_ring > 0.0:
-		var ring_progress := 1.0 - _hit_ring
-		var ring_radius := get_contact_radius() + 5.0 + ring_progress * 34.0
-		draw_circle(Vector2.ZERO, ring_radius * 0.72, Color(1.0, 0.65, 0.22, _hit_ring * 0.075))
-		draw_arc(Vector2.ZERO, ring_radius, -PI * 0.88, PI * 0.88, 32, Color(1.0, 0.86, 0.52, _hit_ring * 0.92), 4.6 - ring_progress * 2.2, true)
-		draw_arc(Vector2.ZERO, ring_radius - 8.0, PI * 0.16, PI * 1.12, 22, Color(0.38, 0.96, 0.90, _hit_ring * 0.58), 2.2, true)
-		for shard in 4:
-			var shard_direction := _hit_direction.rotated((float(shard) - 1.5) * 0.42)
-			draw_line(shard_direction * 10.0, shard_direction * (24.0 + ring_progress * 30.0), Color(1.0, 0.70, 0.26, _hit_ring * 0.84), 3.4, true)
+	var dark := Palette.INK.lerp(Color.WHITE, _flash * 0.72)
+	var ink := Palette.DANGER.lerp(Color.WHITE, _flash)
 	var movement_ratio := clampf(velocity.length() / maxf(1.0, definition.move_speed if definition != null else 100.0), 0.0, 1.4)
 	var idle_wave := sin(_age * (2.8 + movement_ratio * 1.4) + _phase)
 	var animation_offset := Vector2(0.0, idle_wave * (1.8 + movement_ratio * 0.7))
 	var animation_scale := Vector2(1.0 + idle_wave * 0.018, 1.0 - idle_wave * 0.028)
 	var movement_tilt := clampf(velocity.x / 700.0, -0.12, 0.12)
-	var punch_offset := _hit_direction * _hit_punch * 11.0
-	var punch_scale := Vector2(1.0 + _hit_punch * 0.12, 1.0 - _hit_punch * 0.08)
+	var punch_offset := _hit_reaction.direction * _hit_reaction.punch * 8.0
+	var punch_scale := Vector2(1.0 + _hit_reaction.punch * 0.10, 1.0 - _hit_reaction.punch * 0.07)
 	draw_set_transform(punch_offset + animation_offset, movement_tilt, punch_scale * animation_scale)
 	if support_attack_multiplier < 0.99:
-		draw_arc(Vector2.ZERO, get_contact_radius() + 9.0, 0.0, TAU, 32, Color(1, 0.76, 0.24, 0.72), 2.5, true)
+		draw_arc(Vector2.ZERO, get_contact_radius() + 9.0, 0.0, TAU, 32, Color(Palette.GOLD, 0.72), 2.5, true)
 	match classic_archetype:
 		&"drifter": _draw_drifter(spawn_scale, dark, ink)
 		&"fan": _draw_fan(spawn_scale, dark)
@@ -558,6 +605,7 @@ func _draw() -> void:
 		&"rewinder": _draw_rewinder(spawn_scale)
 		_: _draw_drifter(spawn_scale, dark, ink)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_hit_reaction.draw_details(self, get_contact_radius())
 	if _skill_charge > 0.0:
 		_draw_sealed_charge(get_contact_radius(), _skill_charge)
 
@@ -570,7 +618,7 @@ func _draw_drifter(spawn_scale: float, dark: Color, ink: Color) -> void:
 		draw_colored_polygon(points, dark)
 		draw_polyline(_closed(points), Color(ink.r, ink.g, ink.b, 0.52), 1.4, true)
 	draw_circle(Vector2.ZERO, 9.0 * spawn_scale, ink)
-	draw_circle(Vector2.ZERO, 3.0 * spawn_scale, Color(1.0, 0.68, 0.30))
+	draw_circle(Vector2.ZERO, 3.0 * spawn_scale, Palette.GOLD)
 
 
 func _draw_fan(spawn_scale: float, dark: Color) -> void:
@@ -578,23 +626,23 @@ func _draw_fan(spawn_scale: float, dark: Color) -> void:
 	var left := _rotated_points(rotation, [Vector2(0,-38), Vector2(-42,25), Vector2(0,12)])
 	var right := _rotated_points(rotation, [Vector2(0,-38), Vector2(42,25), Vector2(0,12)])
 	draw_colored_polygon(_scaled_points(left, spawn_scale), dark)
-	draw_colored_polygon(_scaled_points(right, spawn_scale), Color(0.10, 0.06, 0.17).lerp(Color.WHITE, _flash * 0.7))
-	draw_line(left[0], left[1], Color(0.88, 0.24, 0.54, 0.76), 2.0, true)
-	draw_line(right[0], right[1], Color(0.40, 0.68, 0.82, 0.72), 2.0, true)
-	draw_circle(Vector2.ZERO, 5.0, Color(1.0, 0.69, 0.28))
+	draw_colored_polygon(_scaled_points(right, spawn_scale), Palette.INK.lerp(Color.WHITE, _flash * 0.7))
+	draw_line(left[0], left[1], Color(Palette.DANGER, 0.76), 2.0, true)
+	draw_line(right[0], right[1], Color(Palette.DANGER, 0.62), 2.0, true)
+	draw_circle(Vector2.ZERO, 5.0, Palette.GOLD)
 
 
 func _draw_weaver(spawn_scale: float, dark: Color, ink: Color) -> void:
 	for ring in 3:
 		var radius := (14.0 + ring * 10.0) * spawn_scale
-		draw_arc(Vector2.ZERO, radius, _age * (0.7 + ring * 0.2), _age * (0.7 + ring * 0.2) + PI * 1.35, 30, Color(0.54, 0.31 + ring * 0.08, 0.78, 0.72 - ring * 0.14), 4.2 - ring, true)
+		draw_arc(Vector2.ZERO, radius, _age * (0.7 + ring * 0.2), _age * (0.7 + ring * 0.2) + PI * 1.35, 30, Color(Palette.DANGER.lerp(Palette.GOLD, float(ring) * 0.12), 0.72 - ring * 0.14), 4.2 - ring, true)
 	for spoke in 4:
 		var angle := _age * -0.6 + spoke * PI * 0.5
 		draw_line(Vector2.from_angle(angle) * 7.0, Vector2.from_angle(angle) * 35.0 * spawn_scale, Color(ink.r, ink.g, ink.b, 0.42), 2.0, true)
 	draw_circle(Vector2.ZERO, 7.0, dark)
-	draw_circle(Vector2.ZERO, 2.8, Color(1.0, 0.72, 0.32))
+	draw_circle(Vector2.ZERO, 2.8, Palette.GOLD)
 	if _skill_charge > 0.0:
-		draw_arc(Vector2.ZERO, 48.0 + _skill_charge * 24.0, -PI, PI, 40, Color(1.0, 0.48, 0.20, 0.72), 3.0, true)
+		draw_arc(Vector2.ZERO, 48.0 + _skill_charge * 24.0, -PI, PI, 40, Color(Palette.DANGER, 0.72), 3.0, true)
 
 
 func _draw_ram(spawn_scale: float, dark: Color) -> void:
@@ -604,16 +652,16 @@ func _draw_ram(spawn_scale: float, dark: Color) -> void:
 	var rotation := direction.angle()
 	if action_state == ActionState.TELEGRAPH:
 		var warning_ratio := clampf(_state_remaining / 0.95, 0.0, 1.0)
-		draw_line(Vector2.ZERO, direction * 1280.0, Color(0.68, 0.06, 0.18, 0.075 + (1.0 - warning_ratio) * 0.045), 68.0, true)
-		draw_dashed_line(Vector2.ZERO, direction * 1280.0, Color(1.0, 0.66, 0.24, 0.58), 2.5, 22.0, true)
+		draw_line(Vector2.ZERO, direction * 1280.0, Color(Palette.DANGER, 0.075 + (1.0 - warning_ratio) * 0.045), 68.0, true)
+		draw_dashed_line(Vector2.ZERO, direction * 1280.0, Color(Palette.GOLD, 0.58), 2.5, 22.0, true)
 		for warning_arc in 3:
-			draw_arc(Vector2.ZERO, 62.0 + warning_ratio * 68.0 + warning_arc * 10.0, rotation - 0.68, rotation + 0.68, 28, Color(1.0, 0.48, 0.24, 0.42 - warning_arc * 0.09), 2.0, true)
+			draw_arc(Vector2.ZERO, 62.0 + warning_ratio * 68.0 + warning_arc * 10.0, rotation - 0.68, rotation + 0.68, 28, Color(Palette.DANGER, 0.42 - warning_arc * 0.09), 2.0, true)
 	var body := _scaled_points(_rotated_points(rotation, [Vector2(48,0), Vector2(3,31), Vector2(-36,18), Vector2(-25,0), Vector2(-36,-18), Vector2(3,-31)]), spawn_scale)
 	draw_colored_polygon(body, dark)
-	draw_polyline(_closed(body), Color(0.90, 0.23, 0.49, 0.72), 2.2, true)
-	draw_line(-direction * 22.0, direction * 34.0, Color(0.98, 0.69, 0.29, 0.72), 2.0, true)
+	draw_polyline(_closed(body), Color(Palette.DANGER, 0.72), 2.2, true)
+	draw_line(-direction * 22.0, direction * 34.0, Color(Palette.GOLD, 0.72), 2.0, true)
 	if action_state == ActionState.RECOVER:
-		draw_circle(Vector2.ZERO, 12.0 + sin(_age * 8.0) * 2.0, Color(1.0, 0.70, 0.28, 0.72), false, 3.0, true)
+		draw_circle(Vector2.ZERO, 12.0 + sin(_age * 8.0) * 2.0, Color(Palette.GOLD, 0.72), false, 3.0, true)
 
 
 func _draw_bloomer(spawn_scale: float) -> void:
@@ -621,44 +669,44 @@ func _draw_bloomer(spawn_scale: float) -> void:
 		var angle := float(petal) * TAU / 8.0 + _age * (0.20 if petal % 2 == 0 else -0.16)
 		var origin := Vector2.from_angle(angle) * 25.0 * spawn_scale
 		var shape := _diamond(origin, angle, 23.0 * spawn_scale, 9.0 * spawn_scale)
-		draw_colored_polygon(shape, Color(0.075, 0.045, 0.13).lerp(Color.WHITE, _flash * 0.64))
-		draw_polyline(_closed(shape), Color(0.55, 0.34, 0.81, 0.64), 1.5, true)
-	draw_circle(Vector2.ZERO, 14.0 * spawn_scale, Color(0.52, 0.22, 0.66).lerp(Color.WHITE, _flash))
-	draw_circle(Vector2.ZERO, 4.2 * spawn_scale, Color(1.0, 0.70, 0.29))
+		draw_colored_polygon(shape, Palette.INK.lerp(Color.WHITE, _flash * 0.64))
+		draw_polyline(_closed(shape), Color(Palette.DANGER, 0.64), 1.5, true)
+	draw_circle(Vector2.ZERO, 14.0 * spawn_scale, Palette.DANGER.lerp(Color.WHITE, _flash))
+	draw_circle(Vector2.ZERO, 4.2 * spawn_scale, Palette.GOLD)
 
 
 func _draw_leech(spawn_scale: float) -> void:
 	var rotation := global_position.direction_to(target_position).angle()
 	var outer := _scaled_points(_rotated_points(rotation, [Vector2(42,0), Vector2(10,33), Vector2(-34,26), Vector2(-18,0), Vector2(-34,-26), Vector2(10,-33)]), spawn_scale)
-	draw_colored_polygon(outer, Color(0.06, 0.025, 0.11).lerp(Color.WHITE, _flash * 0.68))
-	draw_polyline(_closed(outer), Color(0.90, 0.23, 0.55, 0.76), 2.1, true)
-	draw_circle(Vector2.from_angle(rotation) * 10.0, 7.0, Color(0.12, 0.75, 0.76))
+	draw_colored_polygon(outer, Palette.INK.lerp(Color.WHITE, _flash * 0.68))
+	draw_polyline(_closed(outer), Color(Palette.DANGER, 0.76), 2.1, true)
+	draw_circle(Vector2.from_angle(rotation) * 10.0, 7.0, Palette.FOLD)
 	if global_position.distance_to(target_position) < 245.0:
-		draw_dashed_line(Vector2.ZERO, to_local(target_position), Color(0.88, 0.25, 0.58, 0.22 + sin(_age * 9.0) * 0.08), 2.0, 12.0, true)
+		draw_dashed_line(Vector2.ZERO, to_local(target_position), Color(Palette.DANGER, 0.22 + sin(_age * 9.0) * 0.08), 2.0, 12.0, true)
 
 
 func _draw_mirror(spawn_scale: float) -> void:
 	var rotation := global_position.direction_to(target_position).angle() + PI * 0.5
 	var left := _scaled_points(_rotated_points(rotation, [Vector2(-4,-17), Vector2(-53,-38), Vector2(-37,11), Vector2(-8,28)]), spawn_scale)
 	var right := _scaled_points(_rotated_points(rotation, [Vector2(4,-17), Vector2(53,-38), Vector2(37,11), Vector2(8,28)]), spawn_scale)
-	draw_colored_polygon(left, Color(0.025, 0.10, 0.13).lerp(Color.WHITE, _flash * 0.64))
-	draw_colored_polygon(right, Color(0.07, 0.035, 0.12).lerp(Color.WHITE, _flash * 0.64))
-	draw_polyline(_closed(left), Color(0.30, 0.88, 0.86, 0.72), 2.0, true)
-	draw_polyline(_closed(right), Color(0.94, 0.52, 0.42, 0.62), 2.0, true)
-	draw_circle(Vector2.ZERO, 8.0 * spawn_scale, Color(1.0, 0.68, 0.30))
+	draw_colored_polygon(left, Palette.INK.lerp(Color.WHITE, _flash * 0.64))
+	draw_colored_polygon(right, Palette.SURFACE.lerp(Color.WHITE, _flash * 0.64))
+	draw_polyline(_closed(left), Color(Palette.FOLD, 0.72), 2.0, true)
+	draw_polyline(_closed(right), Color(Palette.DANGER, 0.62), 2.0, true)
+	draw_circle(Vector2.ZERO, 8.0 * spawn_scale, Palette.GOLD)
 	if mirror_state == MirrorState.FOLD:
 		var counter_radius := 138.0 + minf(24.0, float(stored_light) * 2.0)
 		for ring in 3:
 			var radius := counter_radius - ring * 13.0 + sin(_age * 5.0 + ring) * 3.0
-			draw_arc(Vector2.ZERO, radius, -PI * 0.92 + ring, PI * 0.16 + ring, 64, Color(0.30, 0.88, 0.86, 0.58 - ring * 0.13), 3.0 - ring * 0.5, true)
-			draw_circle(Vector2.ZERO, radius, Color(0.18, 0.78, 0.80, 0.018))
+			draw_arc(Vector2.ZERO, radius, -PI * 0.92 + ring, PI * 0.16 + ring, 64, Color(Palette.FOLD, 0.58 - ring * 0.13), 3.0 - ring * 0.5, true)
+			draw_circle(Vector2.ZERO, radius, Color(Palette.FOLD, 0.018))
 		for pip in mini(12, stored_light):
 			var angle := float(pip) * TAU / float(maxi(1, mini(12, stored_light))) + _age * 0.8
-			draw_circle(Vector2.from_angle(angle) * 110.0, 4.2, Color(1.0, 0.73, 0.30, 0.88))
+			draw_circle(Vector2.from_angle(angle) * 110.0, 4.2, Color(Palette.GOLD, 0.88))
 	elif mirror_state == MirrorState.RELEASE:
 		for ray in 8:
 			var ray_angle := float(ray) * TAU / 8.0 + _age
-			draw_line(Vector2.from_angle(ray_angle) * 32.0, Vector2.from_angle(ray_angle) * 76.0, Color(0.40, 0.94, 0.88, 0.38), 2.0, true)
+			draw_line(Vector2.from_angle(ray_angle) * 32.0, Vector2.from_angle(ray_angle) * 76.0, Color(Palette.FOLD, 0.38), 2.0, true)
 
 
 func _draw_rewinder(spawn_scale: float) -> void:
@@ -666,36 +714,36 @@ func _draw_rewinder(spawn_scale: float) -> void:
 		var local_path := PackedVector2Array()
 		for point in _rewind_path:
 			local_path.append(to_local(point))
-		draw_polyline(local_path, Color(0.38, 0.04, 0.22, 0.24 if rewind_state == RewindState.TELEGRAPH else 0.16), 15.0, true)
-		draw_polyline(local_path, Color(1.0, 0.50, 0.25, 0.62 if rewind_state == RewindState.TELEGRAPH else 0.38), 2.2, true)
+		draw_polyline(local_path, Color(Palette.DANGER, 0.24 if rewind_state == RewindState.TELEGRAPH else 0.16), 15.0, true)
+		draw_polyline(local_path, Color(Palette.DANGER, 0.62 if rewind_state == RewindState.TELEGRAPH else 0.38), 2.2, true)
 		var arrow_step := maxi(1, int(local_path.size() / 6))
 		for arrow_index in range(local_path.size() - 1, 0, -arrow_step):
 			var arrow_direction := local_path[arrow_index].direction_to(local_path[maxi(0, arrow_index - 1)])
-			draw_line(local_path[arrow_index], local_path[arrow_index] + arrow_direction * 18.0, Color(1.0, 0.64, 0.28, 0.56), 3.0, true)
+			draw_line(local_path[arrow_index], local_path[arrow_index] + arrow_direction * 18.0, Color(Palette.GOLD, 0.56), 3.0, true)
 	for loop_index in 5:
 		var angle := _age * (-1.4 if rewind_state == RewindState.REWIND else 0.46) + float(loop_index) * TAU / 5.0
 		var center := Vector2.from_angle(angle) * 27.0 * spawn_scale
 		var shape := _diamond(center, angle + PI * 0.5, 22.0 * spawn_scale, 7.0 * spawn_scale)
-		draw_colored_polygon(shape, Color(0.07, 0.025, 0.10).lerp(Color.WHITE, _flash * 0.64))
-		draw_polyline(_closed(shape), Color(0.94, 0.35, 0.48, 0.62), 1.5, true)
-	draw_circle(Vector2.ZERO, 13.0 * spawn_scale, Color(0.96, 0.48, 0.25).lerp(Color.WHITE, _flash))
-	draw_circle(Vector2.ZERO, 4.0 * spawn_scale, Color(1.0, 0.82, 0.46))
+		draw_colored_polygon(shape, Palette.INK.lerp(Color.WHITE, _flash * 0.64))
+		draw_polyline(_closed(shape), Color(Palette.DANGER, 0.62), 1.5, true)
+	draw_circle(Vector2.ZERO, 13.0 * spawn_scale, Palette.DANGER.lerp(Color.WHITE, _flash))
+	draw_circle(Vector2.ZERO, 4.0 * spawn_scale, Palette.GOLD)
 	if rewind_state == RewindState.TELEGRAPH:
-		draw_arc(Vector2.ZERO, 54.0 + _state_remaining * 34.0, -PI, PI, 48, Color(1.0, 0.48, 0.24, 0.78), 3.0, true)
+		draw_arc(Vector2.ZERO, 54.0 + _state_remaining * 34.0, -PI, PI, 48, Color(Palette.DANGER, 0.78), 3.0, true)
 
 
 func _draw_sealed_charge(enemy_radius: float, remaining: float) -> void:
 	var ratio := clampf(remaining / 1.05, 0.0, 1.0)
 	var closing_radius := enemy_radius + 28.0 + ratio * 76.0
-	draw_circle(Vector2.ZERO, enemy_radius + 17.0, Color(0.015, 0.008, 0.025, 0.36 * (1.0 - ratio)))
-	draw_arc(Vector2.ZERO, closing_radius, 0.0, TAU, 72, Color(1.0, 0.43, 0.16, 0.82), 3.0, true)
-	draw_arc(Vector2.ZERO, closing_radius - 9.0, _age * 1.8, _age * 1.8 + PI * 1.42, 48, Color(0.10, 0.02, 0.04, 0.92), 4.5, true)
+	draw_circle(Vector2.ZERO, enemy_radius + 17.0, Color(Palette.INK, 0.36 * (1.0 - ratio)))
+	draw_arc(Vector2.ZERO, closing_radius, 0.0, TAU, 72, Color(Palette.DANGER, 0.82), 3.0, true)
+	draw_arc(Vector2.ZERO, closing_radius - 9.0, _age * 1.8, _age * 1.8 + PI * 1.42, 48, Color(Palette.INK, 0.92), 4.5, true)
 	for nail_index in 6:
 		var angle := float(nail_index) * TAU / 6.0 + _age * 0.18
 		var nail_center := Vector2.from_angle(angle) * closing_radius
 		var nail := _diamond(nail_center, angle + PI, 13.0, 4.2)
-		draw_colored_polygon(nail, Color(0.035, 0.012, 0.025, 0.96))
-		draw_polyline(_closed(nail), Color(1.0, 0.54, 0.18, 0.88), 1.7, true)
+		draw_colored_polygon(nail, Color(Palette.INK, 0.96))
+		draw_polyline(_closed(nail), Color(Palette.DANGER, 0.88), 1.7, true)
 
 
 func _diamond(center: Vector2, angle: float, length: float, width: float) -> PackedVector2Array:

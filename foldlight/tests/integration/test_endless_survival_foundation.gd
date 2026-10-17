@@ -24,9 +24,9 @@ func _run() -> void:
 	_check(controller.config.validation_errors().is_empty(), "endless config validates")
 	_check(controller.map_definition.validation_errors().is_empty(), "handcrafted map validates")
 	var map_contract := controller.map_runtime.get_map_contract()
-	_check(StringName(map_contract.get("authored_version", &"")) == &"handcrafted_1_0", "map declares a handcrafted layout contract")
+	_check(StringName(map_contract.get("authored_version", &"")) == &"handcrafted_3_17", "map declares the expanded handcrafted layout contract")
 	_check(not bool(map_contract.get("runtime_random_terrain", true)), "map terrain is never generated at runtime")
-	_check((map_contract.get("bounds", Rect2()) as Rect2).size == Vector2(6144.0, 4096.0), "map is a 6144 by 4096 survival battlefield")
+	_check((map_contract.get("bounds", Rect2()) as Rect2).size == Vector2(7680.0, 5120.0), "map includes the expanded eastern and southern battlefield")
 	_check(int(map_contract.get("district_count", 0)) >= 6, "map has six readable districts")
 	_check(int(map_contract.get("wall_count", 0)) >= 28, "map has dense authored cover")
 	_check(int(map_contract.get("capture_site_count", 0)) >= 3, "map has authored capture sites")
@@ -64,16 +64,18 @@ func _run() -> void:
 	var entries: Array = wave.get("entries", [])
 	_check(not entries.is_empty(), "pressure director requests a populated enemy wave")
 	var all_classic := true
-	var shooter_uses_authored_center := false
+	var shooter_uses_local_safe_position := false
 	for entry_variant: Variant in entries:
 		var entry := entry_variant as Dictionary
 		var enemy_id := StringName(entry.get("enemy_id", &""))
 		if enemy_id not in controller.config.classic_enemy_ids:
 			all_classic = false
 		if StringName(entry.get("spawn_role", &"")) == &"shooter":
-			shooter_uses_authored_center = Vector2(entry.get("position", Vector2.ZERO)) in controller.map_definition.shooter_spawn_positions
+			var position := Vector2(entry.get("position", Vector2.ZERO))
+			var distance := position.distance_to(controller.map_definition.player_spawn)
+			shooter_uses_local_safe_position = distance >= controller.config.spawn_safe_distance and distance <= controller.config.spawn_local_radius and not controller.map_runtime.is_point_blocked(position, 40.0)
 	_check(all_classic, "waves reuse the complete 2.0 enemy identifiers instead of copying enemy logic")
-	_check(shooter_uses_authored_center, "shooters use authored central cover positions")
+	_check(shooter_uses_local_safe_position, "shooters reinforce near the player while respecting cover and the safe spawn radius")
 
 	# Capture objective.
 	var objective := controller.objectives.get_snapshot()

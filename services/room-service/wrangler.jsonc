@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "foldlight-room-service",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-15",
+  "workers_dev": true,
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "foldlight-rooms",
+    // Local-only placeholder. Replace in a separate production config after
+    // the account owner creates the free D1 database; never deploy this ID.
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "observability": { "enabled": false }
+}

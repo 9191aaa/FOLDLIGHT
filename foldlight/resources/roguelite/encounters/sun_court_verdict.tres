@@ -17,5 +17,5 @@ controller_quota = 1
 buffer_quota = 2
 turret_quota = 3
 minimum_fodder_ratio = 0.50
-enemy_ids = Array[StringName]([&"drifter", &"fan", &"weaver", &"ram", &"bloomer", &"leech", &"mirror", &"rewinder", &"paper_turret", &"bell_binder", &"ink_warden", &"prism_bulwark", &"brood_lantern", &"shear_scribe"])
+enemy_ids = Array[StringName]([&"drifter", &"fan", &"weaver", &"ram", &"bloomer", &"leech", &"mirror", &"rewinder", &"paper_turret", &"bell_binder", &"ink_warden", &"prism_bulwark", &"brood_lantern", &"shear_scribe", &"miasma_wraith"])
 room_tags = Array[StringName]([&"court", &"rotating_lanes"])

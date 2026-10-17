@@ -5,7 +5,9 @@ enum SessionMode { INACTIVE, TITLE, RUN, PROLOGUE, RESULT }
 
 const WORLD_SIZE := Vector2(2880.0, 1620.0)
 const PLAYER_START := Vector2(1440.0, 1180.0)
+const EXPLORATION_WORLD_SIZE := Vector2(3360.0, 1620.0)
 const ENDLESS_SURVIVAL_SCENE := "res://scenes/endless/endless_survival_slice.tscn"
+const BOSS_CLEAR_BANNER = preload("res://scripts/roguelite/ui/boss_clear_banner.gd")
 const PAPER_REEF_ENEMY_TIERS: Array[Array] = [
 	[&"drifter", &"fan"],
 	[&"ram", &"bloomer"],
@@ -14,7 +16,7 @@ const PAPER_REEF_ENEMY_TIERS: Array[Array] = [
 const PROLOGUE_STEPS: Array[Dictionary] = [
 	{"title": "移动与冲刺", "body": "移动一小段，再用一次 2.0 秒冷却的冲刺。"},
 	{"title": "收纳与追踪", "body": "按住折域收纳普通弹，松开后追踪返航；击杀普通敌人会接力一次，黑金弹不可反射。"},
-	{"title": "自动火力与地形", "body": "靠近敌人后武器会自动开火。利用墙体挡弹，青金地形有利，墨色与刺纸地形有害。"},
+	{"title": "自动火力与地形", "body": "靠近敌人后武器会自动开火。青绿日纹加速回息，紫色湿墨压低回息，红色刺纸触碰受伤；蓝色箭头指示潮流推移。"},
 ]
 
 var mode: SessionMode = SessionMode.INACTIVE
@@ -34,8 +36,6 @@ var _prologue_volley_timer: float = 0.0
 var _prologue_encounter_started: bool = false
 var _pending_reward_kinds: Dictionary = {}
 var _paused: bool = false
-var _pending_kill_sfx: int = 0
-var _kill_sfx_cooldown: float = 0.0
 var _feedback_shake_cooldown: float = 0.0
 var _capture_sfx_cooldown: float = 0.0
 var _mechanic_intro_queue: Array[Dictionary] = []
@@ -47,6 +47,11 @@ var _current_reward_title: String = ""
 var _kill_combo_count: int = 0
 var _kill_combo_timer: float = 0.0
 var _kill_shake_cooldown: float = 0.0
+var _boss_clear_banner: Control
+var _boss_clear_snapshot: Dictionary = {}
+var _scene_transitioning: bool = false
+var _music_sample_clock: float = 0.0
+var _music_wave_progress: float = 0.0
 
 @onready var player: FoldlightPlayer = get_parent().get_node("Player")
 @onready var run_controller: FoldlightRogueRunController = get_parent().get_node("RogueRunController")
@@ -61,6 +66,7 @@ var _kill_shake_cooldown: float = 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	call_deferred("_setup_boss_clear_banner")
 	run_controller.room_requested.connect(_on_room_requested)
 	run_controller.room_cleared.connect(_on_run_room_cleared)
 	run_controller.checkpoint_ready.connect(_on_checkpoint_ready)
@@ -72,44 +78,60 @@ func _ready() -> void:
 	world.combat_runtime.projectile_captured.connect(_on_projectile_captured)
 	world.combat_runtime.enemy_defeated.connect(_on_enemy_defeated)
 	world.combat_runtime.enemy_spawned.connect(_on_enemy_spawned)
+	world.combat_runtime.impact_confirmed.connect(_on_combat_impact)
 	mechanic_tracker.card_requested.connect(_on_mechanic_card_requested)
 	presentation.mechanic_card_dismissed.connect(_on_mechanic_card_dismissed)
 	presentation.new_run_requested.connect(_on_new_run_requested)
 	presentation.continue_requested.connect(continue_run)
 	presentation.prologue_requested.connect(start_prologue)
 	presentation.prologue_skip_requested.connect(_on_prologue_skip_requested)
-	presentation.classic_requested.connect(_on_classic_requested)
 	presentation.endless_requested.connect(_on_endless_requested)
-	presentation.quit_requested.connect(func() -> void: get_tree().quit())
+	presentation.quit_requested.connect(_on_quit_requested)
 	presentation.settings_requested.connect(_on_settings_requested)
 	presentation.resume_requested.connect(_resume_game)
+	presentation.pause_requested.connect(_pause_game)
 	presentation.abandon_requested.connect(_on_abandon_requested)
 	presentation.setting_adjust_requested.connect(_on_setting_adjust_requested)
 	presentation.settings_back_requested.connect(_on_settings_back_requested)
 	presentation.reward_chosen.connect(_on_reward_chosen)
+	presentation.active_relic_selected.connect(_on_active_relic_selected)
 	presentation.route_chosen.connect(_on_route_chosen)
 	presentation.retry_requested.connect(start_new_run)
-	presentation.title_requested.connect(enter_title)
+	presentation.title_requested.connect(_on_result_title_requested)
 	player.dash_started.connect(_on_player_dash_started)
 	player.fold_started.connect(_on_player_fold_started)
 	player.fold_released.connect(_on_player_fold_released)
 	player.active_item_used.connect(_on_player_active_item_used)
 	player.focus_empty.connect(_on_player_focus_empty)
 	player.statuses_cleansed.connect(_on_player_statuses_cleansed)
-	player.feedback_budget.impact_batch_requested.connect(_on_feedback_impact_batch)
+	player.set_feedback_motion_scale(float(profile_manager.get_setting(&"screen_shake", 1.0)))
 	call_deferred("enter_title")
+
+
+func _setup_boss_clear_banner() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
+	# Presentation is a later sibling, so its onready Interface exists only
+	# after the scene has finished entering the tree.
+	_boss_clear_banner = BOSS_CLEAR_BANNER.new()
+	_boss_clear_banner.name = "BossClearBanner"
+	presentation.interface.add_child(_boss_clear_banner)
+	_boss_clear_banner.continue_requested.connect(_on_boss_clear_continue)
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not _active or not event.is_pressed() or event.is_echo():
 		return
+	if run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR and mode == SessionMode.RUN:
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed(&"pause_game"):
-		if _paused:
+		if presentation.screen_kind == &"settings":
+			_on_settings_back_requested(presentation._settings_return)
+		elif _paused:
 			_resume_game()
 		elif mode in [SessionMode.RUN, SessionMode.PROLOGUE] and presentation.screen_kind == &"hud":
 			_pause_game()
-		elif presentation.screen_kind == &"settings":
-			_on_settings_back_requested(presentation._settings_return)
 		get_viewport().set_input_as_handled()
 		return
 	if presentation.screen_kind != &"hud" and _is_gameplay_input(event):
@@ -130,19 +152,20 @@ func _process(delta: float) -> void:
 		return
 	if _paused:
 		return
-	_kill_sfx_cooldown = maxf(0.0, _kill_sfx_cooldown - delta)
+	if mode == SessionMode.RUN and run_controller.phase == FoldlightRogueRunController.Phase.BOSS_CLEAR:
+		world.combat_runtime.advance_aftermath_feedback(minf(delta, 0.10))
 	_feedback_shake_cooldown = maxf(0.0, _feedback_shake_cooldown - delta)
 	_capture_sfx_cooldown = maxf(0.0, _capture_sfx_cooldown - delta)
 	_kill_shake_cooldown = maxf(0.0, _kill_shake_cooldown - delta)
 	_kill_combo_timer = maxf(0.0, _kill_combo_timer - delta)
 	if _kill_combo_timer <= 0.0:
 		_kill_combo_count = 0
-	if _pending_kill_sfx > 0 and _kill_sfx_cooldown <= 0.0:
-		audio_director.play_sfx(&"kill", 0.94 + minf(0.18, float(_pending_kill_sfx) * 0.025), -6.0)
-		_pending_kill_sfx = 0
-		_kill_sfx_cooldown = 0.085
 	if _can_advance_encounter():
 		world.room_runtime.advance_encounter(delta)
+		_music_sample_clock -= delta
+		if _music_sample_clock <= 0.0 and _can_advance_encounter():
+			_music_sample_clock = 1.0
+			audio_director.set_intensity(_combat_music_pressure())
 	if mode == SessionMode.RUN and run_controller.phase in [FoldlightRogueRunController.Phase.ENTERING_ROOM, FoldlightRogueRunController.Phase.COMBAT]:
 		run_controller.run_state.elapsed += delta
 	elif mode == SessionMode.PROLOGUE:
@@ -154,6 +177,9 @@ func _process(delta: float) -> void:
 
 
 func enter_title() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
+	_reset_boss_clear()
 	_active = true
 	_paused = false
 	mode = SessionMode.TITLE
@@ -162,38 +188,50 @@ func enter_title() -> void:
 	player.cancel_fold()
 	player.set_play_enabled(false)
 	player.visible = false
-	var legacy_hud := get_parent().get_node_or_null("HUD")
-	if legacy_hud != null:
-		legacy_hud.hide()
 	presentation.show()
 	presentation.show_title(profile_manager.get_roguelite_snapshot())
-	audio_director.set_intensity(0.045)
-
-
-func deactivate_for_classic() -> void:
-	_active = false
-	_paused = false
-	mode = SessionMode.INACTIVE
-	presentation.hide()
-	world.deactivate()
-	player.configure_roguelite_combat(false)
-	player.reset_player()
-	player.visible = true
+	audio_director.set_music_context(&"title", &"", 0.045)
 
 
 func _on_endless_requested() -> void:
 	# The survival slice owns a much larger authored world and its own camera.
-	# Changing scenes keeps campaign/roguelite combat nodes from processing in
+	# Changing scenes keeps two combat worlds from processing in
 	# parallel and gives the mode a clean, deterministic return path to title.
+	if not is_inside_tree() or _scene_transitioning or mode != SessionMode.TITLE or presentation.screen_kind != &"title":
+		return
+	_scene_transitioning = true
+	_active = false
 	_enter_modal_safety()
+	# A touch emits an emulated mouse release before its raw touch release.
+	# Keep the old GUI Controls in the tree until both dispatches have ended.
+	call_deferred("_complete_endless_transition")
+
+
+func _complete_endless_transition() -> void:
+	if not is_inside_tree() or is_queued_for_deletion() or not _scene_transitioning:
+		return
+	get_tree().set_meta("next_endless_seed", randi_range(1, 2147483647))
 	var error := get_tree().change_scene_to_file(ENDLESS_SURVIVAL_SCENE)
 	if error != OK:
+		_scene_transitioning = false
 		push_error("Unable to open endless survival scene: %s" % error_string(error))
-		player.resume_from_overlay(0.35)
-		presentation.show_title(profile_manager.get_roguelite_snapshot())
+		enter_title()
+
+
+func _on_quit_requested() -> void:
+	if is_inside_tree() and not _scene_transitioning and not OS.has_feature("web") and mode == SessionMode.TITLE and presentation.screen_kind == &"title":
+		_scene_transitioning = true
+		get_tree().quit()
+
+
+func _on_result_title_requested() -> void:
+	if is_inside_tree() and not _scene_transitioning and mode == SessionMode.RESULT and presentation.screen_kind == &"result":
+		enter_title()
 
 
 func start_new_run() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	_activate_gameplay()
 	mode = SessionMode.RUN
 	_result_committed = false
@@ -206,6 +244,8 @@ func start_new_run() -> void:
 
 
 func continue_run() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	var rogue := profile_manager.get_roguelite_snapshot()
 	var checkpoint_variant: Variant = rogue.get("active_run", {})
 	if not checkpoint_variant is Dictionary or (checkpoint_variant as Dictionary).is_empty():
@@ -224,6 +264,8 @@ func continue_run() -> void:
 
 
 func start_prologue() -> void:
+	if not is_inside_tree() or _scene_transitioning:
+		return
 	_activate_gameplay()
 	mode = SessionMode.PROLOGUE
 	_result_committed = false
@@ -248,15 +290,13 @@ func start_prologue() -> void:
 	player.set_play_enabled(true)
 	_prologue_last_position = player.global_position
 	presentation.show_prologue_step(1, PROLOGUE_STEPS.size(), str(PROLOGUE_STEPS[0]["title"]), str(PROLOGUE_STEPS[0]["body"]))
-	audio_director.set_intensity(0.10)
+	audio_director.set_music_context(&"combat", &"paper_reef", 0.10)
 
 
 func _activate_gameplay() -> void:
+	_reset_boss_clear()
 	_active = true
 	_paused = false
-	var legacy_hud := get_parent().get_node_or_null("HUD")
-	if legacy_hud != null:
-		legacy_hud.hide()
 	presentation.show()
 	player.set_play_enabled(false)
 	player.reset_player()
@@ -269,6 +309,8 @@ func _activate_gameplay() -> void:
 
 
 func _on_new_run_requested() -> void:
+	if not is_inside_tree() or _scene_transitioning or mode != SessionMode.TITLE or presentation.screen_kind != &"title":
+		return
 	var rogue := profile_manager.get_roguelite_snapshot()
 	if not bool(rogue.get("prologue_complete", false)):
 		start_prologue()
@@ -276,21 +318,18 @@ func _on_new_run_requested() -> void:
 		start_new_run()
 
 
-func _on_classic_requested() -> void:
-	deactivate_for_classic()
-	if get_parent().has_method("activate_classic_campaign"):
-		get_parent().call("activate_classic_campaign")
-
-
 func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> void:
 	if mode != SessionMode.RUN:
 		return
+	_reset_boss_clear()
 	current_room_node = room_node.duplicate(true)
 	current_region_snapshot = region_snapshot.duplicate(true)
 	current_region_definition = FoldlightRogueContentCatalog.REGIONS[clampi(run_controller.run_state.current_region, 0, FoldlightRogueContentCatalog.REGIONS.size() - 1)]
 	var room_id := StringName(room_node.get("id", &"room"))
 	var category := StringName(room_node.get("category", &"combat"))
 	_current_room_template = {}
+	var room_size := WORLD_SIZE if category == &"boss" else EXPLORATION_WORLD_SIZE
+	var layout_offset := (room_size - WORLD_SIZE) * 0.5
 	var terrain: Array[Dictionary] = []
 	if category == &"boss":
 		terrain = _boss_terrain_layout(current_region_definition.content_id)
@@ -302,16 +341,24 @@ func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> v
 			category,
 			int(room_node.get("depth", 0))
 		)
+		# Keep cover dimensions and enemy spacing intact as the shores widen.
+		for key in ["terrain", "spawn_slots"]:
+			for entry: Dictionary in _current_room_template.get(key, []):
+				entry["position"] = Vector2(entry.get("position", Vector2.ZERO)) + layout_offset
 		for placement_variant: Variant in _current_room_template.get("terrain", []):
 			if placement_variant is Dictionary:
 				terrain.append((placement_variant as Dictionary).duplicate(true))
-	var errors := world.load_room(player, room_id, WORLD_SIZE, terrain, current_region_definition.accent, run_controller.run_state.seed + run_controller.run_state.room_count * 7919, current_region_definition.backdrop_style)
+	var errors := world.load_room(player, room_id, room_size, terrain, current_region_definition.accent, run_controller.run_state.seed + run_controller.run_state.room_count * 7919, current_region_definition.backdrop_style)
 	if not errors.is_empty():
 		push_error("RogueSession: room configuration failed: %s" % "; ".join(errors))
 		run_controller.fail_run(&"invalid_room")
 		return
+	if category != &"boss":
+		world.room_runtime.configure_tide_beacons()
 	world.activate()
-	player.global_position = PLAYER_START
+	player.global_position = PLAYER_START + layout_offset
+	player.visible = true
+	world.camera.force_follow()
 	world.combat_runtime.apply_run_build(run_controller.run_state.upgrade_levels)
 	_equip_run_loadout()
 	player.health = clampi(run_controller.run_state.health, 1, player.max_health)
@@ -321,6 +368,11 @@ func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> v
 	player.set_play_enabled(true)
 	current_wave_text = ""
 	presentation.show_hud()
+	_music_wave_progress = 0.0
+	_music_sample_clock = 1.0
+	# Spawn signals can synchronously open a mechanic briefing. Establish the
+	# room first so its quiet overlay remains the final audible context.
+	_restore_combat_music()
 	var plan := _boss_plan(room_node) if category == &"boss" else _encounter_plan(room_node)
 	var begin_errors := world.room_runtime.begin_encounter(plan)
 	if not begin_errors.is_empty():
@@ -328,7 +380,6 @@ func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> v
 		run_controller.fail_run(&"invalid_encounter")
 		return
 	run_controller.begin_combat()
-	audio_director.set_intensity(0.18 + float(run_controller.run_state.current_region) * 0.13 + (0.18 if category == &"boss" else 0.0))
 	if category == &"boss":
 		audio_director.play_sfx(&"boss", 1.0, -2.0)
 
@@ -344,6 +395,11 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 	var staged_enemy_ids := _enemy_ids_for_room(current_region_definition.content_id, depth, category)
 	if not staged_enemy_ids.is_empty():
 		definition.enemy_ids = staged_enemy_ids
+	if run_controller.run_state.current_region > 0 and depth >= 2 and category in [&"combat", &"elite", &"event"]:
+		definition.enemy_ids.append(&"cinder_mine")
+	var has_barrage_elite := category == &"elite" and run_controller.run_state.current_region > 0
+	if has_barrage_elite:
+		definition.enemy_ids.append(&"shutter_seraph")
 	var multiplier := {
 		&"entry": 0.82,
 		&"rest": 0.78,
@@ -353,18 +409,51 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 		&"event": 1.06,
 		&"elite": 1.25,
 	}.get(category, 1.0) as float
-	definition.threat_budget = maxi(22, int(round(float(current_region_definition.base_threat_budget + int(room_node.get("risk", 1))) * multiplier * 1.10)))
+	var progression := float(current_region_definition.base_threat_budget + int(room_node.get("risk", 1))) + float(depth) * 0.65
+	definition.threat_budget = clampi(int(round(progression * multiplier * 1.10)), 22, 64)
 	definition.minimum_enemy_count = clampi(int(round(float(base_definition.minimum_enemy_count) * multiplier * 1.10)), 16, 32)
 	definition.wave_count = 4 if category == &"elite" or run_controller.run_state.current_region > 0 else 3
-	return encounter_director.compose_encounter(
+	var pressure := _encounter_pressure_profile(run_controller.run_state.current_region, depth, category)
+	definition.minimum_pressure_count = int(pressure["minimum_pressure_count"])
+	definition.minimum_fodder_ratio = float(pressure["fodder_ratio"])
+	var plan := encounter_director.compose_encounter(
 		definition,
 		FoldlightRogueContentCatalog.ENEMIES,
 		run_controller.run_state.seed ^ hash(String(room_node.get("id", "room"))),
 		run_controller.run_state.current_region + 1,
 		_spawn_slots(),
-		PLAYER_START,
-		world.room_runtime.get_solid_terrain_bounds(22.0)
+		player.global_position,
+		world.room_runtime.get_solid_terrain_bounds(22.0),
+		FoldlightRogueEnemyDefinition.EnemyRole.ELITE if has_barrage_elite else -1
 	)
+	plan["reinforcement_interval"] = pressure["reinforcement_interval"]
+	plan["reinforcement_threshold"] = pressure["reinforcement_threshold"]
+	plan["maximum_active_enemies"] = 16
+	return plan
+
+
+func _encounter_pressure_profile(region: int, depth: int, category: StringName) -> Dictionary:
+	if region == 0 and depth == 0:
+		return {"minimum_pressure_count": 0, "fodder_ratio": 0.52, "reinforcement_interval": 0.0, "reinforcement_threshold": 4}
+	var stage := 0 if depth == 0 else (1 if depth <= 2 else 2)
+	if category == &"elite":
+		stage = 3
+	if region == 0:
+		stage = 0 if depth == 1 else (1 if depth <= 3 else 2)
+		if category == &"elite":
+			stage = 3
+	var minimums := [[3, 4, 5, 6], [4, 5, 6, 7], [5, 6, 7, 8]]
+	var fodder_ratios := [[0.44, 0.42, 0.40, 0.40], [0.42, 0.40, 0.38, 0.36], [0.38, 0.36, 0.34, 0.32]]
+	var minimum := int(minimums[region][stage])
+	var interval := 12.0 - float(region)
+	if category == &"rest":
+		minimum = maxi(1, minimum - 2)
+		interval += 3.0
+	elif category in [&"cache", &"shop", &"forge"]:
+		minimum = maxi(1, minimum - 1)
+		interval += 2.0
+	var threshold := 4 if region == 0 and depth < 4 else (6 if region > 0 and depth >= 3 else 5)
+	return {"minimum_pressure_count": minimum, "fodder_ratio": float(fodder_ratios[region][stage]), "reinforcement_interval": interval, "reinforcement_threshold": threshold}
 
 
 func _enemy_ids_for_room(region_id: StringName, depth: int, category: StringName) -> Array[StringName]:
@@ -406,6 +495,8 @@ func _on_encounter_cleared(performance: Dictionary) -> void:
 
 func _on_run_room_cleared(room_node: Dictionary, performance: Dictionary) -> void:
 	_enter_modal_safety()
+	_sync_active_run_state()
+	_refresh_active_inventory()
 	run_controller.run_state.health = player.health
 	run_controller.run_state.max_health = player.max_health
 	var duration := maxf(1.0, float(performance.get("duration", 1.0)))
@@ -414,33 +505,89 @@ func _on_run_room_cleared(room_node: Dictionary, performance: Dictionary) -> voi
 	run_controller.run_state.glimmer += int(round(float(base_glimmer) * world.combat_runtime.get_glimmer_gain_multiplier()))
 	if StringName(room_node.get("category", &"")) == &"boss":
 		world.combat_runtime.grant_region_shield(run_controller.run_state.glimmer)
+		_begin_boss_clear()
 		return
 	var rogue := profile_manager.get_roguelite_snapshot()
 	_current_reward_kind = &""
 	_pending_reward_sequence.clear()
 	_current_reward_title = _category_display(StringName(room_node.get("category", &"combat")))
+	audio_director.set_music_context(&"reward")
 	if run_controller.run_state.room_count == 2 and run_controller.run_state.active_item_id.is_empty():
 		_pending_reward_sequence = [&"upgrade", &"active"]
 		_show_next_reward_stage(rogue)
-		audio_director.set_intensity(0.07)
 		return
 	var choices := _draft_room_reward(StringName(room_node.get("category", &"combat")), rogue)
 	if choices.is_empty():
 		run_controller.open_route_choice()
 		return
 	presentation.show_reward(choices, _category_display(StringName(room_node.get("category", &"combat"))))
-	audio_director.set_intensity(0.07)
+
+
+func _begin_boss_clear() -> void:
+	_enter_modal_safety()
+	var definition := FoldlightRogueContentCatalog.boss_by_id(StringName(current_room_node.get("boss_id", &"")))
+	_boss_clear_snapshot = world.combat_runtime.last_boss_defeat.duplicate(true)
+	if _boss_clear_snapshot.is_empty():
+		_boss_clear_snapshot = {"title": definition.title if definition != null else "首领", "health": 0.0, "maximum_health": definition.base_health if definition != null else 1.0, "phase": 3, "defeated": true, "position": Vector2(1440, 720)}
+	world.combat_runtime.begin_boss_aftermath(Vector2(_boss_clear_snapshot.get("position", Vector2(1440, 720))), float(profile_manager.get_setting(&"screen_shake", 1.0)))
+	current_wave_text = "首领已澄清 · 航路已留存"
+	presentation.show_hud()
+	_refresh_hud()
+	var next_region := run_controller.run_state.current_region + 1
+	var next_title := FoldlightRogueContentCatalog.REGIONS[next_region].title if next_region < FoldlightRogueContentCatalog.REGIONS.size() else ""
+	_boss_clear_banner.present(str(_boss_clear_snapshot.get("title", "首领")), next_title)
+	# Keep the Boss phrase running while its energy settles beneath the clear
+	# chime; the 2.2-second aftermath must not restart a different overture.
+	audio_director.set_music_context(&"victory")
+	audio_director.play_sfx(&"victory", 1.0, -4.0)
+
+
+func _on_boss_clear_continue() -> void:
+	if mode != SessionMode.RUN or run_controller.phase != FoldlightRogueRunController.Phase.BOSS_CLEAR or not _boss_clear_banner._confirmed:
+		return
+	_boss_clear_banner.dismiss()
+	run_controller.continue_after_boss()
+
+
+func _reset_boss_clear() -> void:
+	_boss_clear_snapshot.clear()
+	if is_instance_valid(_boss_clear_banner):
+		_boss_clear_banner.dismiss()
+
+
+func _restore_boss_clear() -> void:
+	# Reconstruct the cleared arena, not its encounter. The checkpoint already
+	# contains the room count and glimmer; neither may be granted twice.
+	var errors := world.load_room(player, StringName(current_room_node.get("id", &"")), WORLD_SIZE, _boss_terrain_layout(current_region_definition.content_id), current_region_definition.accent, run_controller.run_state.seed, current_region_definition.backdrop_style)
+	if not errors.is_empty():
+		push_error("RogueSession: cleared boss room failed: %s" % "; ".join(errors))
+		enter_title()
+		return
+	world.activate()
+	player.global_position = PLAYER_START
+	player.visible = true
+	world.camera.force_follow()
+	world.combat_runtime.apply_run_build(run_controller.run_state.upgrade_levels)
+	_equip_run_loadout()
+	player.health = clampi(run_controller.run_state.health, 1, player.max_health)
+	world.room_runtime.set_doors_locked(true)
+	_restore_combat_music()
+	_begin_boss_clear()
 
 
 func _on_reward_chosen(upgrade_id: StringName) -> void:
 	if mode != SessionMode.RUN or run_controller.phase != FoldlightRogueRunController.Phase.REWARD:
 		return
+	if not _pending_reward_kinds.has(String(upgrade_id)):
+		return
 	var reward_kind := StringName(_pending_reward_kinds.get(String(upgrade_id), &"upgrade"))
 	match reward_kind:
 		&"weapon":
-			_apply_weapon_choice(upgrade_id)
+			if not _apply_weapon_choice(upgrade_id):
+				return
 		&"active":
-			_apply_active_choice(upgrade_id)
+			if not _apply_active_choice(upgrade_id):
+				return
 		_:
 			if not reward_director.apply_upgrade_choice(run_controller.run_state, upgrade_id):
 				return
@@ -455,9 +602,24 @@ func _on_reward_chosen(upgrade_id: StringName) -> void:
 	run_controller.open_route_choice()
 
 
+func _route_view_snapshot() -> Dictionary:
+	var snapshot := current_region_snapshot.duplicate(true)
+	snapshot["cleared_node_ids"] = run_controller.run_state.cleared_node_ids.duplicate()
+	var state := run_controller.run_state
+	snapshot["context"] = {
+		"health": state.health, "max_health": state.max_health, "glimmer": state.glimmer,
+		"room_count": state.room_count, "elapsed": state.elapsed,
+		"active_item_id": String(state.active_item_id),
+		"region_count": FoldlightRogueContentCatalog.REGIONS.size(),
+		"motion_scale": float(profile_manager.get_setting(&"screen_shake", 1.0)),
+	}
+	return snapshot
+
+
 func _on_route_choice_requested(exits: Array[String]) -> void:
 	_enter_modal_safety()
-	presentation.show_route(current_region_snapshot, StringName(current_room_node.get("id", &"")), exits)
+	presentation.show_route(_route_view_snapshot(), StringName(current_room_node.get("id", &"")), exits)
+	audio_director.set_music_context(&"route", &"", 0.10)
 
 
 func _on_route_chosen(destination_id: StringName) -> void:
@@ -467,6 +629,10 @@ func _on_route_chosen(destination_id: StringName) -> void:
 
 func _on_checkpoint_ready(snapshot: Dictionary) -> void:
 	if mode == SessionMode.RUN:
+		_sync_active_run_state()
+		var collection := run_controller.run_state.get_active_collection()
+		for key: String in collection:
+			snapshot[key] = collection[key]
 		if persist_profile:
 			var enriched := snapshot.duplicate(true)
 			if StringName(enriched.get("session_phase", &"")) == &"reward" and not _current_reward_kind.is_empty():
@@ -483,6 +649,9 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 	current_room_node = run_controller.get_current_room_node()
 	current_region_snapshot = run_controller.get_current_region_snapshot()
 	current_region_definition = FoldlightRogueContentCatalog.REGIONS[clampi(run_controller.run_state.current_region, 0, FoldlightRogueContentCatalog.REGIONS.size() - 1)]
+	if phase_hint == &"boss_clear":
+		_restore_boss_clear()
+		return
 	world.deactivate()
 	player.apply_roguelite_build(run_controller.run_state.upgrade_levels)
 	_equip_run_loadout()
@@ -490,6 +659,8 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 	player.set_play_enabled(false)
 	player.visible = false
 	if phase_hint == &"reward":
+		_restore_combat_music()
+		audio_director.set_music_context(&"reward")
 		_current_reward_kind = StringName(checkpoint.get("reward_current_kind", &""))
 		_pending_reward_sequence = _name_array(checkpoint.get("reward_sequence", []))
 		_current_reward_title = str(checkpoint.get("reward_title", _category_display(StringName(current_room_node.get("category", &"combat")))))
@@ -503,13 +674,15 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 		var exits: Array[String] = []
 		for value: Variant in current_room_node.get("exits", []):
 			exits.append(String(value))
-		presentation.show_route(current_region_snapshot, StringName(current_room_node.get("id", &"")), exits)
-	audio_director.set_intensity(0.06)
+		presentation.show_route(_route_view_snapshot(), StringName(current_room_node.get("id", &"")), exits)
+		audio_director.set_music_context(&"route", &"", 0.10)
 
 
 func _on_run_finished(result: Dictionary) -> void:
 	if mode != SessionMode.RUN:
 		return
+	var from_boss_clear := not _boss_clear_snapshot.is_empty()
+	_reset_boss_clear()
 	mode = SessionMode.RESULT
 	world.deactivate()
 	player.set_play_enabled(false)
@@ -520,8 +693,12 @@ func _on_run_finished(result: Dictionary) -> void:
 		profile_manager.record_roguelite_run(completed)
 		_result_committed = true
 	presentation.show_result(completed)
-	audio_director.set_intensity(0.04)
-	audio_director.play_sfx(&"victory" if bool(completed.get("won", false)) else &"hurt", 1.0, -2.0)
+	audio_director.set_music_context(&"victory" if bool(completed.get("won", false)) else &"defeat")
+	if bool(completed.get("won", false)) and not from_boss_clear:
+		audio_director.play_sfx(&"victory", 1.0, -2.0)
+	elif not bool(completed.get("won", false)) and StringName(completed.get("reason", &"")) != &"lantern_extinguished":
+		# Fatal damage already plays hurt before fail_run emits this result.
+		audio_director.play_sfx(&"hurt", 1.0, -2.0)
 
 
 func _on_player_hit(health_remaining: int) -> void:
@@ -546,7 +723,6 @@ func _on_player_hit(health_remaining: int) -> void:
 
 
 func _on_enemy_defeated(enemy_id: StringName) -> void:
-	_pending_kill_sfx += 1
 	if _kill_combo_timer <= 0.0:
 		_kill_combo_count = 0
 	_kill_combo_count += 1
@@ -597,7 +773,7 @@ func _show_next_mechanic_briefing() -> void:
 	_mechanic_intro_active = true
 	_enter_modal_safety()
 	presentation.show_mechanic_card(_mechanic_intro_queue[0])
-	audio_director.set_intensity(0.035)
+	audio_director.set_music_context(&"paused")
 
 
 func _on_mechanic_card_dismissed(content_id: StringName) -> void:
@@ -629,11 +805,12 @@ func _finish_mechanic_briefings() -> void:
 		presentation.show_prologue_step(_prologue_step_index + 1, PROLOGUE_STEPS.size(), str(step["title"]), str(step["body"]))
 	else:
 		presentation.show_hud()
-	audio_director.set_intensity(0.18 + float(run_controller.run_state.current_region) * 0.13)
+	_restore_combat_music()
 
 
 func _on_wave_started(wave_number: int, total_waves: int) -> void:
 	current_wave_text = "第 %d / %d 波" % [wave_number, total_waves]
+	_music_wave_progress = float(maxi(0, wave_number - 1)) / float(maxi(1, total_waves - 1))
 
 
 func _refresh_hud() -> void:
@@ -644,6 +821,8 @@ func _refresh_hud() -> void:
 
 
 func _boss_hud_snapshot() -> Dictionary:
+	if not _boss_clear_snapshot.is_empty():
+		return _boss_clear_snapshot.duplicate(true)
 	for enemy in world.combat_runtime.enemies:
 		if enemy is FoldlightRogueBossActor and is_instance_valid(enemy):
 			var boss := enemy as FoldlightRogueBossActor
@@ -661,26 +840,40 @@ func _draft_room_reward(category: StringName, rogue: Dictionary, forced_kind: St
 	if reward_kind.is_empty():
 		reward_kind = &"weapon" if category == &"forge" else (&"active" if category == &"shop" else &"upgrade")
 	if reward_kind == &"weapon":
-		for weapon_id in _name_array(rogue.get("unlocked_weapons", [])):
-			var weapon := FoldlightRogueContentCatalog.weapon_by_id(weapon_id)
-			if weapon == null:
-				continue
-			choices.append({"content_id": weapon.content_id, "choice_kind": &"weapon", "title": weapon.title, "description": weapon.description, "rarity": 1, "accent": weapon.accent, "next_level": 1, "maximum_level": 1, "offensive": true})
+		choices = _draft_weapon_choices(rogue)
+		if choices.is_empty():
+			return _draft_room_reward(category, rogue, &"upgrade")
 	elif reward_kind == &"active":
 		for item_id in _name_array(rogue.get("unlocked_active_items", [])):
 			var item := FoldlightRogueContentCatalog.active_item_by_id(item_id)
-			if item == null:
+			if item == null or run_controller.run_state.active_item_ids.has(item_id):
 				continue
-			choices.append({"content_id": item.content_id, "choice_kind": &"active", "title": item.title, "description": item.description, "rarity": 1, "accent": item.accent, "next_level": 1, "maximum_level": 1, "offensive": item.effect_id in [&"radial_push", &"anchor_shield", &"weapon_overdrive"]})
+			choices.append(FoldlightActiveItemSlot.make_choice(item_id))
+		if choices.is_empty():
+			return _draft_room_reward(category, rogue, &"upgrade")
 	else:
 		var unlocked := _name_array(rogue.get("unlocked_upgrades", []))
 		choices = reward_director.draft_upgrades(run_controller.run_state.seed, run_controller.run_state.room_count, run_controller.run_state.upgrade_levels, unlocked, 3)
 		for choice in choices:
 			choice["choice_kind"] = &"upgrade"
+		# A weapon opportunity appears from the first room onward. Alternate
+		# expanding the array and improving a held weapon; the two remaining
+		# cards preserve the opportunity cost of choosing firepower over safety.
+		var weapon_choices := _draft_weapon_choices(rogue)
+		if not weapon_choices.is_empty():
+			var weapon_choice := weapon_choices[posmod(run_controller.run_state.room_count - 1, mini(2, weapon_choices.size()))]
+			if choices.is_empty(): choices.append(weapon_choice)
+			else: choices[0] = weapon_choice
 	choices = _sample_reward_choices(choices)
 	for choice in choices:
 		_pending_reward_kinds[String(choice.get("content_id", &""))] = StringName(choice.get("choice_kind", &"upgrade"))
 	return choices
+
+
+func _draft_weapon_choices(rogue: Dictionary) -> Array[Dictionary]:
+	var state := run_controller.run_state
+	var levels := FoldlightWeaponProgression.sanitize_levels(state.weapon_levels, state.weapon_ids)
+	return FoldlightWeaponProgression.draft_choices(state.seed, state.room_count, levels, _name_array(rogue.get("unlocked_weapons", [])), 3)
 
 
 func _show_next_reward_stage(rogue: Dictionary) -> void:
@@ -693,17 +886,19 @@ func _show_next_reward_stage(rogue: Dictionary) -> void:
 		_show_next_reward_stage(rogue)
 		return
 	presentation.show_reward(choices, _reward_stage_title(_current_reward_kind, _current_reward_title))
+	audio_director.set_music_context(&"reward")
 
 
 func _reward_stage_title(kind: StringName, room_title: String) -> String:
 	match kind:
 		&"upgrade": return "%s · 先选一项强化" % room_title
-		&"active": return "%s · 再带走一件主动道具" % room_title
+		&"active": return "%s · 再获得一种主动技能" % room_title
 		&"weapon": return "%s · 选择自动武器" % room_title
 	return room_title
 
 
 func _commit_reward_checkpoint() -> void:
+	_sync_active_run_state()
 	if not persist_profile:
 		return
 	var snapshot := run_controller.run_state.make_checkpoint()
@@ -737,33 +932,60 @@ func _sample_reward_choices(source: Array[Dictionary]) -> Array[Dictionary]:
 	return result
 
 
-func _apply_weapon_choice(weapon_id: StringName) -> void:
-	if FoldlightRogueContentCatalog.weapon_by_id(weapon_id) == null:
-		return
-	if run_controller.run_state.weapon_ids.has(weapon_id):
-		run_controller.run_state.weapon_ids.erase(weapon_id)
-	if run_controller.run_state.weapon_ids.size() >= 2:
-		run_controller.run_state.weapon_ids.remove_at(0)
-	run_controller.run_state.weapon_ids.append(weapon_id)
+func _apply_weapon_choice(weapon_id: StringName) -> bool:
+	if not run_controller.run_state.acquire_weapon(weapon_id):
+		return false
+	_sync_active_run_state()
 	_equip_run_loadout()
+	return true
 
 
-func _apply_active_choice(item_id: StringName) -> void:
+func _apply_active_choice(item_id: StringName) -> bool:
 	var definition := FoldlightRogueContentCatalog.active_item_by_id(item_id)
 	if definition == null:
-		return
-	run_controller.run_state.active_item_id = item_id
-	player.active_item_slot.replace(definition)
+		return false
+	_sync_active_run_state()
+	if not run_controller.run_state.acquire_active_item(item_id):
+		return false
+	player.active_item_slot.acquire(definition)
+	_sync_active_run_state()
+	_refresh_active_inventory()
+	return true
 
 
 func _equip_run_loadout() -> void:
-	player.weapon_mount.unequip_all()
-	for weapon_id in run_controller.run_state.weapon_ids:
-		player.weapon_mount.equip(FoldlightRogueContentCatalog.weapon_by_id(weapon_id))
-	player.active_item_slot.unequip()
-	var active := FoldlightRogueContentCatalog.active_item_by_id(run_controller.run_state.active_item_id)
-	if active != null:
-		player.active_item_slot.replace(active)
+	var state := run_controller.run_state
+	player.weapon_mount.set_weapon_levels(FoldlightWeaponProgression.sanitize_levels(state.weapon_levels, state.weapon_ids))
+	player.active_item_slot.restore_collection(state.get_active_collection())
+	_refresh_active_inventory()
+
+
+func _sync_active_run_state() -> void:
+	if mode == SessionMode.RUN:
+		run_controller.run_state.set_active_collection(player.active_item_slot.get_save_snapshot())
+
+
+func _refresh_active_inventory() -> void:
+	presentation.set_active_inventory(player.get_active_inventory_snapshot())
+
+
+func _on_active_relic_selected(item_id: StringName) -> void:
+	var selecting_reward := mode == SessionMode.RUN and run_controller.phase == FoldlightRogueRunController.Phase.REWARD and presentation.screen_kind == &"reward"
+	var selecting_pause := _paused and presentation.screen_kind == &"pause" and (mode == SessionMode.PROLOGUE or run_controller.phase in [FoldlightRogueRunController.Phase.ENTERING_ROOM, FoldlightRogueRunController.Phase.COMBAT])
+	if mode not in [SessionMode.RUN, SessionMode.PROLOGUE] or _scene_transitioning or not (selecting_reward or selecting_pause):
+		return
+	if not player.active_item_slot.select(item_id):
+		return
+	_sync_active_run_state()
+	_refresh_active_inventory()
+	if mode != SessionMode.RUN or not persist_profile:
+		return
+	if selecting_reward:
+		_commit_reward_checkpoint()
+	else:
+		var snapshot := run_controller.run_state.make_checkpoint()
+		snapshot["session_phase"] = "room"
+		profile_manager.commit_roguelite_checkpoint(snapshot)
 
 
 func _update_prologue(delta: float) -> void:
@@ -844,11 +1066,12 @@ func _on_player_statuses_cleansed(status_ids: Array[StringName]) -> void:
 		audio_director.play_sfx(&"capture", 1.28, -7.0)
 
 
-func _on_feedback_impact_batch(weight: float, count: int) -> void:
-	audio_director.play_sfx(&"hit", clampf(0.90 + weight * 0.16 + float(count) * 0.003, 0.90, 1.16), -8.5)
-	if _feedback_shake_cooldown <= 0.0:
-		world.camera.add_trauma(minf(0.17, 0.045 + weight * 0.065) * float(profile_manager.get_setting(&"screen_shake", 1.0)))
-		_feedback_shake_cooldown = 0.10
+func _on_combat_impact(kind: StringName, weight: float) -> void:
+	audio_director.play_combat_impact(kind, weight)
+	# Ordinary fire stays local; the return landing earns a short camera accent.
+	if kind == &"return" and _feedback_shake_cooldown <= 0.0:
+		world.camera.add_hit_kick(0.32 * float(profile_manager.get_setting(&"screen_shake", 1.0)))
+		_feedback_shake_cooldown = 0.16
 
 
 func _start_prologue_encounter() -> void:
@@ -878,7 +1101,7 @@ func _finish_prologue() -> void:
 	player.visible = false
 	presentation.hide_prologue_step()
 	presentation.show_result({"won": true}, true)
-	audio_director.set_intensity(0.04)
+	audio_director.set_music_context(&"victory")
 	audio_director.play_sfx(&"victory", 1.0, -2.0)
 
 
@@ -1078,12 +1301,13 @@ func _enter_modal_safety() -> void:
 
 
 func _pause_game() -> void:
-	if _paused or mode not in [SessionMode.RUN, SessionMode.PROLOGUE]:
+	if _paused or presentation.screen_kind != &"hud" or mode not in [SessionMode.RUN, SessionMode.PROLOGUE] or (mode == SessionMode.RUN and run_controller.phase not in [FoldlightRogueRunController.Phase.ENTERING_ROOM, FoldlightRogueRunController.Phase.COMBAT]):
 		return
 	_paused = true
 	_enter_modal_safety()
+	_refresh_active_inventory()
 	presentation.show_pause()
-	audio_director.set_intensity(0.045)
+	audio_director.set_music_context(&"paused")
 
 
 func is_paused() -> bool:
@@ -1106,11 +1330,34 @@ func _resume_game() -> void:
 		presentation.show_prologue_step(_prologue_step_index + 1, PROLOGUE_STEPS.size(), str(step["title"]), str(step["body"]))
 	else:
 		presentation.show_hud()
-	audio_director.set_intensity(0.18 + float(run_controller.run_state.current_region) * 0.13)
+	_restore_combat_music()
+
+
+func _restore_combat_music() -> void:
+	var context := &"boss" if mode == SessionMode.RUN and StringName(current_room_node.get("category", &"")) == &"boss" else &"combat"
+	var region := current_region_definition.content_id if current_region_definition != null else &"paper_reef"
+	audio_director.set_music_context(context, region, _combat_music_pressure())
+	_music_sample_clock = 1.0
+
+
+func _combat_music_pressure() -> float:
+	if mode == SessionMode.PROLOGUE:
+		return 0.10 + (0.12 if _prologue_encounter_started else 0.0)
+	var pressure := 0.22 + float(run_controller.run_state.current_region) * 0.11
+	pressure += minf(0.10, float(current_room_node.get("depth", 0)) * 0.02)
+	pressure += _music_wave_progress * 0.12
+	pressure += minf(0.14, float(world.combat_runtime.enemies.size()) * 0.009)
+	pressure += minf(0.10, float(world.combat_runtime.projectiles.size()) * 0.0006)
+	if StringName(current_room_node.get("category", &"")) == &"boss":
+		pressure += 0.22
+		for actor in world.combat_runtime.enemies:
+			if is_instance_valid(actor) and actor is FoldlightRogueBossActor:
+				pressure += float((actor as FoldlightRogueBossActor).phase_controller.phase_index) * 0.07
+	return clampf(pressure, 0.0, 0.96)
 
 
 func _on_abandon_requested() -> void:
-	if not _paused:
+	if not is_inside_tree() or _scene_transitioning or not _paused or presentation.screen_kind != &"leave_confirmation":
 		return
 	_paused = false
 	if mode == SessionMode.RUN:
@@ -1142,5 +1389,7 @@ func _on_setting_adjust_requested(setting_key: StringName, direction: int) -> vo
 		&"vibration", &"high_contrast", &"fullscreen":
 			value = not bool(current)
 	profile_manager.set_setting(setting_key, value)
+	if setting_key == &"screen_shake":
+		player.set_feedback_motion_scale(float(value))
 	presentation.refresh_settings(profile_manager.settings)
 	audio_director.play_sfx(&"ui", 1.0 + float(direction) * 0.06, -7.0)

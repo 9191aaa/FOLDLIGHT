@@ -21,11 +21,17 @@ func _run() -> void:
 	var controller_snapshot := snapshot.get("controller", {}) as Dictionary
 	_check(bool(controller_snapshot.get("active", false)), "standalone slice starts a live endless run")
 	_check(Vector2(snapshot.get("player_position", Vector2.ZERO)).is_equal_approx(slice.controller.map_definition.player_spawn), "slice player starts at the authored harbor")
+	_check(int(snapshot.get("pending_enemy_count", 0)) > 0, "the first wave has a visible staged arrival instead of materializing immediately")
+	# Advance the real bounded warning queue; this fixture does not depend on
+	# the machine producing a particular number of render frames in 0.65 s.
+	for warning_step in 12:
+		slice._advance_spawn_queue(0.1)
+	snapshot = slice.get_slice_snapshot()
 	_check(int(snapshot.get("enemy_count", 0)) > 0, "slice converts the first wave request into playable enemies")
 	_check(slice.world.room_runtime.get_terrain_pieces().size() == slice.controller.map_definition.walls.size(), "slice converts fixed-map cover into shared 2.0 terrain")
 	_check(slice.controller.map_runtime.get_node_or_null("AuthoredCoverCollision") == null, "slice disables the former parallel cover physics")
 	_check(slice.camera.enabled, "slice owns an active camera for the large battlefield")
-	_check(not slice.status_label.text.is_empty() and not slice.objective_label.text.is_empty(), "slice exposes live evolution and objective HUD text")
+	_check(not slice.presentation._hud_region.text.is_empty() and not slice.presentation._hud_objective.text.is_empty(), "slice exposes live evolution and objective HUD text")
 	_check(is_equal_approx(FoldlightEndlessSliceRuntime.DASH_COOLDOWN, 2.0), "slice preserves the formal two-second dash cooldown")
 	slice.player.request_dash(Vector2.RIGHT)
 	_check(slice.player.dash_component.dash_remaining > 0.0 and is_equal_approx(slice.player.dash_component.cooldown_remaining, 2.0), "slice dash is the actual 2.0 component with its two-second cooldown")
@@ -40,10 +46,18 @@ func _run() -> void:
 	# Mission completion must pause action on a real three-choice evolution,
 	# rather than silently auto-claiming the first option.
 	slice.controller._on_objective_completed({"completion_count": 1, "title": "测试任务"})
-	_check(slice._modal_kind == &"reward" and slice.modal_dim.visible, "mission completion opens a visible three-choice evolution")
+	# Finish the visible facility unfold before inspecting or choosing cards.
+	for transition_step in 6:
+		slice._advance_reward_completion(0.1)
+	_check(slice._modal_kind == &"reward" and slice.presentation.screen_kind == &"reward", "mission completion opens a visible three-choice evolution")
 	_check(slice._modal_options.size() == 3, "mission evolution presents exactly three authored rewards")
-	slice._activate_modal_choice(0)
-	_check(slice._modal_kind.is_empty() and slice.reward_toast.visible, "chosen mission evolution resumes play with explicit reward feedback")
+	for frame in 180:
+		if not slice.presentation._reward_buttons[0].disabled:
+			break
+		await create_timer(0.02).timeout
+	slice.presentation._reward_buttons[0].pressed.emit()
+	await create_timer(0.28).timeout
+	_check(slice._modal_kind.is_empty() and slice.presentation._mechanic_panel.visible, "chosen mission evolution resumes play with explicit reward feedback")
 
 	# Endless survival ends on death and offers restart/title; it must not
 	# silently respawn forever like the former developer slice.
@@ -51,8 +65,8 @@ func _run() -> void:
 		slice.player.invulnerability = 0.0
 		slice.combat_runtime._try_hit_player(Vector2.RIGHT)
 	_check(slice.run_ended and not slice.controller.active, "lethal damage ends the endless run instead of auto-respawning")
-	_check(slice._modal_kind == &"game_over" and slice.modal_dim.visible, "defeat opens a complete result screen")
-	_check(slice.modal_buttons[0].visible and slice.modal_buttons[1].visible, "result screen offers restart and title return")
+	_check(slice._modal_kind == &"game_over" and slice.presentation.screen_kind == &"result", "defeat opens a complete result screen")
+	_check((slice.presentation._focus_groups[&"result"][0] as Button).visible and (slice.presentation._focus_groups[&"result"][1] as Button).visible, "result screen offers restart and title return")
 	_check(slice.controller.visible and slice.controller.map_runtime.visible, "result screen preserves the authored battlefield behind its summary")
 
 	slice.queue_free()

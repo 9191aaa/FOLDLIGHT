@@ -6,7 +6,8 @@
 script = ExtResource("1")
 content_id = &"paper_burst"
 title = "纸潮迸灯"
-description = "引爆 520 范围纸潮：重创近敌，并把最多十二枚普通敌弹改写成追踪返光。"
+description = "冲击近身敌人，将更远处最多 12 发可收纳敌弹化作追踪返光。被弹幕包围时，用它打开退路。"
+usage_label = "解围 · 返光"
 accent = Color(1, 0.68, 0.28, 1)
 tags = Array[StringName]([&"starter", &"defense"])
 cooldown = 12.0

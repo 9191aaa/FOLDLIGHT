@@ -4,7 +4,7 @@
 script = ExtResource("1")
 content_id = &"tide_bell"
 title = "潮钟"
-description = "缓慢钟声落在随机敌群中央，以清晰圆环造成范围伤害。"
+description = "钟光飞抵落点后炸开金色圆环，同时震击范围内敌人；三阶、五阶扩大震荡。"
 accent = Color(0.98, 0.70, 0.28, 1)
 tags = Array[StringName]([&"area", &"slow"])
 targeting = 4

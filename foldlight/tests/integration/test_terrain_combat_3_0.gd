@@ -28,7 +28,7 @@ func _run() -> void:
 	var combat := world.combat_runtime
 	player.global_position = Vector2(500, 900)
 	combat._update_terrain_effects(0.1)
-	_check(player.has_status(&"wet_ink"), "ink terrain continuously applies its readable slow")
+	_check(player.has_status(&"wet_ink"), "ink terrain continuously applies its focus-regeneration penalty")
 	player.global_position = Vector2(1100, 900)
 	player.velocity = Vector2.ZERO
 	combat._update_terrain_effects(0.1)

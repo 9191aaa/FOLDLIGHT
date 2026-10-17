@@ -12,5 +12,5 @@ tags = Array[StringName]([&"open", &"reef"])
 depth_count = 7
 base_threat_budget = 24
 encounter_ids = Array[StringName]([&"reef_crossfire"])
-boss_ids = Array[StringName]([&"reef_crown_battery"])
+boss_ids = Array[StringName]([&"reef_crown_battery", &"tide_loom_mother"])
 backdrop_style = &"paper_reef"

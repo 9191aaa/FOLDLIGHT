@@ -4,7 +4,7 @@
 script = ExtResource("1")
 content_id = &"ink_immunity"
 title = "拒墨层"
-description = "墨池与墨圈的减速强度降低 30%。"
+description = "缚折的减速强度降低 30%。"
 accent = Color(0.72, 0.44, 0.92, 1)
 tags = Array[StringName]([&"hazard", &"ink"])
 family = 3

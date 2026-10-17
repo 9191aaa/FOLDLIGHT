@@ -4,7 +4,8 @@
 script = ExtResource("1")
 content_id = &"tide_clock"
 title = "停潮钟"
-description = "让敌人与敌弹降至 35% 速度五秒，玩家与返光保持原速。"
+description = "让全场敌人与敌弹放慢至 35% 速度，持续 5 秒。自身与返光保持原速，留出躲避和收弹的空档。"
+usage_label = "控场 · 缓速"
 accent = Color(0.88, 0.55, 0.96, 1)
 tags = Array[StringName]([&"control", &"slow"])
 cooldown = 20.0

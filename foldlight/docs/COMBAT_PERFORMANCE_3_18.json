@@ -1,0 +1,1309 @@
+{
+  "version": "3.18.0",
+  "state": "final-visible-combat-retest-and-mobile-layout-complete",
+  "baseline": {
+    "results": [
+      {
+        "actual_enemy_max": 80,
+        "actual_enemy_min": 80,
+        "actual_projectile_min_before_refill": 248,
+        "actual_projectile_peak": 260,
+        "boss_activity": {},
+        "boss_phases_seen": [],
+        "bosses": false,
+        "draw_calls_p50": 4552.0,
+        "effective_population_limit": 80,
+        "frame_interval_p50_ms": 142.698,
+        "frame_interval_p95_ms": 158.444,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "idle"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 0,
+        "map_id": "folded_delta",
+        "map_size": "(7680.0, 5120.0)",
+        "max_fps": 0,
+        "name": "ordinary_80_bounded_260",
+        "ordinary": 80,
+        "physics_frames": 2872,
+        "physics_p95_ms": 24.085,
+        "poison": 0,
+        "poison_cloud_peak": 0,
+        "population_max": 80,
+        "process_p95_ms": 25.832,
+        "projectile_counts": {
+          "friendly_spawned": 612,
+          "hostile_spawned": 2785,
+          "injected": 1302,
+          "poison_requests": 0,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 329,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 92,
+        "wall_seconds": 51.465985,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 246,
+        "actual_projectile_peak": 260,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "bell_alternation": 5,
+              "eclipse_chime_cut": 4,
+              "eclipse_procession": 5
+            },
+            "support_requests": 0,
+            "telegraphs": 14,
+            "volleys": 26
+          },
+          "inverted_archivist": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "ink_partition": 8,
+              "ledger_petals": 8,
+              "margin_cut": 9
+            },
+            "support_requests": 9,
+            "telegraphs": 25,
+            "volleys": 24
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "judgement_petals": 8,
+              "shrinking_frame": 8,
+              "unreflectable_cut": 8
+            },
+            "support_requests": 0,
+            "telegraphs": 24,
+            "volleys": 31
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "black_lane": 6,
+              "petal_salvo": 6,
+              "tide_fan": 6,
+              "turret_crown": 7
+            },
+            "support_requests": 13,
+            "telegraphs": 25,
+            "volleys": 24
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "loom_crossweave": 5,
+              "loom_needle": 5,
+              "loom_shuttle": 5
+            },
+            "support_requests": 15,
+            "telegraphs": 15,
+            "volleys": 92
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 24,
+            "patterns": {
+              "execution_counterfold": 4,
+              "execution_dash": 24,
+              "execution_rake": 4
+            },
+            "support_requests": 0,
+            "telegraphs": 32,
+            "volleys": 8
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "inverted_archivist:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 4360.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 143.094,
+        "frame_interval_p95_ms": 157.372,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 1,
+        "map_id": "inverted_canals",
+        "map_size": "(7936.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_bounded_260",
+        "ordinary": 50,
+        "physics_frames": 2815,
+        "physics_p95_ms": 24.768,
+        "poison": 2,
+        "poison_cloud_peak": 5,
+        "population_max": 56,
+        "process_p95_ms": 29.751,
+        "projectile_counts": {
+          "friendly_spawned": 660,
+          "hostile_spawned": 5236,
+          "injected": 1607,
+          "poison_requests": 108,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 329,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 50.490552,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 88,
+        "actual_projectile_peak": 259,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "bell_alternation": 4,
+              "eclipse_chime_cut": 4,
+              "eclipse_procession": 5
+            },
+            "support_requests": 0,
+            "telegraphs": 13,
+            "volleys": 24
+          },
+          "inverted_archivist": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "ink_partition": 7,
+              "ledger_petals": 8,
+              "margin_cut": 8
+            },
+            "support_requests": 9,
+            "telegraphs": 23,
+            "volleys": 23
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "judgement_petals": 7,
+              "shrinking_frame": 8,
+              "unreflectable_cut": 7
+            },
+            "support_requests": 0,
+            "telegraphs": 22,
+            "volleys": 30
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "black_lane": 6,
+              "petal_salvo": 6,
+              "tide_fan": 5,
+              "turret_crown": 6
+            },
+            "support_requests": 13,
+            "telegraphs": 23,
+            "volleys": 23
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "loom_crossweave": 4,
+              "loom_needle": 5,
+              "loom_shuttle": 5
+            },
+            "support_requests": 14,
+            "telegraphs": 14,
+            "volleys": 82
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 24,
+            "patterns": {
+              "execution_counterfold": 3,
+              "execution_dash": 24,
+              "execution_rake": 4
+            },
+            "support_requests": 0,
+            "telegraphs": 31,
+            "volleys": 7
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "inverted_archivist:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 3748.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 137.969,
+        "frame_interval_p95_ms": 150.974,
+        "hostile_projectile_peak": 251,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 2,
+        "map_id": "solar_archipelago",
+        "map_size": "(8256.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_natural",
+        "ordinary": 50,
+        "physics_frames": 2646,
+        "physics_p95_ms": 23.204,
+        "poison": 2,
+        "poison_cloud_peak": 6,
+        "population_max": 56,
+        "process_p95_ms": 26.057,
+        "projectile_counts": {
+          "friendly_spawned": 1060,
+          "hostile_spawned": 4725,
+          "injected": 0,
+          "poison_requests": 100,
+          "support_spawned": 0
+        },
+        "refill": false,
+        "sample_frames": 329,
+        "seconds": 35.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 46.035464,
+        "window_focused": true
+      }
+    ],
+    "scope": "Native Godot 4.6.3 Compatibility; 1280x720 physical /1920x1080 logical. Shared real AI/collision/terrain, phase3 intensity5 bosses, all weapons Lv5, immortal target HP and stationary invincible player. Waves frozen after fixture setup; actual population and threat allowances retained. An escort is created from authored routes; real lockdown/inversion/poison advance. First31 render frames excluded. Bounded cases replenish real hostile projectiles to260 AFTER simulation; natural case injects ZERO bullets. Synthetic stress, not whole-run balancing or Android performance evidence.",
+    "version": "3.18.0"
+  },
+  "pipeline_profile": {
+    "actor_final": 80,
+    "actor_min": 80,
+    "bullet_min_including_warmup": 0,
+    "bullet_peak": 260,
+    "counts": {
+      "friendly_spawned": 212,
+      "hostile_spawned": 1112,
+      "injected": 653,
+      "poison_requests": 0,
+      "support_spawned": 0
+    },
+    "diagnostic_no_enemy_masks": false,
+    "engine_monitors": {
+      "active_objects": {
+        "count": 129,
+        "p50": 80.0,
+        "p95": 80.0
+      },
+      "collision_pairs": {
+        "count": 129,
+        "p50": 73.0,
+        "p95": 76.0
+      },
+      "engine_physics_ms": {
+        "count": 129,
+        "p50": 18.184,
+        "p95": 22.001
+      },
+      "engine_process_ms": {
+        "count": 129,
+        "p50": 22.495,
+        "p95": 29.274
+      },
+      "island_count": {
+        "count": 129,
+        "p50": 6.0,
+        "p95": 9.0
+      }
+    },
+    "frame_interval_ms": {
+      "count": 129,
+      "p50": 139.213,
+      "p95": 153.155
+    },
+    "frames": 143,
+    "physics_ticks": 1140,
+    "physics_ticks_per_second": 60,
+    "pipeline_total": {
+      "count": 1020,
+      "p50": 2.589,
+      "p95": 3.372
+    },
+    "profiled_ticks": 1020,
+    "scope": "Real shared combat physics disabled ONLY on node, invoked exactly once per SceneTree.physics_frame at engine fixed delta. All original stages/guards in original order; real60Hz, all80 enemies and260 projectile target retained. First2sec warmup excluded. Diagnostic ablation is not a production fix and invalidates ordinary collision behavior.",
+    "stages": {
+      "automatic_weapons": {
+        "count": 1020,
+        "cumulative_ms": 121.114,
+        "fraction_of_pipeline": 0.0453133763018608,
+        "p50": 0.013,
+        "p95": 0.769
+      },
+      "dash_trail": {
+        "count": 1020,
+        "cumulative_ms": 3.11799999999999,
+        "fraction_of_pipeline": 0.00116656296802352,
+        "p50": 0.003,
+        "p95": 0.004
+      },
+      "denial": {
+        "count": 1020,
+        "cumulative_ms": 22.6829999999999,
+        "fraction_of_pipeline": 0.00848657723017241,
+        "p50": 0.021,
+        "p95": 0.03
+      },
+      "enemy_movement": {
+        "count": 1020,
+        "cumulative_ms": 842.131999999999,
+        "fraction_of_pipeline": 0.315073766962023,
+        "p50": 0.817,
+        "p95": 1.116
+      },
+      "poison": {
+        "count": 1020,
+        "cumulative_ms": 6.91899999999995,
+        "fraction_of_pipeline": 0.00258866233988285,
+        "p50": 0.007,
+        "p95": 0.009
+      },
+      "projectiles": {
+        "count": 1020,
+        "cumulative_ms": 1539.634,
+        "fraction_of_pipeline": 0.576035923255271,
+        "p50": 1.513,
+        "p95": 1.758
+      },
+      "support_links": {
+        "count": 1020,
+        "cumulative_ms": 49.9500000000002,
+        "fraction_of_pipeline": 0.018688204057978,
+        "p50": 0.012,
+        "p95": 0.401
+      },
+      "temporary_effects": {
+        "count": 1020,
+        "cumulative_ms": 22.6989999999999,
+        "fraction_of_pipeline": 0.00849256344168248,
+        "p50": 0.021,
+        "p95": 0.036
+      },
+      "terrain": {
+        "count": 1020,
+        "cumulative_ms": 62.93,
+        "fraction_of_pipeline": 0.0235445181455166,
+        "p50": 0.06,
+        "p95": 0.086
+      }
+    },
+    "version": "3.18.0",
+    "wall_seconds": 20.068571
+  },
+  "draw_counts": {
+    "actor_final": 80,
+    "actor_min": 80,
+    "actual_actor_draw_signals": 81920,
+    "bullet_min_including_warmup": 0,
+    "bullet_peak": 260,
+    "counts": {
+      "friendly_spawned": 233,
+      "hostile_spawned": 1116,
+      "injected": 633,
+      "poison_requests": 0,
+      "support_spawned": 0
+    },
+    "diagnostic_hidden_enemies": false,
+    "diagnostic_no_enemy_masks": false,
+    "draws_per_profiled_tick": 80.0,
+    "draws_per_sample_frame": 630.153846153846,
+    "engine_monitors": {
+      "active_objects": {
+        "count": 130,
+        "p50": 80.0,
+        "p95": 80.0
+      },
+      "collision_pairs": {
+        "count": 130,
+        "p50": 73.0,
+        "p95": 76.0
+      },
+      "engine_physics_ms": {
+        "count": 130,
+        "p50": 19.123,
+        "p95": 22.556
+      },
+      "engine_process_ms": {
+        "count": 130,
+        "p50": 22.366,
+        "p95": 31.417
+      },
+      "island_count": {
+        "count": 130,
+        "p50": 6.0,
+        "p95": 9.0
+      }
+    },
+    "frame_interval_ms": {
+      "count": 130,
+      "p50": 139.908,
+      "p95": 150.303
+    },
+    "frames": 144,
+    "physics_ticks": 1144,
+    "physics_ticks_per_second": 60,
+    "pipeline_total": {
+      "count": 1024,
+      "p50": 2.621,
+      "p95": 3.397
+    },
+    "profiled_ticks": 1024,
+    "scope": "Real shared combat physics disabled ONLY on node, invoked exactly once per SceneTree.physics_frame at engine fixed delta. All original stages/guards in original order; real60Hz, all80 enemies and260 projectile target retained. First2sec warmup excluded. Diagnostic ablations are not production fixes: masks changes collisions; hidden actors retain AI/collision but remove visuals.",
+    "stages": {
+      "automatic_weapons": {
+        "count": 1024,
+        "cumulative_ms": 122.03,
+        "fraction_of_pipeline": 0.0449126810327379,
+        "p50": 0.013,
+        "p95": 0.762
+      },
+      "dash_trail": {
+        "count": 1024,
+        "cumulative_ms": 3.19299999999999,
+        "fraction_of_pipeline": 0.00117517160155315,
+        "p50": 0.003,
+        "p95": 0.004
+      },
+      "denial": {
+        "count": 1024,
+        "cumulative_ms": 23.3659999999999,
+        "fraction_of_pipeline": 0.0085997681308772,
+        "p50": 0.021,
+        "p95": 0.033
+      },
+      "enemy_movement": {
+        "count": 1024,
+        "cumulative_ms": 845.801,
+        "fraction_of_pipeline": 0.311293866509633,
+        "p50": 0.826,
+        "p95": 1.117
+      },
+      "poison": {
+        "count": 1024,
+        "cumulative_ms": 6.65599999999995,
+        "fraction_of_pipeline": 0.00244971568428993,
+        "p50": 0.006,
+        "p95": 0.009
+      },
+      "projectiles": {
+        "count": 1024,
+        "cumulative_ms": 1578.382,
+        "fraction_of_pipeline": 0.580917539242928,
+        "p50": 1.543,
+        "p95": 1.816
+      },
+      "support_links": {
+        "count": 1024,
+        "cumulative_ms": 50.4400000000003,
+        "fraction_of_pipeline": 0.0185642516700098,
+        "p50": 0.011,
+        "p95": 0.405
+      },
+      "temporary_effects": {
+        "count": 1024,
+        "cumulative_ms": 22.3389999999999,
+        "fraction_of_pipeline": 0.00822178465615279,
+        "p50": 0.021,
+        "p95": 0.035
+      },
+      "terrain": {
+        "count": 1024,
+        "cumulative_ms": 63.3439999999999,
+        "fraction_of_pipeline": 0.0233135201781343,
+        "p50": 0.06,
+        "p95": 0.086
+      }
+    },
+    "version": "3.18.0",
+    "wall_seconds": 20.011124
+  },
+  "diagnostic_no_masks": {
+    "actor_final": 80,
+    "actor_min": 80,
+    "bullet_min_including_warmup": 0,
+    "bullet_peak": 260,
+    "counts": {
+      "friendly_spawned": 197,
+      "hostile_spawned": 1160,
+      "injected": 716,
+      "poison_requests": 0,
+      "support_spawned": 0
+    },
+    "diagnostic_no_enemy_masks": true,
+    "engine_monitors": {
+      "active_objects": {
+        "count": 171,
+        "p50": 80.0,
+        "p95": 80.0
+      },
+      "collision_pairs": {
+        "count": 171,
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "engine_physics_ms": {
+        "count": 171,
+        "p50": 16.775,
+        "p95": 20.519
+      },
+      "engine_process_ms": {
+        "count": 171,
+        "p50": 21.305,
+        "p95": 24.293
+      },
+      "island_count": {
+        "count": 171,
+        "p50": 0.0,
+        "p95": 0.0
+      }
+    },
+    "frame_interval_ms": {
+      "count": 171,
+      "p50": 99.694,
+      "p95": 136.792
+    },
+    "frames": 186,
+    "physics_ticks": 1192,
+    "physics_ticks_per_second": 60,
+    "pipeline_total": {
+      "count": 1075,
+      "p50": 2.783,
+      "p95": 3.77
+    },
+    "profiled_ticks": 1075,
+    "scope": "Real shared combat physics disabled ONLY on node, invoked exactly once per SceneTree.physics_frame at engine fixed delta. All original stages/guards in original order; real60Hz, all80 enemies and260 projectile target retained. First2sec warmup excluded. Diagnostic ablation is not a production fix and invalidates ordinary collision behavior.",
+    "stages": {
+      "automatic_weapons": {
+        "count": 1075,
+        "cumulative_ms": 110.986,
+        "fraction_of_pipeline": 0.0372686366689054,
+        "p50": 0.01,
+        "p95": 0.646
+      },
+      "dash_trail": {
+        "count": 1075,
+        "cumulative_ms": 3.10799999999996,
+        "fraction_of_pipeline": 0.0010436534586971,
+        "p50": 0.003,
+        "p95": 0.004
+      },
+      "denial": {
+        "count": 1075,
+        "cumulative_ms": 24.3469999999999,
+        "fraction_of_pipeline": 0.0081756212222968,
+        "p50": 0.021,
+        "p95": 0.034
+      },
+      "enemy_movement": {
+        "count": 1075,
+        "cumulative_ms": 555.738000000001,
+        "fraction_of_pipeline": 0.186614506380121,
+        "p50": 0.5,
+        "p95": 0.688
+      },
+      "poison": {
+        "count": 1075,
+        "cumulative_ms": 6.43099999999993,
+        "fraction_of_pipeline": 0.0021595030221625,
+        "p50": 0.006,
+        "p95": 0.009
+      },
+      "projectiles": {
+        "count": 1075,
+        "cumulative_ms": 2169.207,
+        "fraction_of_pipeline": 0.72841067830759,
+        "p50": 2.075,
+        "p95": 2.771
+      },
+      "support_links": {
+        "count": 1075,
+        "cumulative_ms": 43.5660000000001,
+        "fraction_of_pipeline": 0.0146292813969107,
+        "p50": 0.008,
+        "p95": 0.346
+      },
+      "temporary_effects": {
+        "count": 1075,
+        "cumulative_ms": 13.7099999999999,
+        "fraction_of_pipeline": 0.00460376091336465,
+        "p50": 0.011,
+        "p95": 0.024
+      },
+      "terrain": {
+        "count": 1075,
+        "cumulative_ms": 49.3929999999998,
+        "fraction_of_pipeline": 0.0165859637340497,
+        "p50": 0.042,
+        "p95": 0.07
+      }
+    },
+    "version": "3.18.0",
+    "wall_seconds": 20.016188
+  },
+  "diagnostic_hidden": {
+    "actor_final": 80,
+    "actor_min": 80,
+    "actual_actor_draw_signals": 0,
+    "bullet_min_including_warmup": 0,
+    "bullet_peak": 260,
+    "counts": {
+      "friendly_spawned": 6,
+      "hostile_spawned": 1163,
+      "injected": 1047,
+      "poison_requests": 0,
+      "support_spawned": 0
+    },
+    "diagnostic_hidden_enemies": true,
+    "diagnostic_no_enemy_masks": false,
+    "draws_per_profiled_tick": 0.0,
+    "draws_per_sample_frame": 0.0,
+    "engine_monitors": {
+      "active_objects": {
+        "count": 1076,
+        "p50": 80.0,
+        "p95": 80.0
+      },
+      "collision_pairs": {
+        "count": 1076,
+        "p50": 73.0,
+        "p95": 76.0
+      },
+      "engine_physics_ms": {
+        "count": 1076,
+        "p50": 3.825,
+        "p95": 6.041
+      },
+      "engine_process_ms": {
+        "count": 1076,
+        "p50": 17.695,
+        "p95": 26.459
+      },
+      "island_count": {
+        "count": 1076,
+        "p50": 6.0,
+        "p95": 9.0
+      }
+    },
+    "frame_interval_ms": {
+      "count": 1076,
+      "p50": 16.612,
+      "p95": 19.352
+    },
+    "frames": 1187,
+    "physics_ticks": 1206,
+    "physics_ticks_per_second": 60,
+    "pipeline_total": {
+      "count": 1080,
+      "p50": 2.246,
+      "p95": 2.947
+    },
+    "profiled_ticks": 1080,
+    "scope": "Real shared combat physics disabled ONLY on node, invoked exactly once per SceneTree.physics_frame at engine fixed delta. All original stages/guards in original order; real60Hz, all80 enemies and260 projectile target retained. First2sec warmup excluded. Diagnostic ablations are not production fixes: masks changes collisions; hidden actors retain AI/collision but remove visuals.",
+    "stages": {
+      "automatic_weapons": {
+        "count": 1080,
+        "cumulative_ms": 107.247,
+        "fraction_of_pipeline": 0.0432786131086416,
+        "p50": 0.011,
+        "p95": 0.603
+      },
+      "dash_trail": {
+        "count": 1080,
+        "cumulative_ms": 3.50400000000001,
+        "fraction_of_pipeline": 0.00141400934602068,
+        "p50": 0.003,
+        "p95": 0.004
+      },
+      "denial": {
+        "count": 1080,
+        "cumulative_ms": 22.9729999999999,
+        "fraction_of_pipeline": 0.00927055842070001,
+        "p50": 0.02,
+        "p95": 0.027
+      },
+      "enemy_movement": {
+        "count": 1080,
+        "cumulative_ms": 891.356,
+        "fraction_of_pipeline": 0.359699119472491,
+        "p50": 0.826,
+        "p95": 1.054
+      },
+      "poison": {
+        "count": 1080,
+        "cumulative_ms": 6.58699999999995,
+        "fraction_of_pipeline": 0.00265812772894924,
+        "p50": 0.006,
+        "p95": 0.009
+      },
+      "projectiles": {
+        "count": 1080,
+        "cumulative_ms": 1321.972,
+        "fraction_of_pipeline": 0.533470537436544,
+        "p50": 1.224,
+        "p95": 1.348
+      },
+      "support_links": {
+        "count": 1080,
+        "cumulative_ms": 53.4080000000002,
+        "fraction_of_pipeline": 0.0215523433653746,
+        "p50": 0.011,
+        "p95": 0.421
+      },
+      "temporary_effects": {
+        "count": 1080,
+        "cumulative_ms": 13.8929999999999,
+        "fraction_of_pipeline": 0.00560640178203914,
+        "p50": 0.012,
+        "p95": 0.02
+      },
+      "terrain": {
+        "count": 1080,
+        "cumulative_ms": 55.3649999999998,
+        "fraction_of_pipeline": 0.0223420740417907,
+        "p50": 0.049,
+        "p95": 0.075
+      }
+    },
+    "version": "3.18.0",
+    "wall_seconds": 20.014034
+  },
+  "optimized": {
+    "results": [
+      {
+        "actual_enemy_max": 80,
+        "actual_enemy_min": 80,
+        "actual_projectile_min_before_refill": 254,
+        "actual_projectile_peak": 260,
+        "boss_activity": {},
+        "boss_phases_seen": [],
+        "bosses": false,
+        "draw_calls_p50": 4556.0,
+        "effective_population_limit": 80,
+        "frame_interval_p50_ms": 34.781,
+        "frame_interval_p95_ms": 42.428,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "idle"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 0,
+        "map_id": "folded_delta",
+        "map_size": "(7680.0, 5120.0)",
+        "max_fps": 0,
+        "name": "ordinary_80_bounded_260",
+        "ordinary": 80,
+        "physics_frames": 1206,
+        "physics_p95_ms": 5.395,
+        "poison": 0,
+        "poison_cloud_peak": 0,
+        "population_max": 80,
+        "process_p95_ms": 42.815,
+        "projectile_counts": {
+          "friendly_spawned": 73,
+          "hostile_spawned": 1163,
+          "injected": 894,
+          "poison_requests": 0,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 533,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 92,
+        "wall_seconds": 20.028239,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 251,
+        "actual_projectile_peak": 260,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "bell_alternation": 2,
+              "eclipse_chime_cut": 2,
+              "eclipse_procession": 2
+            },
+            "support_requests": 0,
+            "telegraphs": 6,
+            "volleys": 10
+          },
+          "inverted_archivist": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "ink_partition": 3,
+              "ledger_petals": 3,
+              "margin_cut": 4
+            },
+            "support_requests": 4,
+            "telegraphs": 10,
+            "volleys": 10
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "judgement_petals": 3,
+              "shrinking_frame": 4,
+              "unreflectable_cut": 3
+            },
+            "support_requests": 0,
+            "telegraphs": 10,
+            "volleys": 12
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "black_lane": 3,
+              "petal_salvo": 2,
+              "tide_fan": 2,
+              "turret_crown": 3
+            },
+            "support_requests": 6,
+            "telegraphs": 10,
+            "volleys": 10
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "loom_crossweave": 2,
+              "loom_needle": 2,
+              "loom_shuttle": 2
+            },
+            "support_requests": 7,
+            "telegraphs": 6,
+            "volleys": 40
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 11,
+            "patterns": {
+              "execution_counterfold": 1,
+              "execution_dash": 12,
+              "execution_rake": 2
+            },
+            "support_requests": 0,
+            "telegraphs": 15,
+            "volleys": 3
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "inverted_archivist:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 4368.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 36.596,
+        "frame_interval_p95_ms": 44.298,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 1,
+        "map_id": "inverted_canals",
+        "map_size": "(7936.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_bounded_260",
+        "ordinary": 50,
+        "physics_frames": 1201,
+        "physics_p95_ms": 7.27,
+        "poison": 2,
+        "poison_cloud_peak": 6,
+        "population_max": 56,
+        "process_p95_ms": 45.723,
+        "projectile_counts": {
+          "friendly_spawned": 75,
+          "hostile_spawned": 2081,
+          "injected": 1192,
+          "poison_requests": 44,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 506,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 20.031567,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 55,
+        "actual_projectile_peak": 260,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "bell_alternation": 3,
+              "eclipse_chime_cut": 3,
+              "eclipse_procession": 4
+            },
+            "support_requests": 0,
+            "telegraphs": 10,
+            "volleys": 20
+          },
+          "inverted_archivist": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "ink_partition": 6,
+              "ledger_petals": 6,
+              "margin_cut": 6
+            },
+            "support_requests": 7,
+            "telegraphs": 18,
+            "volleys": 18
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "judgement_petals": 6,
+              "shrinking_frame": 6,
+              "unreflectable_cut": 6
+            },
+            "support_requests": 0,
+            "telegraphs": 18,
+            "volleys": 23
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "black_lane": 5,
+              "petal_salvo": 5,
+              "tide_fan": 4,
+              "turret_crown": 5
+            },
+            "support_requests": 10,
+            "telegraphs": 19,
+            "volleys": 18
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "patterns": {
+              "loom_crossweave": 3,
+              "loom_needle": 4,
+              "loom_shuttle": 4
+            },
+            "support_requests": 12,
+            "telegraphs": 11,
+            "volleys": 67
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 18,
+            "patterns": {
+              "execution_counterfold": 3,
+              "execution_dash": 18,
+              "execution_rake": 3
+            },
+            "support_requests": 0,
+            "telegraphs": 24,
+            "volleys": 6
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "inverted_archivist:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 3750.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 34.731,
+        "frame_interval_p95_ms": 41.365,
+        "hostile_projectile_peak": 252,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 2,
+        "map_id": "solar_archipelago",
+        "map_size": "(8256.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_natural",
+        "ordinary": 50,
+        "physics_frames": 2105,
+        "physics_p95_ms": 6.907,
+        "poison": 2,
+        "poison_cloud_peak": 6,
+        "population_max": 56,
+        "process_p95_ms": 40.444,
+        "projectile_counts": {
+          "friendly_spawned": 839,
+          "hostile_spawned": 3746,
+          "injected": 0,
+          "poison_requests": 80,
+          "support_spawned": 0
+        },
+        "refill": false,
+        "sample_frames": 985,
+        "seconds": 35.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 35.028704,
+        "window_focused": true
+      }
+    ],
+    "scope": "Native Godot 4.6.3 Compatibility; 1280x720 physical /1920x1080 logical. Shared real AI/collision/terrain, phase3 intensity5 bosses, all weapons Lv5, immortal target HP and stationary invincible player. Waves frozen after fixture setup; actual population and threat allowances retained. An escort is created from authored routes; real lockdown/inversion/poison advance. First31 render frames excluded. Bounded cases replenish real hostile projectiles to260 AFTER simulation; natural case injects ZERO bullets. Synthetic stress, not whole-run balancing or Android performance evidence.",
+    "version": "3.18.0"
+  },
+  "optimized_draw_counts": {
+    "actor_final": 80,
+    "actor_min": 80,
+    "actual_actor_draw_signals": 36880,
+    "bullet_min_including_warmup": 0,
+    "bullet_peak": 260,
+    "counts": {
+      "friendly_spawned": 64,
+      "hostile_spawned": 1163,
+      "injected": 879,
+      "poison_requests": 0,
+      "support_spawned": 0
+    },
+    "diagnostic_hidden_enemies": false,
+    "diagnostic_no_enemy_masks": false,
+    "draws_per_profiled_tick": 34.1481481481481,
+    "draws_per_sample_frame": 79.8268398268398,
+    "engine_monitors": {
+      "active_objects": {
+        "count": 462,
+        "p50": 80.0,
+        "p95": 80.0
+      },
+      "collision_pairs": {
+        "count": 462,
+        "p50": 73.0,
+        "p95": 76.0
+      },
+      "engine_physics_ms": {
+        "count": 462,
+        "p50": 4.092,
+        "p95": 4.953
+      },
+      "engine_process_ms": {
+        "count": 462,
+        "p50": 36.717,
+        "p95": 41.508
+      },
+      "island_count": {
+        "count": 462,
+        "p50": 6.0,
+        "p95": 9.0
+      }
+    },
+    "frame_interval_ms": {
+      "count": 462,
+      "p50": 38.654,
+      "p95": 43.633
+    },
+    "frames": 512,
+    "physics_ticks": 1206,
+    "physics_ticks_per_second": 60,
+    "pipeline_total": {
+      "count": 1080,
+      "p50": 2.477,
+      "p95": 3.255
+    },
+    "profiled_ticks": 1080,
+    "scope": "Real shared combat physics disabled ONLY on node, invoked exactly once per SceneTree.physics_frame at engine fixed delta. All original stages/guards in original order; real60Hz, all80 enemies and260 projectile target retained. First2sec warmup excluded. Diagnostic ablations are not production fixes: masks changes collisions; hidden actors retain AI/collision but remove visuals.",
+    "stages": {
+      "automatic_weapons": {
+        "count": 1080,
+        "cumulative_ms": 114.916,
+        "fraction_of_pipeline": 0.0424916378190221,
+        "p50": 0.012,
+        "p95": 0.677
+      },
+      "dash_trail": {
+        "count": 1080,
+        "cumulative_ms": 3.07899999999997,
+        "fraction_of_pipeline": 0.00113849901532221,
+        "p50": 0.003,
+        "p95": 0.004
+      },
+      "denial": {
+        "count": 1080,
+        "cumulative_ms": 24.1189999999998,
+        "fraction_of_pipeline": 0.00891830391378907,
+        "p50": 0.021,
+        "p95": 0.031
+      },
+      "enemy_movement": {
+        "count": 1080,
+        "cumulative_ms": 961.283,
+        "fraction_of_pipeline": 0.355446492025331,
+        "p50": 0.892,
+        "p95": 1.152
+      },
+      "poison": {
+        "count": 1080,
+        "cumulative_ms": 6.52999999999994,
+        "fraction_of_pipeline": 0.00241454971421048,
+        "p50": 0.006,
+        "p95": 0.009
+      },
+      "projectiles": {
+        "count": 1080,
+        "cumulative_ms": 1448.135,
+        "fraction_of_pipeline": 0.535466148604628,
+        "p50": 1.306,
+        "p95": 1.636
+      },
+      "support_links": {
+        "count": 1080,
+        "cumulative_ms": 61.4330000000002,
+        "fraction_of_pipeline": 0.0227156252056805,
+        "p50": 0.012,
+        "p95": 0.485
+      },
+      "temporary_effects": {
+        "count": 1080,
+        "cumulative_ms": 23.232,
+        "fraction_of_pipeline": 0.00859032449625394,
+        "p50": 0.018,
+        "p95": 0.045
+      },
+      "terrain": {
+        "count": 1080,
+        "cumulative_ms": 60.3089999999998,
+        "fraction_of_pipeline": 0.0223000120542604,
+        "p50": 0.056,
+        "p95": 0.079
+      }
+    },
+    "version": "3.18.0",
+    "wall_seconds": 20.034478
+  },
+  "mobile_visual": {
+    "scope": "Actual six shared bosses and 50 ordinary actors including two poison carriers; native mobile touch layout. Invincible player and fixture teleport; bosses replenish real hits to30% of2x authoredHP only for six-row layout QA. Real field/closure/lockdown snapshots. Not Android device performance evidence.",
+    "actual_enemy_count": 56,
+    "closed_at_player": true,
+    "inversion": {
+      "axis": "horizontal",
+      "cycle": 1,
+      "inside": true,
+      "position": "(1470.0, 1442.0)",
+      "radius": 330.0,
+      "remaining": 9.11397500000001,
+      "state": "active"
+    },
+    "lockdown": {
+      "damage": 1,
+      "damage_interval": 2.0,
+      "elapsed": 98.0055669999991,
+      "outside": true,
+      "position": "(3220.086, 3186.017)",
+      "radius": 2400.0,
+      "remaining": 0.0,
+      "return_distance": 852.042213439941,
+      "return_goal": "(1470.0, 2105.0)",
+      "return_route_valid": true,
+      "seconds_until_damage": 1.975029,
+      "state": "active",
+      "wave_index": 6
+    },
+    "boss_hud_rows": 6,
+    "boss_hud_columns": 2,
+    "boss_hud_grid_rows": 3,
+    "poison_cloud_count": 4,
+    "touch": {
+      "active": "(1554.0, 611.0)",
+      "active_controls": true,
+      "active_radius": 76.0,
+      "dash": "(1409.0, 891.0)",
+      "dash_radius": 79.0,
+      "fold": "(1629.0, 831.0)",
+      "fold_radius": 108.0,
+      "move": "(325.0, 836.0)",
+      "move_radius": 124.0,
+      "pressed": [],
+      "safe_insets": "(80.0, 120.0, 56.0, 24.0)",
+      "size": "(1920.0, 1080.0)",
+      "stick": "(0.0, 0.0)"
+    }
+  }
+}

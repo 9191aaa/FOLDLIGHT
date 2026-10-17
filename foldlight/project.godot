@@ -1,5 +1,5 @@
 ; FOLDLIGHT / 折光
-; A complete one-hand narrative bullet-folding campaign for Godot 4.6
+; A paper-sea roguelite with shared endless and friend-race combat controls
 
 config_version=5
 
@@ -7,20 +7,25 @@ config_version=5
 
 config/name="FOLDLIGHT · 折光"
 config/name.pixel_demo="FOLDLIGHT · 像素战斗 Demo"
-config/description="一只手或手柄即可游玩的三章弹幕折返战役。"
-config/version="3.9.0"
+config/description="在纸海收纳弹幕，再让光返航。以迷航为核心的弹幕折返肉鸽。"
+config/version="3.18.0"
+config/quit_on_go_back=false
+config/use_custom_user_dir.refactor_preview=true
+config/custom_user_dir_name.refactor_preview="FOLDLIGHT Refactor Preview"
 config/icon="res://assets/branding/foldlight_icon_512.png"
 run/main_scene="res://scenes/main.tscn"
 run/main_scene.pixel_demo="res://scenes/demos/pixel_playable_demo.tscn"
 config/features=PackedStringArray("4.6")
-boot_splash/bg_color=Color(0.012, 0.019, 0.055, 1)
+boot_splash/bg_color=Color(0.0353, 0.098, 0.1373, 1)
 boot_splash/show_image=false
 
 [autoload]
 
+WebRaceBridge="*res://scripts/autoloads/web_race_bridge.gd"
 ProfileManager="*res://scripts/autoloads/profile_manager.gd"
 PlatformBridge="*res://scripts/autoloads/platform_bridge.gd"
 AudioDirector="*res://scripts/audio_director.gd"
+TouchControls="*res://scripts/autoloads/touch_controls.gd"
 
 [display]
 
@@ -38,30 +43,45 @@ window/size/resizable.pixel_demo=false
 window/stretch/mode="viewport"
 window/stretch/aspect="keep"
 window/stretch/scale_mode.pixel_demo="integer"
+window/handheld/orientation=0
 
 [input]
 
+ui_cancel={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"device":-1,"keycode":4194305,"physical_keycode":4194305)
+, Object(InputEventJoypadButton,"device":-1,"button_index":1)
+]
+}
 move_left={
 "deadzone": 0.22,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":65,"key_label":0,"unicode":97,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"device":-1,"physical_keycode":4194319)
+, Object(InputEventJoypadButton,"device":-1,"button_index":13)
 , Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"axis":0,"axis_value":-1.0,"script":null)
 ]
 }
 move_right={
 "deadzone": 0.22,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":68,"key_label":0,"unicode":100,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"device":-1,"physical_keycode":4194321)
+, Object(InputEventJoypadButton,"device":-1,"button_index":14)
 , Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"axis":0,"axis_value":1.0,"script":null)
 ]
 }
 move_up={
 "deadzone": 0.22,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":87,"key_label":0,"unicode":119,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"device":-1,"physical_keycode":4194320)
+, Object(InputEventJoypadButton,"device":-1,"button_index":11)
 , Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"axis":1,"axis_value":-1.0,"script":null)
 ]
 }
 move_down={
 "deadzone": 0.22,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":83,"key_label":0,"unicode":115,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"device":-1,"physical_keycode":4194322)
+, Object(InputEventJoypadButton,"device":-1,"button_index":12)
 , Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"axis":1,"axis_value":1.0,"script":null)
 ]
 }
@@ -120,6 +140,11 @@ open_tutorial={
 ]
 }
 
+[gui]
+
+theme/custom_font.web="res://assets/fonts/FoldlightSansSC.woff2"
+theme/custom_font.mobile="res://assets/fonts/FoldlightSansSC.woff2"
+
 [internationalization]
 
 locale/translations=PackedStringArray("res://translations/rogue_ui.zh_CN.translation", "res://translations/rogue_ui.en.translation")
@@ -139,4 +164,5 @@ locale/fallback="zh_CN"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/canvas_textures/default_texture_filter=1
-environment/defaults/default_clear_color=Color(0.012, 0.019, 0.055, 1)
+textures/vram_compression/import_etc2_astc=true
+environment/defaults/default_clear_color=Color(0.0353, 0.098, 0.1373, 1)

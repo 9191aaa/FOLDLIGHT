@@ -4,7 +4,7 @@
 script = ExtResource("1")
 content_id = &"sun_thread"
 title = "日裁线"
-description = "锁定生命最低者穿过整列敌人，稳定收尾并减少残血杂音。"
+description = "优先锁定残血并贯穿敌列，对生命低于三成者增伤；高阶提升收割与贯穿。"
 accent = Color(1, 0.60, 0.24, 1)
 tags = Array[StringName]([&"execute", &"pierce"])
 targeting = 1

@@ -1,6 +1,8 @@
 class_name FoldlightPaperTurret
 extends StaticBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal volley_requested(snapshot: Dictionary)
 signal phase_changed(phase: Phase)
 signal damaged(amount: float, health_remaining: float)
@@ -29,14 +31,14 @@ func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 3) | (1 << 0)
 	_phase_remaining = telegraph_duration
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: StringName) -> void:
 	definition = new_definition
 	actor_id = new_actor_id
 	health = definition.base_health if definition != null else 14.0
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, target_position: Vector2, hostile_time_scale: float = 1.0) -> void:
@@ -71,7 +73,7 @@ func advance_simulation(delta: float, target_position: Vector2, hostile_time_sca
 		phase_changed.emit(phase)
 		if _phase_remaining > 0.0:
 			break
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func damage_multiplier() -> float:
@@ -89,13 +91,13 @@ func take_damage(amount: float) -> bool:
 	if health <= 0.0:
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 
 func set_support_buff(attack_multiplier: float) -> void:
 	support_attack_multiplier = clampf(attack_multiplier, 0.55, 1.0)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func get_combat_snapshot() -> Dictionary:

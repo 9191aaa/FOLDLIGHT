@@ -1,8 +1,15 @@
 class_name FoldlightTerrainPiece
 extends Node2D
 
+const PaperArt = preload("res://scripts/visuals/paper_art.gd")
+const BENEFIT_COLOR := Color("95e5c7")
+const INK_COLOR := Color("c1a0e8")
+const HAZARD_COLOR := Color("f58b73")
+const CURRENT_COLOR := Color("90c9ee")
+
 signal terrain_effect_entered(kind: FoldlightRogueTerrainDefinition.TerrainKind, body: Node2D, strength: float, direction: Vector2)
 signal terrain_effect_exited(kind: FoldlightRogueTerrainDefinition.TerrainKind, body: Node2D)
+signal geometry_changed
 
 var placement_id: StringName = &""
 var kind: FoldlightRogueTerrainDefinition.TerrainKind = FoldlightRogueTerrainDefinition.TerrainKind.PAPER_WALL
@@ -13,12 +20,63 @@ var visual_style: StringName = &"paper_reef"
 var _collision_object: CollisionObject2D
 var _collision_shape: CollisionShape2D
 var _visual_time: float = 0.0
+var _motion_active: bool = true
+var _observer: Node2D
+var _presence: float = 0.0
+var _proximity: float = 0.0
+var _redraw_remaining: float = 0.0
+
+
+func _init() -> void:
+	set_notify_transform(true)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED:
+		geometry_changed.emit()
 
 
 func _process(delta: float) -> void:
-	if kind in [FoldlightRogueTerrainDefinition.TerrainKind.INK_POOL, FoldlightRogueTerrainDefinition.TerrainKind.CURRENT_LANE, FoldlightRogueTerrainDefinition.TerrainKind.SUN_PATCH, FoldlightRogueTerrainDefinition.TerrainKind.THORN_PAPER]:
-		_visual_time += delta
+	if not _motion_active or kind in [FoldlightRogueTerrainDefinition.TerrainKind.PAPER_WALL, FoldlightRogueTerrainDefinition.TerrainKind.REFRACTION_PILLAR]:
+		return
+	_visual_time += delta
+	var inside := false
+	var proximity := 0.0
+	if is_instance_valid(_observer):
+		var local_point := to_local(_observer.global_position)
+		var outside := (local_point.abs() - piece_size * 0.5).max(Vector2.ZERO)
+		proximity = 1.0 - clampf(outside.length() / 150.0, 0.0, 1.0)
+		inside = contains_world_point(_observer.global_position)
+	_presence = move_toward(_presence, 1.0 if inside else 0.0, delta * 4.5)
+	_proximity = move_toward(_proximity, proximity, delta * 5.0)
+	_redraw_remaining -= delta
+	if _redraw_remaining <= 0.0:
+		_redraw_remaining = 1.0 / 30.0
 		queue_redraw()
+
+
+func bind_observer(player: Node2D) -> void:
+	_observer = player
+
+
+func set_motion_active(value: bool) -> void:
+	_motion_active = value
+	set_process(value)
+
+
+func get_readability() -> Dictionary:
+	# Meaning stays constant across biomes. Regional materials never recolor
+	# a benefit as a hazard, and wet ink must not promise a movement slow.
+	match kind:
+		FoldlightRogueTerrainDefinition.TerrainKind.SUN_PATCH:
+			return {"polarity": &"benefit", "label": "日纹", "detail": "回息↑ · 移速↑", "color": BENEFIT_COLOR, "pattern": &"inward_light"}
+		FoldlightRogueTerrainDefinition.TerrainKind.INK_POOL:
+			return {"polarity": &"debuff", "label": "湿墨", "detail": "折息恢复降低", "color": INK_COLOR, "pattern": &"draining_ink"}
+		FoldlightRogueTerrainDefinition.TerrainKind.THORN_PAPER:
+			return {"polarity": &"hazard", "label": "刺纸", "detail": "接触受伤", "color": HAZARD_COLOR, "pattern": &"barbed_hatching"}
+		FoldlightRogueTerrainDefinition.TerrainKind.CURRENT_LANE:
+			return {"polarity": &"directional", "label": "潮流", "detail": "沿箭头推移", "color": CURRENT_COLOR, "pattern": &"flowing_chevrons"}
+	return {"polarity": &"solid", "label": "纸礁", "detail": "阻挡通行", "color": _regional_paper(), "pattern": &"folded_solid"}
 
 
 func configure(placement: Dictionary) -> void:
@@ -30,9 +88,13 @@ func configure(placement: Dictionary) -> void:
 	effect_strength = maxf(0.0, float(placement.get("strength", 1.0)))
 	effect_direction = Vector2(placement.get("direction", Vector2.RIGHT)).normalized()
 	visual_style = StringName(placement.get("visual_style", &"paper_reef"))
+	_visual_time = 0.0
+	_presence = 0.0
+	_proximity = 0.0
 	if effect_direction.is_zero_approx():
 		effect_direction = Vector2.RIGHT
 	_build_collision()
+	geometry_changed.emit()
 	queue_redraw()
 
 
@@ -65,6 +127,12 @@ func contains_world_point(world_point: Vector2) -> bool:
 	if kind == FoldlightRogueTerrainDefinition.TerrainKind.REFRACTION_PILLAR:
 		return local_point.length() <= minf(piece_size.x, piece_size.y) * 0.5
 	return Rect2(-piece_size * 0.5, piece_size).has_point(local_point)
+
+
+func get_global_query_bounds() -> Rect2:
+	# Transform all four authored corners; this also handles rotated/scaled
+	# parents. Circle pieces use a conservative rectangle then exact narrow phase.
+	return global_transform * Rect2(-piece_size * 0.5, piece_size)
 
 
 func _build_collision() -> void:
@@ -126,210 +194,297 @@ func _draw() -> void:
 			_draw_thorn_paper()
 
 
+func _regional_paper() -> Color:
+	match visual_style:
+		&"ink_city": return Color("4b555f")
+		&"sun_court": return Color("71634d")
+		_: return Color("526b65")
+
+
+func _regional_foil() -> Color:
+	return PaperArt.GOLD if visual_style == &"sun_court" else PaperArt.FOLD
+
+
 func _draw_wall() -> void:
-	var rect := Rect2(-piece_size * 0.5, piece_size)
-	if visual_style == &"ink_city":
-		draw_rect(rect.grow(12.0), Color(0.025, 0.008, 0.055, 0.62), true)
-		draw_rect(rect, Color(0.075, 0.025, 0.11, 0.98), true)
-		var roof := PackedVector2Array([Vector2(rect.position.x - 26, rect.position.y + 8), Vector2(rect.end.x + 26, rect.position.y + 8), Vector2(rect.end.x - 20, rect.position.y - 24), Vector2(rect.position.x + 20, rect.position.y - 24)])
-		draw_colored_polygon(roof, Color(0.28, 0.08, 0.30, 0.94))
-		draw_polyline(PackedVector2Array([roof[0], roof[1], roof[2], roof[3], roof[0]]), Color(0.94, 0.42, 0.78, 0.56), 2.4, true)
-		for window in maxi(2, int(piece_size.x / 84.0)):
-			var x := lerpf(rect.position.x + 28.0, rect.end.x - 28.0, float(window) / float(maxi(1, int(piece_size.x / 84.0) - 1)))
-			draw_rect(Rect2(Vector2(x - 12, -10), Vector2(24, 20)), Color(0.82, 0.38, 0.76, 0.28), false, 2.0, true)
-		return
-	if visual_style == &"sun_court":
-		draw_rect(rect.grow(11.0), Color(0.28, 0.07, 0.035, 0.50), true)
-		draw_rect(rect, Color(0.43, 0.18, 0.07, 0.96), true)
-		draw_rect(rect.grow(-6.0), Color(1.0, 0.70, 0.28, 0.50), false, 3.0, true)
-		var panels := maxi(2, int(piece_size.x / 92.0))
-		for panel in panels:
-			var x := lerpf(rect.position.x, rect.end.x, (float(panel) + 0.5) / float(panels))
-			draw_line(Vector2(x, rect.position.y + 7), Vector2(x, rect.end.y - 7), Color(1.0, 0.78, 0.38, 0.24), 2.0, true)
-			draw_circle(Vector2(x, 0), minf(13.0, piece_size.y * 0.22), Color(1.0, 0.62, 0.18, 0.18))
-		return
-	# Paper-reef walls are solid folded rock, not translucent neon panels.
-	draw_rect(rect.grow(12.0), Color("081b22"), true)
-	draw_rect(rect, Color("53645f"), true)
-	var top_shelf := PackedVector2Array([
-		Vector2(rect.position.x, rect.position.y + 12.0),
-		Vector2(rect.position.x + piece_size.x * 0.18, rect.position.y - 10.0),
-		Vector2(rect.position.x + piece_size.x * 0.46, rect.position.y + 5.0),
-		Vector2(rect.position.x + piece_size.x * 0.72, rect.position.y - 14.0),
-		Vector2(rect.end.x, rect.position.y + 10.0),
-		Vector2(rect.end.x, rect.position.y + 28.0),
-		Vector2(rect.position.x, rect.position.y + 28.0),
-	])
-	draw_colored_polygon(top_shelf, Color("829078"))
-	for facet in maxi(2, int(piece_size.x / 82.0)):
-		var facet_x := lerpf(rect.position.x + 18.0, rect.end.x - 54.0, float(facet) / float(maxi(1, int(piece_size.x / 82.0) - 1)))
-		var shade := Color("405451") if facet % 2 == 0 else Color("65746a")
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(facet_x, rect.position.y + 30.0), Vector2(facet_x + 42.0, rect.position.y + 22.0),
-			Vector2(facet_x + 56.0, rect.end.y - 9.0), Vector2(facet_x + 10.0, rect.end.y - 4.0),
-		]), shade)
-	for clasp_x in [rect.position.x + 16.0, rect.end.x - 28.0]:
-		draw_rect(Rect2(Vector2(clasp_x, -7.0), Vector2(12.0, 14.0)), Color("f4bd58"), true)
+	# The full rectangular rim is the collision boundary; sculpture stays inside.
+	var vertical := piece_size.y > piece_size.x
+	var size := Vector2(piece_size.y, piece_size.x) if vertical else piece_size
+	if vertical: draw_set_transform(Vector2.ZERO, PI * 0.5)
+	var rect := Rect2(-size * 0.5, size)
+	var paper := _regional_paper()
+	var bevel := minf(9.0, size.y * 0.13)
+	draw_rect(Rect2(rect.position + Vector2(5, 7), size), Color(PaperArt.INK, 0.72))
+	draw_rect(rect, paper.darkened(0.43))
+	var blocks := maxi(1, int(size.x / 112.0))
+	var width := (size.x - bevel * 2.0) / float(blocks)
+	var lit_folds := PackedVector2Array()
+	var dark_folds := PackedVector2Array()
+	var strata := PackedVector2Array()
+	var foil_marks := PackedVector2Array()
+	var engravings := PackedVector2Array()
+	var engraved_baselines := PackedVector2Array()
+	for block in blocks:
+		var x := rect.position.x + bevel + float(block) * width
+		var top := rect.position.y + bevel
+		var bottom := rect.end.y - bevel
+		var peak := Vector2(x + width * (0.37 + float(block % 3) * 0.10), top + (bottom - top) * 0.39)
+		var a := Vector2(x + 2, top)
+		var b := Vector2(x + width - 2, top + float(block % 2) * 3.0)
+		var c := Vector2(x + width - 3, bottom)
+		var d := Vector2(x + 3, bottom)
+		draw_colored_polygon(PackedVector2Array([a, b, peak]), paper.lightened(0.045))
+		draw_colored_polygon(PackedVector2Array([b, c, peak]), paper.darkened(0.31))
+		draw_colored_polygon(PackedVector2Array([c, d, peak]), paper.darkened(0.20))
+		draw_colored_polygon(PackedVector2Array([d, a, peak]), paper.darkened(0.07))
+		lit_folds.append_array(PackedVector2Array([a, peak]))
+		dark_folds.append_array(PackedVector2Array([peak, c]))
+		if visual_style == &"ink_city":
+			var half := minf(width * 0.19, size.y * 0.21)
+			var center := Vector2(x + width * 0.52, 0)
+			var seal := PackedVector2Array([center + Vector2(-half, half), center + Vector2(-half, -half * 0.6), center + Vector2(0, -half), center + Vector2(half, -half * 0.6), center + Vector2(half, half)])
+			draw_colored_polygon(seal, Color(PaperArt.INK, 0.66))
+			for edge in seal.size() - 1:
+				engravings.append_array(PackedVector2Array([seal[edge], seal[edge + 1]]))
+			foil_marks.append_array(PackedVector2Array([center - Vector2(0, half * 0.4), center + Vector2(0, half * 0.7)]))
+		elif visual_style == &"sun_court":
+			var center := Vector2(x + width * 0.51, 0)
+			var radius := minf(width * 0.19, size.y * 0.25)
+			for ray in 5:
+				var direction := Vector2.from_angle(-PI + float(ray) * PI / 4.0)
+				foil_marks.append_array(PackedVector2Array([center + direction * radius * 0.35, center + direction * radius]))
+			engraved_baselines.append_array(PackedVector2Array([center - Vector2(radius, -4), center + Vector2(radius, 4)]))
+		else:
+			for layer in 3:
+				var y := lerpf(top, bottom, 0.55 + float(layer) * 0.13)
+				var crease := Vector2(x + width * 0.38, y - 3)
+				strata.append_array(PackedVector2Array([Vector2(x + 6, y + 1), crease, crease, Vector2(x + width - 7, y + 2)]))
+			if block % 3 == 0:
+				foil_marks.append_array(PackedVector2Array([peak - Vector2(3, 6), peak + Vector2(5, 7)]))
+	# Group equal-material fold marks after the faces: their paths never cross
+	# neighboring blocks, so batching preserves the same visible overlap order.
+	draw_multiline(lit_folds, Color(PaperArt.PAPER, 0.20), 1.2, true)
+	draw_multiline(dark_folds, Color(PaperArt.INK, 0.45), 1.3, true)
+	if not strata.is_empty(): draw_multiline(strata, Color(PaperArt.PAPER, 0.12), 1.0, true)
+	if not engravings.is_empty(): draw_multiline(engravings, Color(PaperArt.PAPER, 0.27), 1.3, true)
+	if not engraved_baselines.is_empty(): draw_multiline(engraved_baselines, Color(PaperArt.GOLD, 0.26), 1.0, true)
+	if not foil_marks.is_empty():
+		var alpha := 0.43 if visual_style == &"ink_city" else (0.50 if visual_style == &"sun_court" else 0.54)
+		var stroke := 1.6 if visual_style == &"ink_city" else (1.4 if visual_style == &"sun_court" else 2.0)
+		draw_multiline(foil_marks, Color(PaperArt.GOLD, alpha), stroke, true)
+	# Continuous lip and compressed paper strata explain height without expanding bounds.
+	draw_line(rect.position, Vector2(rect.end.x, rect.position.y), Color(paper.lightened(0.30), 0.76), 2.0, true)
+	for layer in 3:
+		var y := rect.end.y - 2.0 - float(layer) * 2.3
+		draw_line(Vector2(rect.position.x + 3, y), Vector2(rect.end.x - 3, y), Color(PaperArt.PAPER, 0.09 + float(layer) * 0.025), 1.0, true)
+	draw_rect(rect, Color(paper.lightened(0.15), 0.48), false, 1.0, true)
+	if vertical: draw_set_transform(Vector2.ZERO)
 
 
 func _draw_pillar() -> void:
 	var radius := minf(piece_size.x, piece_size.y) * 0.5
+	var paper := _regional_paper()
+	var foil := _regional_foil()
+	draw_circle(Vector2(5, 7), radius + 2.0, Color(PaperArt.INK, 0.72))
+	draw_circle(Vector2.ZERO, radius, paper.darkened(0.42))
+	var sides := 12 if visual_style == &"sun_court" else 8
+	for tier in range(2, -1, -1):
+		var reach := radius * (0.58 + float(tier) * 0.18)
+		var offset := Vector2(0, float(tier) * 2.0 - 4.0)
+		var rim := PackedVector2Array()
+		var folds := PackedVector2Array()
+		for facet in sides:
+			var angle := float(facet) * TAU / float(sides) - PI * 0.5
+			var start := offset + Vector2.from_angle(angle) * reach
+			var end := offset + Vector2.from_angle(angle + TAU / float(sides)) * reach
+			var inner := offset + Vector2.from_angle(angle + PI / float(sides)) * reach * 0.39
+			draw_colored_polygon(PackedVector2Array([start, end, inner]), paper.darkened(0.04 + float((facet + tier) % 4) * 0.10))
+			folds.append_array(PackedVector2Array([start, inner]))
+			rim.append(start)
+		draw_multiline(folds, Color(PaperArt.PAPER, 0.15), 1.0, true)
+		draw_polyline(_closed(rim), Color(PaperArt.PAPER, 0.16), 1.2, true)
+	# A circular foot still states the exact physical radius of every style.
+	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 56, Color(paper.lightened(0.24), 0.55), 1.2, true)
+	var core := radius * 0.30
 	if visual_style == &"ink_city":
-		for glow in range(4, 0, -1):
-			draw_circle(Vector2.ZERO, radius + glow * 7.0, Color(0.76, 0.26, 0.86, 0.022 * float(5 - glow)))
-		draw_circle(Vector2.ZERO, radius, Color(0.035, 0.012, 0.075, 0.98))
-		var seal := Rect2(Vector2.ONE * -radius * 0.68, Vector2.ONE * radius * 1.36)
-		draw_rect(seal, Color(0.72, 0.24, 0.74, 0.24), true)
-		draw_rect(seal, Color(0.96, 0.48, 0.80, 0.72), false, 3.0, true)
-		draw_line(Vector2(-radius * 0.48, 0), Vector2(radius * 0.48, 0), Color(1.0, 0.68, 0.30, 0.68), 3.0, true)
-		draw_line(Vector2(0, -radius * 0.48), Vector2(0, radius * 0.48), Color(1.0, 0.68, 0.30, 0.68), 3.0, true)
-		return
-	if visual_style == &"sun_court":
-		for ray in 12:
-			var direction := Vector2.from_angle(float(ray) * TAU / 12.0)
-			draw_line(direction * radius * 0.72, direction * (radius + 18.0), Color(1.0, 0.62, 0.18, 0.54), 4.0, true)
-		draw_circle(Vector2.ZERO, radius, Color(0.38, 0.13, 0.045, 0.98))
-		draw_circle(Vector2.ZERO, radius * 0.70, Color(1.0, 0.52, 0.12, 0.18))
-		draw_arc(Vector2.ZERO, radius * 0.72, 0.0, TAU, 48, Color(1.0, 0.82, 0.43, 0.82), 3.0, true)
-		draw_circle(Vector2.ZERO, radius * 0.22, Color(0.02, 0.015, 0.03, 0.95))
-		return
-	var shadow := PackedVector2Array([Vector2(0, -radius - 12.0), Vector2(radius + 12.0, 0), Vector2(0, radius + 12.0), Vector2(-radius - 12.0, 0)])
-	draw_colored_polygon(shadow, Color("081b22"))
-	var diamond := PackedVector2Array([Vector2(0, -radius), Vector2(radius, 0), Vector2(0, radius), Vector2(-radius, 0)])
-	draw_colored_polygon(diamond, Color("829078"))
-	var inset := radius * 0.64
-	draw_colored_polygon(PackedVector2Array([Vector2(0, -inset), Vector2(inset, 0), Vector2(0, inset), Vector2(-inset, 0)]), Color("17424a"))
-	draw_rect(Rect2(Vector2(-7.0, -radius * 0.48), Vector2(14.0, radius * 0.96)), Color("f4bd58"), true)
-	draw_rect(Rect2(Vector2(-radius * 0.48, -7.0), Vector2(radius * 0.96, 14.0)), Color("f4bd58"), true)
+		draw_rect(Rect2(Vector2(-core, -core * 1.2), Vector2(core * 2, core * 2.4)), PaperArt.INK)
+		draw_rect(Rect2(Vector2(-core, -core * 1.2), Vector2(core * 2, core * 2.4)), Color(PaperArt.GOLD, 0.45), false, 1.0)
+	else:
+		var socket := PackedVector2Array()
+		for corner in 6: socket.append(Vector2.from_angle(float(corner) * TAU / 6.0) * core * 1.1)
+		draw_colored_polygon(socket, PaperArt.INK)
+		draw_polyline(_closed(socket), Color(foil, 0.45), 1.0, true)
+	_draw_lantern(Vector2.ZERO, minf(17.0, core * 0.82), foil, 0.90)
 
 
 func _draw_ink_pool() -> void:
 	var rect := Rect2(-piece_size * 0.5, piece_size)
-	if visual_style == &"ink_city":
-		draw_rect(rect, Color(0.015, 0.008, 0.035, 0.72), true)
-		for stroke in 9:
-			var y := lerpf(rect.position.y + 12.0, rect.end.y - 12.0, float(stroke) / 8.0)
-			var inset := absf(sin(stroke * 1.7)) * 54.0
-			draw_line(Vector2(rect.position.x + inset, y), Vector2(rect.end.x - inset * 0.55, y - 13.0), Color(0.68, 0.22, 0.78, 0.12 + stroke % 2 * 0.06), 9.0, true)
-		draw_rect(rect.grow(-4.0), Color(0.92, 0.38, 0.82, 0.44), false, 3.0, true)
-		return
-	if visual_style == &"sun_court":
-		draw_rect(rect, Color(0.15, 0.025, 0.035, 0.64), true)
-		var eclipse_radius := minf(piece_size.x, piece_size.y) * 0.36
-		draw_circle(Vector2.ZERO, eclipse_radius, Color(0.008, 0.008, 0.018, 0.92))
-		draw_arc(Vector2.ZERO, eclipse_radius + 10.0, -PI * 0.8, PI * 0.74, 48, Color(1.0, 0.46, 0.16, 0.62), 5.0, true)
-		draw_rect(rect.grow(-5.0), Color(0.92, 0.30, 0.18, 0.38), false, 3.0, true)
-		return
-	draw_rect(rect.grow(8.0), Color("190e20"), true)
-	draw_rect(rect, Color("2b1725"), true)
-	draw_rect(Rect2(rect.position + Vector2(8.0, 8.0), Vector2(piece_size.x - 16.0, 7.0)), Color("d96c3f"), true)
-	var tooth_count := maxi(4, int(piece_size.x / 48.0))
-	for tooth in tooth_count:
-		var x := lerpf(rect.position.x + 18.0, rect.end.x - 18.0, float(tooth) / float(maxi(1, tooth_count - 1)))
-		var triangle := PackedVector2Array([Vector2(x - 12.0, rect.position.y + 27.0), Vector2(x + 12.0, rect.position.y + 27.0), Vector2(x, rect.position.y + 52.0)])
-		draw_colored_polygon(triangle, Color("ff654f"))
-	for stripe in 5:
-		var y := lerpf(rect.get_center().y, rect.end.y - 12.0, float(stripe) / 4.0)
-		draw_rect(Rect2(Vector2(rect.position.x + 16.0 + float(stripe % 2) * 22.0, y), Vector2(piece_size.x - 48.0, 4.0)), Color(0.37, 0.15, 0.19, 0.64), true)
+	_draw_zone_sheet(rect, Color("30283f"), INK_COLOR)
+	# Sunlight gathers inward; wet ink visibly drains down in broken bands.
+	# The dashed inner seam and hollow lantern survive a grayscale reading.
+	_draw_dashed_frame(rect.grow(-8.0), Color(INK_COLOR, 0.65), 2.0, 12.0)
+	var bands := maxi(3, int(piece_size.y / 30.0))
+	for band in bands:
+		var points := PackedVector2Array()
+		for step in 17:
+			var x := lerpf(rect.position.x + 15.0, rect.end.x - 15.0, float(step) / 16.0)
+			var progress := fposmod(float(band) / float(bands) + _visual_time * 0.055, 1.0)
+			var y := lerpf(rect.position.y + 15.0, rect.end.y - 15.0, progress)
+			y += sin(float(step) * 0.7 + float(band) * 1.1) * minf(4.0, piece_size.y * 0.025)
+			points.append(Vector2(x, y))
+		draw_polyline(points, Color(INK_COLOR, 0.15 + float(band % 2) * 0.06), 2.0, true)
+	var size := minf(27.0, minf(piece_size.x, piece_size.y) * 0.22)
+	_draw_symbol_backing(size, Color("30283f"))
+	var drop := PackedVector2Array([Vector2(0, -size), Vector2(size * 0.65, size * 0.15), Vector2(size * 0.42, size * 0.65), Vector2(0, size * 0.82), Vector2(-size * 0.42, size * 0.65), Vector2(-size * 0.65, size * 0.15)])
+	draw_colored_polygon(drop, Color(INK_COLOR, 0.10))
+	draw_polyline(_closed(drop), Color(INK_COLOR, 0.95), 2.5, true)
+	draw_line(Vector2(-size * 0.25, 0), Vector2(size * 0.25, 0), Color(INK_COLOR, 0.95), 3.0, true)
+	for side in [-1.0, 1.0]:
+		var center := Vector2(side * (size + 17.0), sin(_visual_time * 2.0) * 2.0)
+		draw_polyline(PackedVector2Array([center + Vector2(-6, -3), center + Vector2(0, 4), center + Vector2(6, -3)]), Color(INK_COLOR, 0.8), 2.5, true)
 
 
 func _draw_current_lane() -> void:
 	var rect := Rect2(-piece_size * 0.5, piece_size)
-	if visual_style == &"ink_city":
-		draw_rect(rect, Color(0.34, 0.09, 0.48, 0.20), true)
-		draw_rect(rect, Color(0.86, 0.38, 0.82, 0.48), false, 2.5, true)
-		var sign_x := -1.0 if effect_direction.x < 0.0 else 1.0
-		for ribbon in 3:
-			var y := lerpf(rect.position.y + 22.0, rect.end.y - 22.0, float(ribbon) / 2.0)
-			var points := PackedVector2Array()
-			for step in 13:
-				var x := lerpf(rect.position.x + 18.0, rect.end.x - 18.0, float(step) / 12.0)
-				points.append(Vector2(x, y + sin(step * 0.8 + _visual_time * 2.0) * 9.0))
-			draw_polyline(points, Color(0.94, 0.54, 0.86, 0.24), 3.0, true)
-		for mark in 6:
-			var x := lerpf(rect.position.x + 34.0, rect.end.x - 34.0, float(mark) / 5.0)
-			draw_line(Vector2(x - 13 * sign_x, -10), Vector2(x, 0), Color(1.0, 0.70, 0.32, 0.58), 3.0, true)
-			draw_line(Vector2(x, 0), Vector2(x - 13 * sign_x, 10), Color(1.0, 0.70, 0.32, 0.58), 3.0, true)
-		return
-	if visual_style == &"sun_court":
-		draw_rect(rect, Color(0.70, 0.29, 0.06, 0.20), true)
-		draw_rect(rect, Color(1.0, 0.68, 0.22, 0.54), false, 3.0, true)
-		var sign_x := -1.0 if effect_direction.x < 0.0 else 1.0
-		for chevron in 8:
-			var x := lerpf(rect.position.x + 28.0, rect.end.x - 28.0, float(chevron) / 7.0)
-			var points := PackedVector2Array([Vector2(x - 20 * sign_x, -22), Vector2(x + 8 * sign_x, 0), Vector2(x - 20 * sign_x, 22)])
-			draw_polyline(points, Color(1.0, 0.86, 0.44, 0.40 + sin(_visual_time * 3.4 + chevron) * 0.12), 5.0, true)
-		return
-	draw_rect(rect, Color("124f51"), true)
-	draw_rect(Rect2(rect.position + Vector2(5.0, 5.0), piece_size - Vector2(10.0, 10.0)), Color("176968"), true)
-	var pulse := 0.5 + sin(_visual_time * 3.4) * 0.18
-	var sign_x := -1.0 if effect_direction.x < 0.0 else 1.0
-	for arrow in 7:
-		var x := lerpf(rect.position.x + 30.0, rect.end.x - 30.0, float(arrow) / 6.0)
-		var center := Vector2(x, 0.0)
-		var arrow_color := Color(0.35, 0.94, 0.82, pulse)
-		draw_rect(Rect2(center + Vector2(-9.0 * sign_x, -5.0), Vector2(18.0 * sign_x, 10.0)).abs(), arrow_color, true)
-		draw_colored_polygon(PackedVector2Array([center + Vector2(16.0 * sign_x, 0), center + Vector2(2.0 * sign_x, -15.0), center + Vector2(2.0 * sign_x, 15.0)]), arrow_color)
+	_draw_zone_sheet(rect, Color("183544"), CURRENT_COLOR)
+	var direction := effect_direction
+	var tangent := direction.orthogonal()
+	var inset := rect.grow(-12.0)
+	var reach := piece_size.length() * 0.5
+	var size := minf(15.0, minf(piece_size.x, piece_size.y) * 0.17)
+	var travel := fposmod(_visual_time * 33.0, 62.0)
+	# Use the effect's actual local direction, including vertical/diagonal lanes.
+	# Draw only complete chevrons inside the real rectangular footprint.
+	for row in range(-int(reach / 46.0), int(reach / 46.0) + 1):
+		for column in range(-int(reach / 62.0) - 1, int(reach / 62.0) + 2):
+			var center := direction * (float(column) * 62.0 + travel) + tangent * float(row) * 46.0
+			var tip := center + direction * size * 0.65
+			var left := center - direction * size * 0.55 - tangent * size * 0.65
+			var right := center - direction * size * 0.55 + tangent * size * 0.65
+			if not inset.has_point(tip) or not inset.has_point(left) or not inset.has_point(right):
+				continue
+			var alpha := 0.62 if row == 0 else 0.25
+			draw_polyline(PackedVector2Array([left, tip, right]), Color(CURRENT_COLOR, alpha + _presence * 0.12), 3.0 if row == 0 else 1.8, true)
 
 
 func _draw_sun_patch() -> void:
 	var rect := Rect2(-piece_size * 0.5, piece_size)
-	var pulse := 0.72 + sin(_visual_time * 2.6) * 0.12
-	if visual_style == &"paper_reef":
-		draw_rect(rect.grow(6.0), Color("0b3438"), true)
-		draw_rect(rect, Color("124f51"), true)
-		draw_rect(Rect2(rect.position + Vector2(8.0, 8.0), piece_size - Vector2(16.0, 16.0)), Color("176968"), true)
-		var plus_color := Color(0.35, 0.94, 0.82, pulse)
-		var arm := minf(piece_size.x, piece_size.y) * 0.34
-		draw_rect(Rect2(Vector2(-7.0, -arm), Vector2(14.0, arm * 2.0)), plus_color, true)
-		draw_rect(Rect2(Vector2(-arm, -7.0), Vector2(arm * 2.0, 14.0)), plus_color, true)
-		for mote in [Vector2(-piece_size.x * 0.34, -piece_size.y * 0.28), Vector2(piece_size.x * 0.31, -piece_size.y * 0.24), Vector2(-piece_size.x * 0.29, piece_size.y * 0.27), Vector2(piece_size.x * 0.34, piece_size.y * 0.25)]:
-			draw_rect(Rect2(mote - Vector2(4.0, 4.0), Vector2(8.0, 8.0)), Color("8ed9ca"), true)
-		return
-	if visual_style == &"ink_city":
-		draw_rect(rect, Color(0.40, 0.14, 0.46, 0.18), true)
-		draw_rect(rect.grow(-5.0), Color(0.92, 0.52, 0.82, 0.48 * pulse), false, 3.0, true)
-		var window := Rect2(-piece_size * 0.22, piece_size * 0.44)
-		draw_rect(window, Color(1.0, 0.72, 0.34, 0.10 * pulse), true)
-		draw_line(Vector2(window.get_center().x, window.position.y), Vector2(window.get_center().x, window.end.y), Color(1.0, 0.74, 0.40, 0.52), 2.0, true)
-		draw_line(Vector2(window.position.x, window.get_center().y), Vector2(window.end.x, window.get_center().y), Color(1.0, 0.74, 0.40, 0.52), 2.0, true)
-		return
-	draw_rect(rect, Color(0.72, 0.38, 0.06, 0.18), true)
-	draw_rect(rect.grow(-5.0), Color(1.0, 0.72, 0.26, 0.50 * pulse), false, 3.0, true)
-	for ray in 9:
-		var x := lerpf(rect.position.x + 24.0, rect.end.x - 24.0, float(ray) / 8.0)
-		draw_line(Vector2(x - 24.0, rect.end.y - 10.0), Vector2(x + 24.0, rect.position.y + 10.0), Color(1.0, 0.90, 0.52, 0.10 + pulse * 0.14), 5.0, true)
-	var center_radius := minf(piece_size.x, piece_size.y) * 0.20
-	draw_circle(Vector2.ZERO, center_radius, Color(1.0, 0.74, 0.27, 0.12 * pulse))
-	draw_arc(Vector2.ZERO, center_radius + 8.0, 0.0, TAU, 28, Color(1.0, 0.92, 0.62, 0.62), 2.5, true)
+	_draw_zone_sheet(rect, Color("1d423b"), BENEFIT_COLOR)
+	var pulse := 0.76 + sin(_visual_time * 1.6) * 0.10
+	var inset := rect.grow(-9.0)
+	draw_rect(inset, Color(BENEFIT_COLOR, 0.42), false, 1.3, true)
+	# Two inward-folding paper leaves on each side are the benefit silhouette.
+	for side in [-1.0, 1.0]:
+		for column in [-1.0, 1.0]:
+			var base := Vector2(column * (piece_size.x * 0.5 - 19.0), side * (piece_size.y * 0.5 - 19.0))
+			var tip := base - Vector2(column * 22.0, side * 15.0)
+			draw_colored_polygon(PackedVector2Array([base, base - Vector2(column * 24.0, 0), tip]), Color(BENEFIT_COLOR, 0.28))
+			draw_line(base, tip, Color(BENEFIT_COLOR, 0.8), 2.0, true)
+	var size := minf(28.0, minf(piece_size.x, piece_size.y) * 0.22)
+	for mote in 8:
+		var progress := fposmod(_visual_time * 0.22 + float(mote) / 8.0, 1.0)
+		var angle := float(mote) * TAU / 8.0
+		var edge := Vector2.from_angle(angle) * Vector2(piece_size.x * 0.40, piece_size.y * 0.34)
+		var point := edge.lerp(Vector2.from_angle(angle) * size * 1.55, progress)
+		var alpha := sin(progress * PI) * 0.48
+		draw_circle(point, 2.0 + progress, Color(BENEFIT_COLOR.lerp(PaperArt.PAPER, 0.45), alpha))
+	_draw_symbol_backing(size, Color("1d423b"))
+	draw_arc(Vector2.ZERO, size * 1.3, 0.0, TAU, 36, Color(BENEFIT_COLOR, 0.28 + _presence * 0.24), 1.7, true)
+	_draw_lantern(Vector2.ZERO, size, BENEFIT_COLOR, 1.0)
+	for ray in 8:
+		var direction := Vector2.from_angle(float(ray) * TAU / 8.0)
+		draw_line(direction * size * 1.55, direction * size * (1.80 + pulse * 0.15), Color(BENEFIT_COLOR, 0.55), 2.4, true)
 
 
 func _draw_thorn_paper() -> void:
 	var rect := Rect2(-piece_size * 0.5, piece_size)
-	var pulse := 0.75 + sin(_visual_time * 4.2) * 0.15
-	if visual_style == &"ink_city":
-		draw_rect(rect, Color(0.22, 0.015, 0.12, 0.42), true)
-		draw_rect(rect, Color(1.0, 0.28, 0.50, 0.58 * pulse), false, 3.0, true)
-		for seal in 5:
-			var x := lerpf(rect.position.x + 24.0, rect.end.x - 24.0, float(seal) / 4.0)
-			draw_line(Vector2(x - 16, -22), Vector2(x + 16, 22), Color(1.0, 0.45, 0.62, 0.72), 5.0, true)
-			draw_line(Vector2(x + 16, -22), Vector2(x - 16, 22), Color(0.08, 0.01, 0.05, 0.90), 3.0, true)
-		return
-	if visual_style == &"sun_court":
-		draw_rect(rect, Color(0.32, 0.035, 0.025, 0.42), true)
-		draw_rect(rect, Color(1.0, 0.36, 0.16, 0.62 * pulse), false, 3.0, true)
-		var blade_count := maxi(5, int(piece_size.x / 42.0))
-		for blade in blade_count:
-			var x := lerpf(rect.position.x + 16.0, rect.end.x - 16.0, float(blade) / float(maxi(1, blade_count - 1)))
-			var blade_shape := PackedVector2Array([Vector2(x - 12, 24), Vector2(x + 12, 24), Vector2(x, -36)])
-			draw_colored_polygon(blade_shape, Color(1.0, 0.54, 0.18, 0.48 + pulse * 0.15))
-			draw_polyline(PackedVector2Array([blade_shape[0], blade_shape[1], blade_shape[2], blade_shape[0]]), Color(1.0, 0.84, 0.38, 0.76), 1.8, true)
-		return
-	draw_rect(rect.grow(7.0), Color("190e20"), true)
-	draw_rect(rect, Color("3d1b27"), true)
-	draw_rect(Rect2(rect.position + Vector2(6.0, 6.0), Vector2(piece_size.x - 12.0, 6.0)), Color(0.85, 0.42, 0.25, pulse), true)
-	var thorn_count := maxi(4, int(piece_size.x / 46.0))
+	_draw_zone_sheet(rect, Color("432c33"), HAZARD_COLOR)
+	var inset := rect.grow(-13.0)
+	_draw_clipped_hatching(inset, Color(HAZARD_COLOR, 0.13), 29.0)
+	# Barbs point into the hazardous area, never outside its collision boundary.
+	var corners := [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	for edge in 4:
+		var start: Vector2 = corners[edge]
+		var end: Vector2 = corners[(edge + 1) % 4]
+		var direction := start.direction_to(end)
+		var inward := Vector2(-direction.y, direction.x)
+		var count := maxi(1, int(start.distance_to(end) / 40.0))
+		for index in count:
+			var center := start.lerp(end, (float(index) + 0.5) / float(count))
+			var tooth := PackedVector2Array([center - direction * 7.0, center + inward * 11.0, center + direction * 7.0])
+			draw_colored_polygon(tooth, Color(HAZARD_COLOR, 0.72))
+	var size := minf(28.0, minf(piece_size.x, piece_size.y) * 0.22)
+	_draw_symbol_backing(size, Color("432c33"))
+	var triangle := PackedVector2Array([Vector2(0, -size), Vector2(size, size * 0.76), Vector2(-size, size * 0.76)])
+	draw_colored_polygon(triangle, Color(HAZARD_COLOR, 0.08))
+	draw_polyline(_closed(triangle), Color(HAZARD_COLOR, 0.96), 3.0, true)
+	draw_line(Vector2(0, -size * 0.34), Vector2(0, size * 0.15), Color("ffe2d0"), 3.5, true)
+	draw_circle(Vector2(0, size * 0.43), 2.1, Color("ffe2d0"))
+	var thorn_count := maxi(2, int(piece_size.x / 78.0))
 	for thorn in thorn_count:
-		var x := lerpf(rect.position.x + 18.0, rect.end.x - 18.0, float(thorn) / float(maxi(1, thorn_count - 1)))
-		var triangle := PackedVector2Array([Vector2(x - 15.0, rect.end.y - 12.0), Vector2(x + 15.0, rect.end.y - 12.0), Vector2(x, rect.position.y + 21.0 + float(thorn % 2) * 13.0)])
-		draw_colored_polygon(triangle, Color(1.0, 0.40, 0.31, 0.62 + pulse * 0.18))
+		var x := lerpf(inset.position.x, inset.end.x, (float(thorn) + 0.5) / float(thorn_count))
+		if absf(x) < size * 1.8:
+			continue
+		var tip := Vector2(x, -piece_size.y * 0.20)
+		var base := Vector2(x + 6.0, piece_size.y * 0.22)
+		draw_colored_polygon(PackedVector2Array([base - Vector2(12, 0), tip, base + Vector2(12, 0)]), Color(HAZARD_COLOR, 0.46))
+		draw_line(base - Vector2(12, 0), tip, Color("ffe2d0", 0.55), 1.6, true)
+
+
+func _draw_zone_sheet(rect: Rect2, fill: Color, accent: Color) -> void:
+	# Opaque paper separates interactive ground from decorative sea washes.
+	# Every bright boundary is centered on the same rectangle as the effect.
+	var material := fill.lerp(_regional_paper(), 0.07)
+	draw_rect(rect, material.lightened(_presence * 0.07), true)
+	draw_rect(rect, Color(PaperArt.INK, 0.82), false, 9.0, true)
+	draw_rect(rect, Color(accent, 0.76 + _proximity * 0.16), false, 2.8 + _presence * 0.8, true)
+	var seam := rect.grow(-3.0)
+	draw_line(seam.position, Vector2(seam.end.x, seam.position.y), Color(accent, 0.18), 1.0, true)
+	if _presence > 0.01:
+		var pulse := (0.5 + 0.5 * sin(_visual_time * 2.8)) * _presence
+		draw_rect(rect.grow(-4.0), Color(accent, 0.12 + pulse * 0.24), false, 2.0, true)
+
+
+func _draw_symbol_backing(size: float, fill: Color) -> void:
+	var shape := PackedVector2Array()
+	for vertex in 8:
+		shape.append(Vector2.from_angle(float(vertex) * TAU / 8.0 + PI / 8.0) * size * 1.48)
+	draw_colored_polygon(shape, Color(fill, 0.97))
+
+
+func _draw_dashed_frame(rect: Rect2, color: Color, width: float, dash: float) -> void:
+	var corners := [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	for edge in 4:
+		draw_dashed_line(corners[edge], corners[(edge + 1) % 4], color, width, dash, true)
+
+
+func _draw_clipped_hatching(rect: Rect2, color: Color, spacing: float) -> void:
+	# Clip the diagonal pattern analytically instead of letting decorative
+	# hatch marks imply damage outside the authored rectangle.
+	var offset := -rect.size.y
+	while offset < rect.size.x:
+		var begin := maxf(0.0, -offset)
+		var end := minf(rect.size.y, rect.size.x - offset)
+		if end > begin:
+			draw_line(rect.position + Vector2(offset + begin, begin), rect.position + Vector2(offset + end, end), color, 2.0, true)
+		offset += spacing
+
+
+func _closed(points: PackedVector2Array) -> PackedVector2Array:
+	var result := points.duplicate()
+	if not result.is_empty():
+		result.append(result[0])
+	return result
+
+
+func _draw_lantern(center: Vector2, size: float, foil: Color, alpha: float) -> void:
+	var lantern := PackedVector2Array([
+		center + Vector2(0, -size), center + Vector2(size * 0.60, -size * 0.28),
+		center + Vector2(size * 0.43, size * 0.58), center + Vector2(0, size),
+		center + Vector2(-size * 0.43, size * 0.58), center + Vector2(-size * 0.60, -size * 0.28),
+	])
+	draw_colored_polygon(lantern, Color(foil, 0.13 * alpha))
+	var outline := lantern.duplicate()
+	outline.append(lantern[0])
+	draw_polyline(outline, Color(foil, 0.72 * alpha), 1.5, true)
+	draw_line(lantern[0], lantern[3], Color(foil, 0.48 * alpha), 1.0, true)
+	draw_circle(center, 2.5, Color(PaperArt.PAPER, alpha))

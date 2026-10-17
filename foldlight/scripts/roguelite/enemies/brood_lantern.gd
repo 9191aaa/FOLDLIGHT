@@ -1,6 +1,8 @@
 class_name FoldlightBroodLantern
 extends StaticBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal spawn_requested(snapshot: Dictionary)
 signal damaged(amount: float, health_remaining: float)
 signal defeated(actor: Node2D)
@@ -22,14 +24,14 @@ var _hit_punch: float = 0.0
 func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 0) | (1 << 3)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: StringName) -> void:
 	definition = new_definition
 	actor_id = new_actor_id
 	health = definition.base_health if definition != null else 16.0
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, _target_position: Vector2, hostile_time_scale: float = 1.0) -> void:
@@ -45,7 +47,7 @@ func advance_simulation(delta: float, _target_position: Vector2, hostile_time_sc
 			positions.append(global_position + Vector2.from_angle(angle) * 88.0)
 		spawn_requested.emit({"source_id": actor_id, "enemy_id": &"paper_drifter", "positions": positions, "maximum": 6})
 		_spawn_remaining = spawn_interval
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func take_damage(amount: float) -> bool:
@@ -58,7 +60,7 @@ func take_damage(amount: float) -> bool:
 	if health <= 0.0:
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 

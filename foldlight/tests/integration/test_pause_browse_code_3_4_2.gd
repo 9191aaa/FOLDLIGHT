@@ -1,7 +1,7 @@
 extends SceneTree
 
 ## 3.4.2 browse-mode contract: the eight-arrow code is pause-only, order-sensitive,
-## shared by classic/roguelite flow, and blocks damage through the player API.
+## owned by the current voyage pause, and blocks damage through the player API.
 
 const CODE_KEYS: Array[Key] = [KEY_UP, KEY_UP, KEY_DOWN, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_LEFT, KEY_RIGHT]
 
@@ -24,31 +24,35 @@ func _run() -> void:
 	await process_frame
 
 	game.player.set_debug_invincible(false)
-	_press_code(game, CODE_KEYS)
+	_press_code(CODE_KEYS)
 	_check(not game.player.is_debug_invincible(), "arrow code cannot enable browse mode outside a pause screen")
 
-	game._rogue_mode_active = false
-	game.mode = FoldlightGame.RunMode.PAUSED
-	_press_code(game, [KEY_UP, KEY_DOWN, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_LEFT, KEY_RIGHT])
+	game.rogue_session.persist_profile = false
+	game.rogue_session.start_new_run()
+	game.rogue_session._pause_game()
+	await process_frame
+	await process_frame
+	_check(game.rogue_session.is_paused(), "voyage pause is active for the hidden code")
+	_press_code([KEY_UP])
+	_check(game._pause_browse_code_index == 1, "a real arrow event reaches the pause observer exactly once despite menu consumption")
+	_press_key(KEY_UP, true, true)
+	_press_key(KEY_UP, false)
+	_check(game._pause_browse_code_index == 1, "keyboard auto-repeat does not advance the hidden code")
+	_press_code([KEY_DOWN])
+	_press_code([KEY_UP, KEY_DOWN, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_LEFT, KEY_RIGHT])
 	_check(not game.player.is_debug_invincible(), "wrong arrow order does not accidentally enable browse mode")
-	_press_code(game, CODE_KEYS)
-	_check(game.player.is_debug_invincible(), "up up down down left right left right enables classic browse mode while paused")
-
-	game.player.health = 3
-	game.player.set_play_enabled(true)
-	var classic_hit := game.player.take_hit()
-	_check(not classic_hit and game.player.health == 3, "browse mode rejects classic damage at the shared player hit entry")
+	_press_code([KEY_UP, KEY_UP])
+	_press_code([KEY_ESCAPE])
+	_check(not game.rogue_session.is_paused() and game._pause_browse_code_index == 0, "real Escape resume cancels a partial pause code")
+	_press_code([KEY_ESCAPE])
+	await process_frame
+	_press_code([KEY_DOWN, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_LEFT, KEY_RIGHT])
+	_check(game.rogue_session.is_paused() and not game.player.is_debug_invincible(), "a newly opened pause cannot finish the previous pause's partial code")
+	_press_code(CODE_KEYS)
+	_check(game.player.is_debug_invincible(), "the eight-arrow code enables browse mode only while paused")
+	_check(game.rogue_session.presentation.is_browse_mode_enabled(), "the shared pause UI confirms browse mode")
 	game.player.reset_player()
 	_check(game.player.is_debug_invincible(), "browse mode survives player reset so the full flow remains browsable")
-
-	game.player.set_debug_invincible(false)
-	game._rogue_mode_active = true
-	game.rogue_session.mode = FoldlightRogueSessionController.SessionMode.RUN
-	game.rogue_session._pause_game()
-	_check(game.rogue_session.is_paused(), "roguelite pause screen is active for the hidden code")
-	_press_code(game, CODE_KEYS)
-	_check(game.player.is_debug_invincible(), "the same eight-arrow code enables roguelite browse mode")
-	_check(game.rogue_session.presentation.is_browse_mode_enabled(), "roguelite pause UI confirms that browse mode is active")
 	game.player.health = 2
 	game.player.set_play_enabled(true)
 	var rogue_hit := game.player.take_hit()
@@ -63,13 +67,20 @@ func _run() -> void:
 	_finish()
 
 
-func _press_code(game: FoldlightGame, keys: Array) -> void:
+func _press_code(keys: Array) -> void:
 	for key_variant: Variant in keys:
-		var event := InputEventKey.new()
-		event.pressed = true
-		event.keycode = int(key_variant) as Key
-		event.physical_keycode = int(key_variant) as Key
-		game._input(event)
+		_press_key(int(key_variant) as Key, true)
+		_press_key(int(key_variant) as Key, false)
+
+
+func _press_key(key: Key, pressed: bool, echo: bool = false) -> void:
+	var event := InputEventKey.new()
+	event.pressed = pressed
+	event.echo = echo
+	event.keycode = key
+	event.physical_keycode = key
+	Input.parse_input_event(event)
+	Input.flush_buffered_events()
 
 
 func _check(condition: bool, label: String) -> void:

@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="FoldlightRogueBossDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_boss_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"torn_page_executioner"
+title = "断页行刑者"
+description = "锁定方向后疯狂连续冲撞，每次折返都有短预警；越到后期连段越长。横向避开金色轨道，趁整套收招返光打断。"
+accent = Color(0.74, 0.56, 0.82, 1)
+tags = Array[StringName]([&"dash", &"rake"])
+region_id = &"inverted_ink_city"
+base_health = 720.0
+phase_thresholds = PackedFloat32Array(0.7, 0.38)
+arena_rule = &"open_paper"
+return_window_fraction = 0.18
+return_window_seconds = 3.4
+return_damage_outside_stagger = 0.5
+target_duration = 165.0
+telegraph_seconds = 0.84
+recovery_seconds = 1.15
+active_pattern_seconds = {&"execution_dash": 0.55, &"execution_rake": 0.3, &"execution_counterfold": 0.4}
+pattern_ids = Array[StringName]([&"execution_dash", &"execution_counterfold", &"execution_rake"])
