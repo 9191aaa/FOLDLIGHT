@@ -37,6 +37,15 @@ var orbit_speed: float = 4.2
 var curve: float = 0.0
 var status_id: StringName = &""
 var status_duration: float = 0.0
+var automatic_weapon_id: StringName = &""
+var area_radius: float = 150.0
+var destination_reached: bool = false
+var explosion_resolved: bool = false
+var return_damage_multiplier: float = 1.0
+var return_after: float = 0.65
+var return_anchor: Node2D
+var _leg_pierce_budget: int = 0
+var _leg_exhausted: bool = false
 var _has_returned: bool = false
 var _trail_clock: float = 0.0
 var _trail_points: Array[Vector2] = []
@@ -85,6 +94,17 @@ func configure(snapshot: Dictionary) -> void:
 	curve = clampf(float(snapshot.get("curve", 0.0)), -2.0, 2.0)
 	status_id = StringName(snapshot.get("status", &""))
 	status_duration = maxf(0.0, float(snapshot.get("status_duration", 0.0)))
+	automatic_weapon_id = StringName(snapshot.get("automatic_weapon_id", &""))
+	area_radius = clampf(float(snapshot.get("area_radius", 150.0)), 60.0, 260.0)
+	return_damage_multiplier = clampf(float(snapshot.get("return_damage_multiplier", 1.0)), 1.0, 2.0)
+	return_after = clampf(float(snapshot.get("return_after", 0.65)), 0.1, 3.6)
+	var return_anchor_variant: Variant = snapshot.get("return_anchor")
+	return_anchor = return_anchor_variant as Node2D if return_anchor_variant is Node2D else null
+	_leg_pierce_budget = pierce_remaining
+	_leg_exhausted = false
+	_has_returned = false
+	destination_reached = false
+	explosion_resolved = false
 	if launch_delay > 0.0 and is_instance_valid(orbit_anchor):
 		global_position = orbit_anchor.global_position + Vector2.from_angle(orbit_angle) * orbit_radius
 	_previous_global_position = global_position
@@ -123,12 +143,27 @@ func advance_simulation(delta: float, time_scale: float = 1.0) -> bool:
 			var speed := homing_speed if homing_speed > 0.0 else maxf(1.0, velocity.length())
 			var desired := offset.normalized() * speed
 			velocity = velocity.lerp(desired, clampf(homing_strength * movement_step, 0.0, 0.92)).normalized() * speed
-	if style == &"returning_gull" and age >= 0.48 and not _has_returned:
+	if style == &"returning_gull" and age >= return_after and not _has_returned:
 		velocity = -velocity
 		_has_returned = true
+		# A gull can strike once on its outward leg and once on its return.
+		# Per-leg pierce is still bounded; stationary overlap never repeats damage.
+		hit_actor_ids.clear()
+		pierce_remaining = _leg_pierce_budget
+		_leg_exhausted = false
+		damage *= return_damage_multiplier
+	if style == &"returning_gull" and _has_returned and is_instance_valid(return_anchor):
+		var return_offset := return_anchor.global_position - global_position
+		if return_offset.length() <= maxf(22.0, velocity.length() * movement_step):
+			return true
+		velocity = velocity.lerp(return_offset.normalized() * velocity.length(), clampf(9.0 * movement_step, 0.0, 1.0)).normalized() * velocity.length()
 	if not is_zero_approx(curve):
 		velocity = velocity.rotated(curve * movement_step)
-	global_position += velocity * movement_step
+	if style == &"tide_bell" and not hostile and not is_echo and global_position.distance_to(target_position) <= maxf(radius, velocity.length() * movement_step):
+		global_position = target_position
+		destination_reached = true
+	else:
+		global_position += velocity * movement_step
 	_trail_clock -= movement_step
 	if _trail_clock <= 0.0 and (style == &"return_light" or homing_strength > 0.0):
 		_trail_clock = 0.035
@@ -148,7 +183,12 @@ func sync_visual_direction() -> void:
 	# transform rotate their retained commands, rather than rebuilding hundreds
 	# of outlines and PackedArrays on every physics tick. Simulation still uses
 	# world-space velocity/radius, exactly as before.
-	rotation = velocity.angle() + sin(age * 5.0) * 0.08 if _uses_rotating_hostile_visual() else 0.0
+	if _uses_rotating_hostile_visual():
+		rotation = velocity.angle() + sin(age * 5.0) * 0.08
+	elif not hostile and style in [&"crease_petal", &"needle_orbit", &"returning_gull", &"prism_fan", &"sun_thread"]:
+		rotation = velocity.angle() if launch_delay <= 0.0 else orbit_angle + PI * 0.5
+	else:
+		rotation = 0.0
 
 
 func _refresh_moving_visual() -> void:
@@ -267,7 +307,14 @@ func consume_pierce() -> bool:
 	if pierce_remaining > 0:
 		pierce_remaining -= 1
 		return false
+	if style == &"returning_gull" and not is_echo:
+		_leg_exhausted = true
+		return false
 	return true
+
+
+func can_hit_actor() -> bool:
+	return not _leg_exhausted
 
 
 func get_navigation_snapshot() -> Dictionary:
@@ -293,17 +340,28 @@ func _advance_navigation_waypoint() -> void:
 
 func _draw() -> void:
 	var color := Color(1.0, 0.96, 0.80) if high_contrast and hostile and reflectable else projectile_color
-	if not hostile:
+	if not hostile and automatic_weapon_id.is_empty():
 		color = Color(0.38, 0.96, 0.86)
 	if style == &"return_light":
 		_draw_classic_return_light()
 	elif style == &"sun_thread":
-		draw_line(Vector2(-18, 0), Vector2(18, 0), color, 4.0, true)
+		draw_line(Vector2(-27, 0), Vector2(21, 0), Color(color, 0.25), 8.0, true)
+		draw_line(Vector2(-24, 0), Vector2(21, 0), color, 3.2, true)
+		draw_line(Vector2(-9, 0), Vector2(19, 0), Color(1.0, 0.96, 0.77), 1.2, true)
 	elif style == &"tide_bell":
 		draw_circle(Vector2.ZERO, radius + 5.0, Color(color, 0.20))
 		draw_arc(Vector2.ZERO, radius, 0.0, TAU, 16, color, 3.0, true)
 	elif hostile:
 		_draw_classic_hostile(color)
+	elif style == &"needle_orbit":
+		draw_line(Vector2(-15, 0), Vector2(12, 0), Color(color, 0.26), 6.0, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(15, 0), Vector2(-9, 3), Vector2(-5, 0), Vector2(-9, -3)]), color)
+	elif style == &"returning_gull":
+		draw_polyline(PackedVector2Array([Vector2(-13, -11), Vector2(8, 0), Vector2(-13, 11)]), color, 4.0, true)
+		draw_line(Vector2(-4, 0), Vector2(12, 0), Color(0.95, 1.0, 0.91), 2.0, true)
+	elif style == &"prism_fan":
+		draw_colored_polygon(PackedVector2Array([Vector2(13, 0), Vector2(-7, 6), Vector2(-3, 0), Vector2(-7, -6)]), color)
+		draw_line(Vector2(-2, 0), Vector2(8, 0), Color(1.0, 0.94, 1.0), 1.5, true)
 	else:
 		var diamond := PackedVector2Array([Vector2(radius, 0), Vector2(0, radius * 0.65), Vector2(-radius, 0), Vector2(0, -radius * 0.65)])
 		draw_colored_polygon(diamond, color)

@@ -10,7 +10,7 @@ signal page_state_changed(state: Dictionary)
 signal room_left
 signal busy_changed(busy: bool)
 
-const RULES_VERSION := "endless_race_v3"
+const RULES_VERSION := "endless_race_v4"
 const DEFAULT_ENDPOINT := "https://foldlight-paper-sea.briny-note-8241.chatgpt.site"
 const SETTINGS_FILE := "user://race_connection.cfg"
 const POLL_SECONDS := 1.0
@@ -118,7 +118,7 @@ func _has_preview_signature() -> bool:
 
 func create_room(pilot_name: String) -> bool:
 	if not _validate_entry(pilot_name): return false
-	return _request("create", "/api/rooms", {"name": display_name})
+	return _request("create", "/api/rooms", {"name": display_name, "rulesVersion": RULES_VERSION})
 
 
 func join_room(code: String, pilot_name: String) -> bool:
@@ -129,7 +129,7 @@ func join_room(code: String, pilot_name: String) -> bool:
 	if pattern.search(code) == null:
 		_set_error("房间码为 7 位字母或数字，不含 I、O、0、1。")
 		return false
-	return _request("join", "/api/rooms/" + code, {"action": "join", "name": display_name})
+	return _request("join", "/api/rooms/" + code, {"action": "join", "name": display_name, "rulesVersion": RULES_VERSION})
 
 
 func _validate_entry(pilot_name: String) -> bool:

@@ -13,8 +13,9 @@ const instance = '12345678-1234-4234-8234-123456789012';
 function fixture({ phase = 'running', aElapsed = 4, bElapsed = 3, bStatus = 'dead' } = {}) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec(schema);
+  sqlite.exec(readFileSync(new URL('../migrations/0002_room_rules.sql', import.meta.url), 'utf8'));
   const now = Date.now();
-  sqlite.prepare('INSERT INTO race_rooms VALUES (?, ?, ?, ?, ?, ?, ?)')
+  sqlite.prepare('INSERT INTO race_rooms (code,seed,phase,created_at,expires_at,start_at,creator_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(code, 501, phase, now, now + 3600_000, phase === 'running' ? now - 120_000 : null, 'test');
   const insert = sqlite.prepare('INSERT INTO race_players (id,room,name,token_hash,slot,instance_id,ready,status,elapsed,kills,health,seq,joined_at,seen_at,reported_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
   insert.run('alpha', code, 'alpha', createHash('sha256').update(token).digest('hex'), 0, instance, 1, 'alive', aElapsed, 1, 1, 1, now, now, now - 60_000);

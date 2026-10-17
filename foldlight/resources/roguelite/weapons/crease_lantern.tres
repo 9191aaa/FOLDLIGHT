@@ -6,7 +6,7 @@
 script = ExtResource("1")
 content_id = &"crease_lantern"
 title = "折灯"
-description = "自动寻找最近的潮兽，稳定发射一枚轻返光。"
+description = "自动追踪最近潮兽，稳定点杀；三阶贯穿，五阶多一束光。"
 accent = Color(0.36, 0.86, 0.88, 1)
 tags = Array[StringName]([&"starter", &"direct"])
 targeting = 0

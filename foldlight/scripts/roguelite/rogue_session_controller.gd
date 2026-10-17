@@ -575,10 +575,13 @@ func _restore_boss_clear() -> void:
 func _on_reward_chosen(upgrade_id: StringName) -> void:
 	if mode != SessionMode.RUN or run_controller.phase != FoldlightRogueRunController.Phase.REWARD:
 		return
+	if not _pending_reward_kinds.has(String(upgrade_id)):
+		return
 	var reward_kind := StringName(_pending_reward_kinds.get(String(upgrade_id), &"upgrade"))
 	match reward_kind:
 		&"weapon":
-			_apply_weapon_choice(upgrade_id)
+			if not _apply_weapon_choice(upgrade_id):
+				return
 		&"active":
 			_apply_active_choice(upgrade_id)
 		_:
@@ -829,11 +832,9 @@ func _draft_room_reward(category: StringName, rogue: Dictionary, forced_kind: St
 	if reward_kind.is_empty():
 		reward_kind = &"weapon" if category == &"forge" else (&"active" if category == &"shop" else &"upgrade")
 	if reward_kind == &"weapon":
-		for weapon_id in _name_array(rogue.get("unlocked_weapons", [])):
-			var weapon := FoldlightRogueContentCatalog.weapon_by_id(weapon_id)
-			if weapon == null:
-				continue
-			choices.append({"content_id": weapon.content_id, "choice_kind": &"weapon", "title": weapon.title, "description": weapon.description, "rarity": 1, "accent": weapon.accent, "next_level": 1, "maximum_level": 1, "offensive": true})
+		choices = _draft_weapon_choices(rogue)
+		if choices.is_empty():
+			return _draft_room_reward(category, rogue, &"upgrade")
 	elif reward_kind == &"active":
 		for item_id in _name_array(rogue.get("unlocked_active_items", [])):
 			var item := FoldlightRogueContentCatalog.active_item_by_id(item_id)
@@ -845,10 +846,24 @@ func _draft_room_reward(category: StringName, rogue: Dictionary, forced_kind: St
 		choices = reward_director.draft_upgrades(run_controller.run_state.seed, run_controller.run_state.room_count, run_controller.run_state.upgrade_levels, unlocked, 3)
 		for choice in choices:
 			choice["choice_kind"] = &"upgrade"
+		# A weapon opportunity appears from the first room onward. Alternate
+		# expanding the array and improving a held weapon; the two remaining
+		# cards preserve the opportunity cost of choosing firepower over safety.
+		var weapon_choices := _draft_weapon_choices(rogue)
+		if not weapon_choices.is_empty():
+			var weapon_choice := weapon_choices[posmod(run_controller.run_state.room_count - 1, mini(2, weapon_choices.size()))]
+			if choices.is_empty(): choices.append(weapon_choice)
+			else: choices[0] = weapon_choice
 	choices = _sample_reward_choices(choices)
 	for choice in choices:
 		_pending_reward_kinds[String(choice.get("content_id", &""))] = StringName(choice.get("choice_kind", &"upgrade"))
 	return choices
+
+
+func _draft_weapon_choices(rogue: Dictionary) -> Array[Dictionary]:
+	var state := run_controller.run_state
+	var levels := FoldlightWeaponProgression.sanitize_levels(state.weapon_levels, state.weapon_ids)
+	return FoldlightWeaponProgression.draft_choices(state.seed, state.room_count, levels, _name_array(rogue.get("unlocked_weapons", [])), 3)
 
 
 func _show_next_reward_stage(rogue: Dictionary) -> void:
@@ -906,15 +921,11 @@ func _sample_reward_choices(source: Array[Dictionary]) -> Array[Dictionary]:
 	return result
 
 
-func _apply_weapon_choice(weapon_id: StringName) -> void:
-	if FoldlightRogueContentCatalog.weapon_by_id(weapon_id) == null:
-		return
-	if run_controller.run_state.weapon_ids.has(weapon_id):
-		run_controller.run_state.weapon_ids.erase(weapon_id)
-	if run_controller.run_state.weapon_ids.size() >= 2:
-		run_controller.run_state.weapon_ids.remove_at(0)
-	run_controller.run_state.weapon_ids.append(weapon_id)
+func _apply_weapon_choice(weapon_id: StringName) -> bool:
+	if not run_controller.run_state.acquire_weapon(weapon_id):
+		return false
 	_equip_run_loadout()
+	return true
 
 
 func _apply_active_choice(item_id: StringName) -> void:
@@ -926,9 +937,8 @@ func _apply_active_choice(item_id: StringName) -> void:
 
 
 func _equip_run_loadout() -> void:
-	player.weapon_mount.unequip_all()
-	for weapon_id in run_controller.run_state.weapon_ids:
-		player.weapon_mount.equip(FoldlightRogueContentCatalog.weapon_by_id(weapon_id))
+	var state := run_controller.run_state
+	player.weapon_mount.set_weapon_levels(FoldlightWeaponProgression.sanitize_levels(state.weapon_levels, state.weapon_ids))
 	player.active_item_slot.unequip()
 	var active := FoldlightRogueContentCatalog.active_item_by_id(run_controller.run_state.active_item_id)
 	if active != null:

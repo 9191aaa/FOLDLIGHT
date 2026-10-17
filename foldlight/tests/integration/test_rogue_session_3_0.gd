@@ -44,15 +44,13 @@ func _run() -> void:
 	_check(session.run_controller.phase == FoldlightRogueRunController.Phase.REWARD, "clearing the room opens a real run-build reward")
 	_check(session.presentation.screen_kind == &"reward", "three-choice reward presentation replaces combat without leaving the run")
 
-	var profile_manager := root.get_node("ProfileManager") as FoldlightProfileManager
-	var rogue := profile_manager.get_roguelite_snapshot()
-	var unlocked: Array[StringName] = []
-	for value: Variant in rogue.get("unlocked_upgrades", []):
-		unlocked.append(StringName(value))
-	var choices := session.reward_director.draft_upgrades(session.run_controller.run_state.seed, session.run_controller.run_state.room_count, session.run_controller.run_state.upgrade_levels, unlocked, 3)
-	_check(choices.size() == 3, "reward draft supplies three legal unlocked upgrades")
-	if not choices.is_empty():
-		session._on_reward_chosen(StringName(choices[0].get("content_id", &"")))
+	var offered_ids: Array[StringName] = []
+	for card: Button in session.presentation._reward_buttons:
+		if card.visible:
+			offered_ids.append(StringName(card.get_meta("upgrade_id", &"")))
+	_check(offered_ids.size() == 3, "live reward draft supplies three legal weapon or build choices")
+	if not offered_ids.is_empty():
+		session._on_reward_chosen(offered_ids[0])
 	await process_frame
 	_check(session.run_controller.phase == FoldlightRogueRunController.Phase.ROUTE_CHOICE and session.presentation.screen_kind == &"route", "reward flows into the branching route chart")
 	var exits: Array[String] = []

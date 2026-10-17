@@ -1,7 +1,7 @@
 class_name FoldlightRogueRunState
 extends Node
 
-const SNAPSHOT_VERSION: int = 1
+const SNAPSHOT_VERSION: int = 2
 
 var seed: int = 0
 var route: Dictionary = {}
@@ -13,6 +13,7 @@ var glimmer: int = 0
 var health: int = 5
 var max_health: int = 5
 var weapon_ids: Array[StringName] = []
+var weapon_levels: Dictionary = {}
 var active_item_id: StringName = &""
 var upgrade_levels: Dictionary = {}
 var cleared_node_ids: Array[StringName] = []
@@ -29,6 +30,7 @@ func begin_run(run_seed: int, route_snapshot: Dictionary) -> void:
 	health = 5
 	max_health = 5
 	weapon_ids = [&"crease_lantern"]
+	weapon_levels = {"crease_lantern": 1}
 	# The second cleared room teaches active items as a deliberate reward. The
 	# HUD starts with an empty slot instead of silently gifting an unexplained Q.
 	active_item_id = &""
@@ -49,6 +51,26 @@ func get_upgrade_level(upgrade_id: StringName) -> int:
 	return int(upgrade_levels.get(String(upgrade_id), 0))
 
 
+func acquire_weapon(weapon_id: StringName) -> bool:
+	if FoldlightRogueContentCatalog.weapon_by_id(weapon_id) == null:
+		return false
+	_sync_weapon_inventory()
+	var key := String(weapon_id)
+	var current_level := int(weapon_levels.get(key, 0))
+	if current_level >= FoldlightWeaponProgression.MAX_LEVEL:
+		return false
+	weapon_levels[key] = current_level + 1
+	if not weapon_ids.has(weapon_id):
+		weapon_ids.append(weapon_id)
+	return true
+
+
+func get_weapon_level(weapon_id: StringName) -> int:
+	if FoldlightRogueContentCatalog.weapon_by_id(weapon_id) == null:
+		return 0
+	return clampi(int(weapon_levels.get(String(weapon_id), 1 if weapon_ids.has(weapon_id) else 0)), 0, FoldlightWeaponProgression.MAX_LEVEL)
+
+
 func mark_room_cleared(node_id: StringName) -> void:
 	if not cleared_node_ids.has(node_id):
 		cleared_node_ids.append(node_id)
@@ -56,6 +78,7 @@ func mark_room_cleared(node_id: StringName) -> void:
 
 
 func make_checkpoint() -> Dictionary:
+	_sync_weapon_inventory()
 	return {
 		"version": SNAPSHOT_VERSION,
 		"seed": seed,
@@ -68,6 +91,7 @@ func make_checkpoint() -> Dictionary:
 		"health": health,
 		"max_health": max_health,
 		"weapon_ids": _string_array(weapon_ids),
+		"weapon_levels": weapon_levels.duplicate(true),
 		"active_item_id": String(active_item_id),
 		"upgrade_levels": upgrade_levels.duplicate(true),
 		"cleared_node_ids": _string_array(cleared_node_ids),
@@ -75,26 +99,41 @@ func make_checkpoint() -> Dictionary:
 
 
 func restore_checkpoint(source: Dictionary) -> bool:
-	if int(source.get("version", 0)) != SNAPSHOT_VERSION:
+	var version := int(source.get("version", 0))
+	if version < 1 or version > SNAPSHOT_VERSION:
 		return false
 	var source_route: Variant = source.get("route", {})
 	if not source_route is Dictionary or (source_route as Dictionary).is_empty():
 		return false
-	seed = int(source.get("seed", 0))
+	var restored_seed := int(source.get("seed", 0))
+	var restored_node: Variant = source.get("current_node_id", &"")
+	if restored_seed == 0 or (not restored_node is String and not restored_node is StringName) or String(restored_node).is_empty():
+		return false
+	seed = restored_seed
 	route = (source_route as Dictionary).duplicate(true)
 	current_region = maxi(0, int(source.get("current_region", 0)))
-	current_node_id = StringName(source.get("current_node_id", &""))
+	current_node_id = StringName(restored_node)
 	room_count = maxi(0, int(source.get("room_count", 0)))
 	elapsed = maxf(0.0, float(source.get("elapsed", 0.0)))
 	glimmer = maxi(0, int(source.get("glimmer", 0)))
 	max_health = maxi(1, int(source.get("max_health", 5)))
 	health = clampi(int(source.get("health", max_health)), 0, max_health)
 	weapon_ids = _name_array(source.get("weapon_ids", []))
+	var source_levels: Variant = source.get("weapon_levels", {}) if version >= 2 else {}
+	weapon_levels = FoldlightWeaponProgression.sanitize_levels(source_levels if source_levels is Dictionary else {}, weapon_ids)
+	_sync_weapon_inventory()
 	active_item_id = StringName(source.get("active_item_id", &""))
 	var source_upgrades: Variant = source.get("upgrade_levels", {})
 	upgrade_levels = (source_upgrades as Dictionary).duplicate(true) if source_upgrades is Dictionary else {}
 	cleared_node_ids = _name_array(source.get("cleared_node_ids", []))
-	return seed != 0 and not current_node_id.is_empty()
+	return true
+
+
+func _sync_weapon_inventory() -> void:
+	weapon_levels = FoldlightWeaponProgression.sanitize_levels(weapon_levels, weapon_ids)
+	weapon_ids.clear()
+	for key: String in weapon_levels:
+		weapon_ids.append(StringName(key))
 
 
 func _first_node_id(route_snapshot: Dictionary) -> StringName:
@@ -118,7 +157,9 @@ func _name_array(source: Variant) -> Array[StringName]:
 	var result: Array[StringName] = []
 	if source is Array:
 		for value: Variant in source:
+			if not value is String and not value is StringName:
+				continue
 			var name := StringName(value)
-			if not name.is_empty():
+			if not name.is_empty() and not result.has(name):
 				result.append(name)
 	return result

@@ -197,7 +197,7 @@ func _test_friend_race() -> void:
 	var bridge := LocalTransportBridge.new()
 	root.add_child(bridge)
 	bridge.set_process(false)
-	_check(bridge.configure_session({"roomId": "music-room", "matchId": "music-match", "playerId": "music-player", "instanceId": "music-instance", "seed": 301, "rulesVersion": "endless_race_v3"}), "race accepts the unchanged multiplayer protocol")
+	_check(bridge.configure_session({"roomId": "music-room", "matchId": "music-match", "playerId": "music-player", "instanceId": "music-instance", "seed": 301, "rulesVersion": "endless_race_v4"}), "race accepts the unchanged multiplayer protocol")
 	var slice := load("res://scenes/endless/endless_survival_slice.tscn").instantiate() as FoldlightEndlessSliceRuntime
 	root.add_child(slice)
 	slice.prepare_web_race(bridge)

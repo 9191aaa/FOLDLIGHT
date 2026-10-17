@@ -214,6 +214,7 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	presentation.show_hud()
 	_transitioning_to_title = false
 	var snapshot := controller.enter_mode(seed, player)
+	player.weapon_mount.set_weapon_levels(controller.weapon_levels)
 	_refresh_combined_modifiers()
 	controller.force_next_wave()
 	_restore_survival_music()
@@ -504,15 +505,18 @@ func _reward_card_choices() -> Array[Dictionary]:
 	for option: Dictionary in _modal_options:
 		var choice := option.duplicate(true)
 		choice["content_id"] = StringName(option.get("id", &""))
-		choice["display_rarity"] = "%s · 任务进化" % str(option.get("lane_title", "成长"))
-		choice["display_level"] = "刻印  Lv.%d · 本局累积" % int(option.get("next_level", 1))
-		choice["accent"] = FoldlightTheme.GOLD if StringName(option.get("lane_id", &"")) == &"sustain" else FoldlightTheme.FOLD
+		if StringName(option.get("choice_kind", &"")) != &"weapon":
+			choice["display_rarity"] = "%s · 任务进化" % str(option.get("lane_title", "成长"))
+			choice["display_level"] = "刻印  Lv.%d · 本局累积" % int(option.get("next_level", 1))
+			choice["accent"] = FoldlightTheme.GOLD if StringName(option.get("lane_id", &"")) == &"sustain" else FoldlightTheme.FOLD
 		choices.append(choice)
 	return choices
 
 
 func _on_mission_reward_claimed(reward: Dictionary) -> void:
 	var health_before := player.health
+	if StringName(reward.get("choice_kind", &"")) == &"weapon":
+		player.weapon_mount.set_weapon_levels(controller.weapon_levels)
 	_refresh_combined_modifiers()
 	var reward_modifiers_variant: Variant = reward.get("modifiers", {})
 	var reward_modifiers := reward_modifiers_variant as Dictionary if reward_modifiers_variant is Dictionary else {}

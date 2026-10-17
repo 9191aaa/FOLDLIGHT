@@ -8,7 +8,7 @@ signal report_sent(payload: Dictionary)
 signal phase_changed(phase: StringName)
 
 const PROTOCOL: int = 1
-const RULES_VERSION: String = "endless_race_v3"
+const RULES_VERSION: String = "endless_race_v4"
 const ENDLESS_SCENE: String = "res://scenes/endless/endless_survival_slice.tscn"
 const REPORT_INTERVAL: float = 1.0
 const STATE_INTERVAL: float = 0.25

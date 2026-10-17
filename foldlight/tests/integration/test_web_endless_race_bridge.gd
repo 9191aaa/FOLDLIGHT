@@ -160,7 +160,7 @@ func _create_fixture(id: String, durable_attempts: Dictionary = {}) -> Dictionar
 
 
 func _config(id: String) -> Dictionary:
-	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v3"}
+	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v4"}
 
 
 func _enemy_positions(slice: FoldlightEndlessSliceRuntime) -> Array[Vector2]:
@@ -184,7 +184,7 @@ func _valid_reports(messages: Array[Dictionary]) -> bool:
 		if message.method != &"report":
 			continue
 		var payload: Dictionary = JSON.parse_string(message.json)
-		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v3":
+		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v4":
 			return false
 		if int(payload.seq) <= sequence or int(payload.survivalMs) < elapsed or int(payload.kills) < 0:
 			return false

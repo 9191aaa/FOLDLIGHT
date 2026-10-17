@@ -16,6 +16,8 @@ const ZONE_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/ink_deni
 const BOSS_SCENE: PackedScene = preload("res://scenes/roguelite/bosses/rogue_boss_actor.tscn")
 const BOSS_TELEGRAPH_SCENE: PackedScene = preload("res://scenes/roguelite/bosses/boss_attack_telegraph.tscn")
 const MAX_PROJECTILES: int = 260
+const MAX_AUTOMATIC_PROJECTILES: int = 64
+const MAX_PROJECTILES_PER_WEAPON: int = 16
 const HIT_VFX_BUDGET_MAX: float = 8.0
 const HIT_VFX_REFILL_PER_SECOND: float = 18.0
 const HIT_VFX_MAX_BURSTS: int = 18
@@ -187,6 +189,7 @@ func clear_combat() -> void:
 	_fold_lock_remaining = 0.0
 	if player != null:
 		player.fold_temporarily_locked = false
+		player.weapon_mount.reset_resonance()
 	_decoy_remaining = 0.0
 	_shield_charges = 0
 	_shield_remaining = 0.0
@@ -413,6 +416,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _update_temporary_effects(delta: float) -> void:
+	player.weapon_mount.advance_resonance(delta)
 	for kind in _impact_cooldowns:
 		_impact_cooldowns[kind] = maxf(0.0, float(_impact_cooldowns[kind]) - delta)
 	_hostile_slow_remaining = maxf(0.0, _hostile_slow_remaining - delta)
@@ -514,8 +518,8 @@ func _update_projectiles(delta: float) -> void:
 		var projectile_scale := _hostile_time_scale if projectile.hostile else 1.0
 		if not projectile.hostile and projectile.style == &"return_light":
 			_update_return_light_navigation(projectile, delta)
-		elif not projectile.hostile and projectile.homing_strength > 0.0 and not projectile.has_valid_homing_target():
-			projectile.set_homing_target(_select_homing_target(projectile.global_position, projectile.homing_range))
+		elif not projectile.hostile and projectile.homing_strength > 0.0:
+			_update_automatic_homing(projectile)
 		if projectile.hostile and player.folding and projectile.global_position.distance_to(player.global_position) <= player.get_fold_radius():
 			var fold_radius := maxf(1.0, player.get_fold_radius())
 			var fold_distance: float = projectile.global_position.distance_to(player.global_position)
@@ -532,11 +536,17 @@ func _update_projectiles(delta: float) -> void:
 		if projectile.advance_simulation(delta, projectile_scale):
 			_remove_projectile(projectile)
 			continue
+		if not projectile.hostile and projectile.style == &"tide_bell" and projectile.destination_reached:
+			_detonate_tide_bell(projectile)
+			continue
 		if not room.room_bounds.grow(120.0).has_point(projectile.global_position):
 			_remove_projectile(projectile)
 			continue
 		if _resolve_projectile_terrain(projectile, delta):
-			_remove_projectile(projectile)
+			if not projectile.hostile and projectile.style == &"tide_bell":
+				_detonate_tide_bell(projectile)
+			else:
+				_remove_projectile(projectile)
 			continue
 		if projectile.hostile:
 			if projectile.global_position.distance_to(player.global_position) <= projectile.radius + player.get_hit_radius():
@@ -548,6 +558,21 @@ func _update_projectiles(delta: float) -> void:
 				_remove_projectile(projectile)
 			else:
 				_resolve_friendly_collision(projectile)
+
+
+func _update_automatic_homing(projectile: FoldlightRogueProjectile) -> void:
+	if projectile.has_valid_homing_target() and not projectile.hit_actor_ids.has(StringName(projectile.homing_target.get("actor_id"))):
+		return
+	var selected: Node2D = null
+	var nearest := projectile.homing_range * projectile.homing_range
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or float(enemy.get("health")) <= 0.0 or projectile.hit_actor_ids.has(StringName(enemy.get("actor_id"))):
+			continue
+		var distance := projectile.global_position.distance_squared_to(enemy.global_position)
+		if distance < nearest:
+			nearest = distance
+			selected = enemy
+	projectile.set_homing_target(selected)
 
 
 func _update_terrain_effects(delta: float) -> void:
@@ -619,6 +644,8 @@ func _resolve_projectile_terrain(projectile: FoldlightRogueProjectile, delta: fl
 
 
 func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
+	if not projectile.can_hit_actor():
+		return
 	var was_active := active
 	for enemy in enemies.duplicate():
 		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or not enemy.has_method("take_damage"):
@@ -628,6 +655,9 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 			continue
 		if not _projectile_overlaps_actor(projectile, enemy):
 			continue
+		if projectile.style == &"tide_bell":
+			_detonate_tide_bell(projectile)
+			return
 		projectile.hit_actor_ids[actor_id] = true
 		var applied_damage := projectile.damage
 		var enemy_health := float(enemy.get("health"))
@@ -638,18 +668,15 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 			applied_damage *= projectile.execute_damage_multiplier
 		var target_defeated := false
 		var dealt_damage := 0.0
-		if projectile.style == &"tide_bell":
-			dealt_damage = _damage_enemies_in_radius(projectile.global_position, 150.0, applied_damage)
-		elif enemy is FoldlightRogueBossActor:
+		if enemy is FoldlightRogueBossActor:
 			var source: StringName = &"return" if projectile.style == &"return_light" else &"weapon"
 			target_defeated = (enemy as FoldlightRogueBossActor).take_damage(applied_damage, source, projectile.velocity)
 		elif enemy.has_method("take_projectile_damage"):
 			target_defeated = bool(enemy.call("take_projectile_damage", applied_damage, projectile.velocity, projectile.style))
 		else:
 			target_defeated = bool(enemy.call("take_damage", applied_damage))
-		if projectile.style != &"tide_bell":
-			dealt_damage = maxf(0.0, enemy_health - float(enemy.get("health")))
-			_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, dealt_damage, &"return" if projectile.style == &"return_light" else &"weapon")
+		dealt_damage = maxf(0.0, enemy_health - float(enemy.get("health")))
+		_register_enemy_hit_feedback(actor_id, projectile.global_position, projectile.velocity, dealt_damage, &"return" if projectile.style == &"return_light" else &"weapon")
 		# A killing hit can synchronously open a safe victory/reward screen.
 		# Keep its contact feedback, but never mint echoes or relay shots after
 		# that transition has already cleared the projectile collection.
@@ -663,7 +690,7 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 			return
 		if not projectile.is_echo and projectile.echo_chance > 0.0 and _rng.randf() <= projectile.echo_chance:
 			var echo_direction := projectile.velocity.normalized().rotated(0.32 if _rng.randf() > 0.5 else -0.32)
-			_spawn_projectile({"origin": projectile.global_position + echo_direction * 34.0, "velocity": echo_direction * projectile.velocity.length(), "hostile": false, "reflectable": false, "damage": applied_damage * 0.45, "radius": projectile.radius * 0.8, "lifetime": 1.6, "pierce": 0, "style": projectile.style, "echo_chance": 0.0, "is_echo": true})
+			_spawn_projectile({"origin": projectile.global_position + echo_direction * 34.0, "velocity": echo_direction * projectile.velocity.length(), "hostile": false, "reflectable": false, "damage": applied_damage * 0.45, "radius": projectile.radius * 0.8, "lifetime": 1.6, "pierce": 0, "style": projectile.style, "echo_chance": 0.0, "is_echo": true, "automatic_weapon_id": projectile.automatic_weapon_id, "color": projectile.projectile_color})
 		player.feedback_budget.register_impact(0.18, false)
 		if _try_activate_return_chain(projectile):
 			return
@@ -672,6 +699,17 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		if projectile.consume_pierce() or projectile.style == &"tide_bell":
 			_remove_projectile(projectile)
 		return
+
+
+func _detonate_tide_bell(projectile: FoldlightRogueProjectile) -> void:
+	if projectile.explosion_resolved or projectile.is_queued_for_deletion():
+		return
+	projectile.explosion_resolved = true
+	# One pulse damages each enemy once. Its source stays a weapon, so boss
+	# armor and the elite's closed attack window retain their authored rules.
+	_add_active_flash(projectile.global_position, projectile.projectile_color, projectile.area_radius, 0.44)
+	_damage_enemies_in_radius(projectile.global_position, projectile.area_radius, projectile.damage, &"tide_bell", projectile.velocity, projectile.execute_damage_multiplier)
+	_remove_projectile(projectile)
 
 
 func _projectile_overlaps_actor(projectile: FoldlightRogueProjectile, actor: Node2D) -> bool:
@@ -710,7 +748,7 @@ func _try_activate_return_relay(projectile: FoldlightRogueProjectile, defeated_e
 	return projectile.activate_return_relay(target, route)
 
 
-func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, style: StringName = &"") -> float:
+func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, style: StringName = &"", incoming_velocity: Vector2 = Vector2.ZERO, execute_multiplier: float = 1.0) -> float:
 	var was_active := active
 	var total_damage := 0.0
 	for enemy in enemies.duplicate():
@@ -719,12 +757,18 @@ func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, st
 		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or enemy.global_position.distance_to(center) > radius:
 			continue
 		var before := float(enemy.get("health"))
-		if style == &"return_light" and enemy is FoldlightRogueBossActor:
-			(enemy as FoldlightRogueBossActor).take_damage(amount, &"return", enemy.global_position - center)
+		var applied_damage := amount
+		if execute_multiplier > 1.0 and enemy.has_method("get_combat_snapshot"):
+			var maximum_health := float((enemy.call("get_combat_snapshot") as Dictionary).get("maximum_health", before))
+			if maximum_health > 0.0 and before / maximum_health <= 0.30:
+				applied_damage *= execute_multiplier
+		if not style.is_empty() and enemy is FoldlightRogueBossActor:
+			(enemy as FoldlightRogueBossActor).take_damage(applied_damage, &"return" if style == &"return_light" else &"weapon", enemy.global_position - center)
 		elif style != &"" and enemy.has_method("take_projectile_damage"):
-			enemy.call("take_projectile_damage", amount, Vector2.ZERO, style)
+			var hit_direction: Vector2 = incoming_velocity if not incoming_velocity.is_zero_approx() else enemy.global_position - center
+			enemy.call("take_projectile_damage", applied_damage, hit_direction, style)
 		elif enemy.has_method("take_damage"):
-			enemy.call("take_damage", amount)
+			enemy.call("take_damage", applied_damage)
 		var dealt_damage := maxf(0.0, before - float(enemy.get("health")))
 		total_damage += dealt_damage
 		_register_enemy_hit_feedback(_enemy_feedback_key(enemy), enemy.global_position, enemy.global_position - center, dealt_damage, &"return" if style == &"return_light" else &"weapon")
@@ -1013,6 +1057,8 @@ func _on_player_shot_requested(snapshot: Dictionary) -> void:
 	if int(snapshot.get("targeting", 0)) == FoldlightRogueWeaponDefinition.TargetingMode.FORWARD_CONE and not player.velocity.is_zero_approx():
 		direction = player.velocity.normalized()
 	var count := clampi(int(snapshot.get("volley_count", 1)), 1, 8)
+	var style := StringName(snapshot.get("projectile_style", &"crease_petal"))
+	var weapon_id := StringName(snapshot.get("weapon_id", &""))
 	for index in count:
 		# Keep the aimed shot when an upgrade adds an even-numbered projectile.
 		# Extra shots fan out on alternating sides within the existing cone.
@@ -1020,30 +1066,56 @@ func _on_player_shot_requested(snapshot: Dictionary) -> void:
 		if index > 0:
 			var side_rank := ceili(float(index) * 0.5)
 			var side_count := ceili(float(count - 1) * 0.5)
-			spread = 0.14 * float(side_rank) / float(side_count) * (1.0 if index % 2 == 1 else -1.0)
+			spread = (0.30 if style == &"prism_fan" else 0.14) * float(side_rank) / float(side_count) * (1.0 if index % 2 == 1 else -1.0)
 		var shot_direction := direction.rotated(spread)
 		var shot_damage := float(snapshot.get("damage", 1.0))
 		if _rng.randf() <= float(snapshot.get("critical_chance", 0.0)):
 			shot_damage *= 2.0
-		_spawn_projectile({
+		var shot := {
 			"origin": player.global_position,
 			"velocity": shot_direction * float(snapshot.get("projectile_speed", 800.0)),
 			"hostile": false,
 			"reflectable": false,
 			"damage": shot_damage,
 			"radius": 7.0 * float(snapshot.get("projectile_size_multiplier", 1.0)),
-			"lifetime": 3.0,
+			"lifetime": 0.64 if style == &"prism_fan" else (1.9 if style == &"returning_gull" else 3.0),
 			"pierce": int(snapshot.get("pierce", 0)),
-			"style": StringName(snapshot.get("projectile_style", &"crease_petal")),
+			"style": style,
+			"automatic_weapon_id": weapon_id,
+			"color": Color(snapshot.get("color", Color(0.38, 0.96, 0.86))),
 			"target_position": target.global_position,
 			"echo_chance": float(snapshot.get("projectile_echo_chance", 0.0)),
 			"execute_damage_multiplier": float(snapshot.get("execute_damage_multiplier", 1.0)),
-		})
+		}
+		match style:
+			&"crease_petal":
+				# Keep bonus volley lanes wide; only the aimed lamp tracks its foe.
+				if index == 0:
+					shot.merge({"homing_target": target, "homing_strength": 2.6, "homing_range": 1100.0})
+			&"needle_orbit":
+				shot.merge({"homing_target": target, "homing_strength": 7.0, "homing_range": 1000.0, "launch_delay": 0.65, "orbit_anchor": player, "orbit_radius": 69.0 + float(index % 2) * 12.0, "orbit_angle": direction.angle() + float(index) * TAU / float(count), "orbit_speed": 7.8, "lifetime": 2.3})
+			&"returning_gull":
+				# Its outward leg must cover the same range used to acquire targets,
+				# including a one-step margin before the turn is integrated.
+				var return_after := (float(snapshot.get("targeting_range", 440.0)) + 32.0) / maxf(1.0, float(snapshot.get("projectile_speed", 740.0))) + 1.0 / 60.0
+				shot.merge({"return_anchor": player, "return_after": return_after, "return_damage_multiplier": float(snapshot.get("return_damage_multiplier", 1.0))})
+				shot["lifetime"] = maxf(1.9, return_after * 2.0 + 0.30)
+			&"tide_bell":
+				shot["area_radius"] = 125.0 * float(snapshot.get("area_radius_multiplier", 1.0))
+				# Additional bells spread their landing marks; one projectile owns
+				# one pulse, even when a generic volley upgrade is also equipped.
+				var landing := target.global_position + direction.orthogonal() * spread * 220.0
+				shot["target_position"] = landing
+				shot["velocity"] = player.global_position.direction_to(landing) * float(snapshot.get("projectile_speed", 430.0))
+				shot["echo_chance"] = 0.0
+		_spawn_projectile(shot)
 
 
 func _on_player_fold_released(captured_count: int, charge_ratio: float) -> void:
 	if captured_count <= 0:
 		return
+	if player.weapon_mount.register_returned_light(captured_count):
+		_add_active_flash(player.global_position, Color(0.48, 0.92, 1.0), 170.0, 0.60)
 	var release_duration := minf(0.072, 0.030 + float(captured_count) * 0.0018)
 	_release_hit_stop_remaining = maxf(_release_hit_stop_remaining, release_duration)
 	player.add_hit_stop(release_duration)
@@ -1517,6 +1589,20 @@ func _spawn_return_missile(origin: Vector2, damage: float, preferred_index: int 
 func _spawn_projectile(snapshot: Dictionary) -> FoldlightRogueProjectile:
 	if room == null:
 		return null
+	var automatic_id := StringName(snapshot.get("automatic_weapon_id", &""))
+	if not automatic_id.is_empty():
+		var automatic_count := 0
+		var weapon_count := 0
+		for existing in projectiles:
+			if not is_instance_valid(existing) or existing.is_queued_for_deletion() or existing.automatic_weapon_id.is_empty():
+				continue
+			automatic_count += 1
+			if existing.automatic_weapon_id == automatic_id:
+				weapon_count += 1
+		# A complete arsenal must not erase hostile bullets or banked return
+		# light to make room for decorative fire; defer only this automatic shot.
+		if automatic_count >= MAX_AUTOMATIC_PROJECTILES or weapon_count >= MAX_PROJECTILES_PER_WEAPON or projectiles.size() >= MAX_PROJECTILES:
+			return null
 	while projectiles.size() >= MAX_PROJECTILES:
 		_remove_projectile(projectiles[0])
 	var projectile := PROJECTILE_SCENE.instantiate() as FoldlightRogueProjectile

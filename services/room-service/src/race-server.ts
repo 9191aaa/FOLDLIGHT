@@ -1,4 +1,4 @@
-import { acceptedElapsed, CODE_PATTERN, COUNTDOWN_MS, DISCONNECT_MS, resultFor, ROOM_TTL_MS, RACE_RULES_VERSION, terminal, type Player, type Room } from "./race-rules.ts";
+import { acceptedElapsed, CODE_PATTERN, COUNTDOWN_MS, DISCONNECT_MS, resultFor, ROOM_TTL_MS, RACE_RULES_VERSION, LEGACY_RACE_RULES_VERSION, terminal, type Player, type Room } from "./race-rules.ts";
 
 // Extracted from the verified Sites API; database lifetime is request-scoped.
 export function createRoomService(databaseBinding: D1Database) {
@@ -51,6 +51,12 @@ export function createRoomService(databaseBinding: D1Database) {
     if (!name || [...name].length > 16) throw new ApiError(400, "请输入 1–16 字的称呼。");
     return name;
   }
+  function rulesOf(value: unknown) {
+    const version = value ?? LEGACY_RACE_RULES_VERSION;
+    if (version !== RACE_RULES_VERSION && version !== LEGACY_RACE_RULES_VERSION) throw new ApiError(409, "游戏规则已更新，请更新游戏或刷新网页后重新建房。");
+    return version;
+  }
+  const roomRules = (room: Room) => room.rules_version ?? LEGACY_RACE_RULES_VERSION;
   async function readRoom(roomCode: string) {
     if (!CODE_PATTERN.test(roomCode)) throw new ApiError(400, "房间码为 7 位字母或数字。");
     const room = await db().prepare("SELECT * FROM race_rooms WHERE code = ?").bind(roomCode).first<Room>();
@@ -98,7 +104,7 @@ export function createRoomService(databaseBinding: D1Database) {
       room.phase = "finished";
     }
     return {
-      code: room.code, seed: room.seed, phase: room.phase, startAt: room.start_at, rulesVersion: RACE_RULES_VERSION,
+      code: room.code, seed: room.seed, phase: room.phase, startAt: room.start_at, rulesVersion: roomRules(room),
       serverNow: now, expiresAt: room.expires_at, selfId, result,
       players: players.map(({ id, name, slot, ready, status, elapsed, kills, health, seen_at }) => ({ id, name, slot, ready: !!ready, status, elapsed, kills, health, connected: now - seen_at < 5000 })),
     };
@@ -106,6 +112,7 @@ export function createRoomService(databaseBinding: D1Database) {
   async function createRoom(request: Request) {
     return respond(async () => {
       const input = await body(request), name = nameOf(input.name), database = db(), now = Date.now();
+      const rulesVersion = rulesOf(input.rulesVersion);
       const creatorHash = await hash(request.headers.get("cf-connecting-ip") ?? "local");
       const recent = await database.prepare("SELECT COUNT(*) AS n FROM race_rooms WHERE creator_hash = ? AND created_at > ?").bind(creatorHash, now - 3600_000).first<{ n: number }>();
       if ((recent?.n ?? 0) >= 20) throw new ApiError(429, "创建房间过于频繁，请稍后再试。");
@@ -113,7 +120,7 @@ export function createRoomService(databaseBinding: D1Database) {
       const roomCode = code(), token = randomToken(), playerId = crypto.randomUUID();
       const seed = crypto.getRandomValues(new Uint32Array(1))[0] % 2_000_000_000 + 1;
       await database.batch([
-        database.prepare("INSERT INTO race_rooms (code, seed, created_at, expires_at, creator_hash) VALUES (?, ?, ?, ?, ?)").bind(roomCode, seed, now, now + ROOM_TTL_MS, creatorHash),
+        database.prepare("INSERT INTO race_rooms (code, seed, created_at, expires_at, creator_hash, rules_version) VALUES (?, ?, ?, ?, ?, ?)").bind(roomCode, seed, now, now + ROOM_TTL_MS, creatorHash, rulesVersion),
         database.prepare("INSERT INTO race_players (id, room, name, token_hash, slot, joined_at, seen_at) VALUES (?, ?, ?, ?, 0, ?, ?)").bind(playerId, roomCode, name, await hash(token), now, now),
       ]);
       return json({ token, room: await snapshot(roomCode, playerId) }, 201);
@@ -126,6 +133,7 @@ export function createRoomService(databaseBinding: D1Database) {
     return respond(async () => {
       const room = await readRoom(roomCode), input = await body(request), database = db(), now = Date.now();
       if (input.action === "join") {
+        if (rulesOf(input.rulesVersion) !== roomRules(room)) throw new ApiError(409, "双方游戏版本不同，请更新到同一版本后重新建房。");
         if (room.phase !== "waiting") throw new ApiError(409, "这场比赛已开始，请创建新房间。");
         const token = randomToken(), id = crypto.randomUUID();
         const result = await database.prepare("INSERT OR IGNORE INTO race_players (id, room, name, token_hash, slot, joined_at, seen_at) SELECT ?, ?, ?, ?, 1, ?, ? WHERE (SELECT COUNT(*) FROM race_players WHERE room = ?) = 1 AND (SELECT phase FROM race_rooms WHERE code = ?) = 'waiting'")
@@ -141,7 +149,7 @@ export function createRoomService(databaseBinding: D1Database) {
         }
       await database.prepare("UPDATE race_players SET status = 'forfeit', seen_at = MAX(seen_at, ?) WHERE id = ? AND status NOT IN ('dead','forfeit','disconnected') AND EXISTS (SELECT 1 FROM race_rooms WHERE code = ? AND phase = 'running')").bind(now, self.id, roomCode).run();
       } else if (input.action === "ready") {
-        if (input.rulesVersion !== RACE_RULES_VERSION) throw new ApiError(409, "游戏规则已更新，请更新游戏或刷新网页后重新建房。");
+        if (input.rulesVersion !== roomRules(room)) throw new ApiError(409, "游戏规则已更新，请更新游戏或刷新网页后重新建房。");
         const instance = typeof input.instanceId === "string" && /^[a-f0-9-]{36}$/.test(input.instanceId) ? input.instanceId : null;
         if (!instance) throw new ApiError(400, "游戏加载标识无效，请重新建房。");
         if (self.instance_id && self.instance_id !== instance) throw new ApiError(409, "本局已在其他页面加载，请创建新房间。");
@@ -151,7 +159,7 @@ export function createRoomService(databaseBinding: D1Database) {
           if (current.instance_id !== instance) throw new ApiError(409, "本局已在其他页面加载。");
         }
       } else if (input.action === "heartbeat") {
-        if (input.rulesVersion !== RACE_RULES_VERSION) throw new ApiError(409, "游戏规则已更新，请更新游戏或刷新网页后重新建房。");
+        if (input.rulesVersion !== roomRules(room)) throw new ApiError(409, "游戏规则已更新，请更新游戏或刷新网页后重新建房。");
         if (self.instance_id && self.instance_id !== input.instanceId) throw new ApiError(409, "本局已在其他页面加载，请创建新房间。");
         if (room.phase === "running" && now >= room.start_at! && !terminal(self.status)) {
           if (now - self.seen_at > DISCONNECT_MS) {

@@ -46,10 +46,12 @@ var active: bool = false
 var run_seed: int = 0
 var wave_sequence: int = 0
 var defeated_total: int = 0
+var weapon_levels: Dictionary = {"crease_lantern": 1}
 var _spawn_clock: float = 0.0
 var _last_player_position := Vector2.ZERO
 var _external_player: Node2D
 var _pending_mission_rewards: Array[Dictionary] = []
+var _last_reward_completion: int = 0
 var _captain_spawned_for_objective: StringName = &""
 var zones := FoldlightEndlessZoneDirector.new()
 
@@ -115,9 +117,11 @@ func start_run(seed: int = 1) -> Dictionary:
 	run_seed = seed
 	wave_sequence = 0
 	defeated_total = 0
+	weapon_levels = {"crease_lantern": 1}
 	_spawn_clock = 1.2
 	_last_player_position = map_definition.player_spawn
 	_pending_mission_rewards.clear()
+	_last_reward_completion = 0
 	_captain_spawned_for_objective = &""
 	evolution.reset(config)
 	zones.reset(map_definition, seed)
@@ -206,13 +210,24 @@ func get_pending_mission_rewards() -> Array[Dictionary]:
 
 func claim_mission_reward(reward_id: StringName) -> Dictionary:
 	var legal := false
+	var selected: Dictionary = {}
 	for option in _pending_mission_rewards:
 		if StringName(option.get("id", &"")) == reward_id:
 			legal = true
+			selected = option
 			break
 	if not legal:
 		return {}
-	var applied := evolution.apply_mission_reward(reward_id)
+	var applied: Dictionary
+	if StringName(selected.get("choice_kind", &"")) == &"weapon":
+		var level := int(weapon_levels.get(String(reward_id), 0))
+		if FoldlightRogueContentCatalog.weapon_by_id(reward_id) == null or level >= FoldlightWeaponProgression.MAX_LEVEL:
+			return {}
+		weapon_levels[String(reward_id)] = level + 1
+		applied = selected.duplicate(true)
+		applied["level"] = level + 1
+	else:
+		applied = evolution.apply_mission_reward(reward_id)
 	if applied.is_empty():
 		return {}
 	_pending_mission_rewards.clear()
@@ -234,6 +249,7 @@ func get_snapshot() -> Dictionary:
 		"seed": run_seed,
 		"wave_sequence": wave_sequence,
 		"defeated_total": defeated_total,
+		"weapon_levels": weapon_levels.duplicate(true),
 		"map": map_runtime.get_map_contract() if is_instance_valid(map_runtime) else {},
 		"evolution": evolution.get_snapshot() if is_instance_valid(evolution) else {},
 		"objective": objectives.get_snapshot() if is_instance_valid(objectives) else {},
@@ -373,12 +389,34 @@ func _on_objective_progressed(snapshot: Dictionary) -> void:
 
 
 func _on_objective_completed(snapshot: Dictionary) -> void:
+	var completion := maxi(1, int(snapshot.get("completion_count", 1)))
+	if not active or completion <= _last_reward_completion or not _pending_mission_rewards.is_empty():
+		return
+	_last_reward_completion = completion
 	map_runtime.set_active_objective(snapshot)
-	_pending_mission_rewards = evolution.get_mission_reward_options(int(snapshot.get("completion_count", 1)) - 1)
+	_pending_mission_rewards = _draft_mission_rewards(completion)
 	objective_completed.emit(snapshot)
 	mission_reward_offered.emit(_pending_mission_rewards.duplicate(true), snapshot)
 	if auto_claim_mission_reward and not _pending_mission_rewards.is_empty():
 		claim_mission_reward(StringName(_pending_mission_rewards[0].get("id", &"")))
+
+
+func _draft_mission_rewards(completion: int) -> Array[Dictionary]:
+	# Equal starting pool for solo and friends: no account unlocks enter races.
+	# Odd completions build the weapon array, even completions retain the three
+	# Fold/firepower/sustain lanes. One task still grants exactly one choice.
+	if completion % 2 == 1:
+		var ids: Array[StringName] = []
+		for definition in FoldlightRogueContentCatalog.WEAPONS:
+			ids.append(definition.content_id)
+		var weapons := FoldlightWeaponProgression.draft_choices(run_seed, completion, weapon_levels, ids, 3)
+		if not weapons.is_empty():
+			for choice in weapons:
+				choice["id"] = choice.content_id
+				choice["lane_id"] = &"power"
+				choice["lane_title"] = "武器阵列"
+			return weapons
+	return evolution.get_mission_reward_options(maxi(0, (completion - 2) / 2))
 
 
 func _on_objective_failed(snapshot: Dictionary) -> void:

@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Endless 3.9 mission-reward contract: every completion offers one stable card
+## Endless mission-growth contract: every even completion offers one stable card
 ## from each of three readable lanes, all six rewards affect shared combat, and
 ## mission choices remain isolated from the two progression axes and Profile.
 
@@ -52,9 +52,9 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 	var second_b := slice.controller.evolution.get_mission_reward_options(1)
 	var wrapped := slice.controller.evolution.get_mission_reward_options(2)
 
-	_check(_option_ids(first_a) == EXPECTED_FIRST_IDS, "completion 0 is exactly surge_return / wide_fold / steady_lantern")
-	_check(_option_ids(second_a) == EXPECTED_SECOND_IDS, "completion 1 is exactly crosswind / kinetic_paper / clear_current")
-	_check(_option_ids(wrapped) == EXPECTED_FIRST_IDS, "completion 2 wraps exactly back to the first reward tier")
+	_check(_option_ids(first_a) == EXPECTED_FIRST_IDS, "first growth reward (task 2) is exactly surge_return / wide_fold / steady_lantern")
+	_check(_option_ids(second_a) == EXPECTED_SECOND_IDS, "second growth reward (task 4) is exactly crosswind / kinetic_paper / clear_current")
+	_check(_option_ids(wrapped) == EXPECTED_FIRST_IDS, "third growth reward (task 6) wraps exactly back to the first tier")
 	_check(var_to_str(first_a) == var_to_str(first_b) and var_to_str(second_a) == var_to_str(second_b), "repeated reward-option calls are deterministic")
 	_check(_option_lane_ids(first_a) == EXPECTED_LANE_IDS and _option_lane_ids(second_a) == EXPECTED_LANE_IDS, "both tiers preserve power / fold_mobility / sustain lane order")
 	_check(_all_unique(_option_ids(first_a)) and _all_unique(_option_ids(second_a)), "each completion offers three unique reward routes")
@@ -206,7 +206,7 @@ func _test_reward_modal_freezes_combat(slice: FoldlightEndlessSliceRuntime) -> v
 		"direction": -open_lane, "speed": 100.0, "projectile_count": 1,
 	})
 	var hostile := slice.combat_runtime.projectiles[0]
-	slice.controller._on_objective_completed({"completion_count": 1, "title": "modal freeze contract"})
+	slice.controller._on_objective_completed({"completion_count": 2, "title": "modal freeze contract"})
 	var health_before := slice.player.health
 	var projectile_position := hostile.global_position
 	var projectile_lifetime := hostile.lifetime
@@ -351,7 +351,7 @@ func _place_projectile_on_target(slice: FoldlightEndlessSliceRuntime, projectile
 
 
 func _offer_and_choose(slice: FoldlightEndlessSliceRuntime, completion_index: int, reward_id: StringName) -> bool:
-	slice.controller._on_objective_completed({"completion_count": completion_index + 1, "title": "奖励契约"})
+	slice.controller._on_objective_completed({"completion_count": (completion_index + 1) * 2, "title": "奖励契约"})
 	await _wait_for_reward_input(slice)
 	var options := slice.controller.get_pending_mission_rewards()
 	for index in options.size():

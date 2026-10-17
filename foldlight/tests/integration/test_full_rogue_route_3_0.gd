@@ -96,8 +96,16 @@ func _run() -> void:
 	var total_upgrade_stacks := 0
 	for stack_count in session.run_controller.run_state.upgrade_levels.values():
 		total_upgrade_stacks += int(stack_count)
-	_check(total_upgrade_stacks >= 10, "full route creates a substantial stacked in-run build")
-	_check(session.player.weapon_mount.definitions.size() <= 2, "weapon rewards respect the two-automatic-weapon readability cap")
+	for rank in session.run_controller.run_state.weapon_levels.values():
+		total_upgrade_stacks += int(rank)
+	total_upgrade_stacks -= 1 # The starting lantern is not a room reward.
+	_check(total_upgrade_stacks >= 10, "full route creates a substantial build across weapon ranks and general upgrades")
+	var mounted_ids: Array[StringName] = []
+	for definition in session.player.weapon_mount.definitions:
+		mounted_ids.append(definition.content_id)
+	_check(mounted_ids.size() == session.run_controller.run_state.weapon_ids.size() and mounted_ids.has(&"crease_lantern"), "all collected automatic weapons remain equipped alongside the starter through the final boss")
+	for weapon_id in session.run_controller.run_state.weapon_ids:
+		_check(mounted_ids.has(weapon_id), "completed voyage retains chosen weapon %s" % weapon_id)
 
 	game.queue_free()
 	await process_frame

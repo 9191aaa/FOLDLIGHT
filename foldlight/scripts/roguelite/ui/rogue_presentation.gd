@@ -37,6 +37,7 @@ const ROUTE_PANEL := preload("res://scripts/roguelite/ui/route_destination_panel
 const INPUT_CONTRACT := preload("res://scripts/ui/input_contract.gd")
 const MOBILE_LAYOUT := preload("res://scripts/roguelite/ui/mobile_presentation_layout.gd")
 const MOBILE_HUD := preload("res://scripts/roguelite/ui/mobile_combat_hud.gd")
+const WEAPON_ARSENAL := preload("res://scripts/roguelite/ui/weapon_arsenal_strip.gd")
 
 var _touch_layout: bool = false
 var _mobile_layout := MOBILE_LAYOUT.new()
@@ -73,6 +74,9 @@ var _hud_charge_bar: ProgressBar
 var _hud_charge_row: Control
 var _hud_weapon: Label
 var _hud_weapon_bar: ProgressBar
+var _hud_arsenal: Control
+var _hud_inventory: Array[Dictionary] = []
+var _hud_resonance: Dictionary = {}
 var _hud_active: Label
 var _hud_active_bar: ProgressBar
 var _hud_status: Label
@@ -103,6 +107,8 @@ var _mechanic_intro_button: Button
 var _mechanic_intro_preview: FoldlightMechanicPreviewCanvas
 var _mechanic_intro_attack_caption: Label
 var _pause_browse_status: Label
+var _pause_weapons: Array[Label] = []
+var _pause_arsenal_hint: Label
 var _browse_mode_enabled: bool = false
 var _reward_title: Label
 var _reward_hint: Label
@@ -371,11 +377,14 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 	_hud_dash.text = "就绪" if dash_ready else "回充  %.1fs" % player.dash_component.cooldown_remaining
 	_hud_dash_bar.value = 100.0 if dash_ready else (1.0 - dash_ratio) * 100.0
 	_hud_dash.add_theme_color_override("font_color", FOLD if dash_ready else MUTED)
-	var weapon_title := "折灯"
-	if not player.weapon_mount.definitions.is_empty() and player.weapon_mount.definitions[0] != null:
-		weapon_title = player.weapon_mount.definitions[0].title
-	_hud_weapon.text = weapon_title
-	_hud_weapon_bar.value = 100.0
+	_hud_inventory = player.weapon_mount.get_inventory_snapshot()
+	_hud_resonance = player.weapon_mount.get_resonance_snapshot()
+	_hud_weapon.text = "自动武器 · %d 把同行" % _hud_inventory.size()
+	_hud_arsenal.configure(_hud_inventory, _hud_resonance)
+	var resonance_active := bool(_hud_resonance.get("active", false))
+	_hud_weapon_bar.max_value = maxf(0.01, float(_hud_resonance.get("duration", 3.0))) if resonance_active else maxi(1, int(_hud_resonance.get("required", 8)))
+	_hud_weapon_bar.value = float(_hud_resonance.get("remaining", 0.0)) if resonance_active else float(_hud_resonance.get("charge", 0))
+	_hud_weapon_bar.add_theme_stylebox_override("fill", SHARED_THEME.bar_style(GOLD if resonance_active else FOLD))
 	var active_title := _t(&"ROGUE_HUD_EMPTY_ACTIVE", "未装备主动道具")
 	if player.active_item_slot.definition != null:
 		active_title = player.active_item_slot.definition.title
@@ -591,20 +600,40 @@ func _refresh_input_hint() -> void:
 
 
 func _reward_choice_hint() -> String:
+	var arsenal_hint := ""
+	for button in _reward_buttons:
+		if button.visible and StringName(button.get_meta("choice_kind", &"upgrade")) == &"weapon":
+			arsenal_hint = "  ·  武器全部保留，重选升阶"
+			break
 	if _touch_layout:
-		return "轻触一张折痕，确认本次强化"
+		return "轻触一张折痕，确认本次强化" + arsenal_hint
 	# Rewards cannot be dismissed, so show only the shared selection/confirm
 	# bindings and omit the menu's Back action.
 	var hint := INPUT_CONTRACT.menu_hint(_input_device == &"gamepad")
-	return "%s    %s" % [hint.get_slice("    ", 0), hint.get_slice("    ", 1)]
+	return "%s    %s" % [hint.get_slice("    ", 0), hint.get_slice("    ", 1)] + arsenal_hint
 
 
 func show_pause() -> void:
 	_show_only(&"pause")
 	visual_canvas.configure(&"pause", FOLD)
+	_refresh_pause_arsenal()
 	if _pause_browse_status != null:
 		_pause_browse_status.visible = _browse_mode_enabled
 	_set_focus_group(_visible_buttons(_focus_groups.get(&"pause", [])))
+
+
+func _refresh_pause_arsenal() -> void:
+	if is_instance_valid(_hud_player):
+		_hud_inventory = _hud_player.weapon_mount.get_inventory_snapshot()
+	for index in _pause_weapons.size():
+		var label := _pause_weapons[index]
+		label.visible = index < _hud_inventory.size()
+		if not label.visible:
+			continue
+		var entry := _hud_inventory[index]
+		label.text = "%s  Lv.%d  ·  %s" % [entry.get("title", ""), int(entry.get("level", 1)), entry.get("role", "")]
+		label.add_theme_color_override("font_color", SHARED_THEME.comfort_accent(Color(entry.get("accent", FOLD))).lightened(0.12))
+	_pause_arsenal_hint.text = "所选武器全部同行；再次选择升阶，最高 Lv.5。\n累计返还 8 枚弹幕，全体共鸣 3 秒：伤害、攻速 +20%。"
 
 
 func show_leave_confirmation() -> void:
@@ -901,10 +930,25 @@ func _build_hud() -> void:
 	_hud_active = active_card["state"] as Label
 	_hud_active_bar = active_card["bar"] as ProgressBar
 
-	var weapon_card := _hud_action_card("自动武器", "AUTO", FOLD, 240.0)
-	action_band.add_child(weapon_card["panel"])
-	_hud_weapon = weapon_card["state"] as Label
-	_hud_weapon_bar = weapon_card["bar"] as ProgressBar
+	var weapon_panel := PanelContainer.new()
+	weapon_panel.name = "WeaponArsenalCard"
+	weapon_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	weapon_panel.custom_minimum_size.x = 550
+	weapon_panel.add_theme_stylebox_override("panel", _hud_surface_style(Color(FOLD, 0.62)))
+	action_band.add_child(weapon_panel)
+	var weapon_stack := VBoxContainer.new()
+	weapon_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	weapon_stack.add_theme_constant_override("separation", 3)
+	weapon_panel.add_child(weapon_stack)
+	_hud_weapon = _label("自动武器", 16, MUTED)
+	weapon_stack.add_child(_hud_weapon)
+	_hud_arsenal = WEAPON_ARSENAL.new()
+	_hud_arsenal.name = "WeaponArsenal"
+	_hud_arsenal.custom_minimum_size = Vector2(510, 90)
+	weapon_stack.add_child(_hud_arsenal)
+	_hud_weapon_bar = _hud_progress_bar("ResonanceProgress", FOLD)
+	_hud_weapon_bar.custom_minimum_size.y = 4
+	weapon_stack.add_child(_hud_weapon_bar)
 	_hud_help = _label("", 15, MUTED)
 	_hud_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hud_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1199,13 +1243,17 @@ func _build_result() -> void:
 
 func _build_pause() -> void:
 	var screen := _new_screen(&"pause")
-	var margin := _full_margin(screen, 650, 230, 650, 230)
+	var margin := _full_margin(screen, 250, 190, 250, 170)
 	var panel := PanelContainer.new()
 	margin.add_child(panel)
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 36)
+	panel.add_child(columns)
 	var stack := VBoxContainer.new()
+	stack.custom_minimum_size.x = 410
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	stack.add_theme_constant_override("separation", 16)
-	panel.add_child(stack)
+	columns.add_child(stack)
 	var eyebrow := _label("航行途中", 18, FOLD)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(eyebrow)
@@ -1228,6 +1276,23 @@ func _build_pause() -> void:
 	stack.add_child(abandon)
 	stack.add_child(_label("Esc / Start 继续", 17, MUTED))
 	_focus_groups[&"pause"] = [resume, settings, abandon]
+	var inventory := VBoxContainer.new()
+	inventory.name = "PauseWeaponInventory"
+	inventory.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inventory.alignment = BoxContainer.ALIGNMENT_CENTER
+	inventory.add_theme_constant_override("separation", 15)
+	columns.add_child(inventory)
+	inventory.add_child(_label("同行武器 · 同时出击", 27, PAPER))
+	for index in 6:
+		var label := _label("", 23, FOLD)
+		label.name = "WeaponDetail%d" % index
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		inventory.add_child(label)
+		_pause_weapons.append(label)
+	_pause_arsenal_hint = _label("", 20, MUTED)
+	_pause_arsenal_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pause_arsenal_hint.custom_minimum_size.x = 530
+	inventory.add_child(_pause_arsenal_hint)
 
 
 func _build_leave_confirmation() -> void:
@@ -1628,7 +1693,7 @@ func _rarity_title(rarity: int) -> String:
 
 
 func _choice_kind_title(kind: StringName) -> String:
-	return {&"weapon": "自动武器 · 最多携带两把", &"active": "主动道具 · 替换当前槽位"}.get(kind, "局内升级")
+	return {&"weapon": "自动武器 · 同行与升阶", &"active": "主动道具 · 替换当前槽位"}.get(kind, "局内升级")
 
 
 func _risk_title(risk: int) -> String:

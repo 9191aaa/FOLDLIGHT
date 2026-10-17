@@ -1,7 +1,8 @@
 export const DISCONNECT_MS = 30_000;
 export const ROOM_TTL_MS = 3 * 60 * 60 * 1000;
 export const COUNTDOWN_MS = 5000;
-export const RACE_RULES_VERSION = "endless_race_v3";
+export const RACE_RULES_VERSION = "endless_race_v4";
+export const LEGACY_RACE_RULES_VERSION = "endless_race_v3";
 export const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{7}$/;
 export type Player = {
   id: string; room: string; name: string; token_hash: string; slot: number; instance_id: string | null;
@@ -10,7 +11,7 @@ export type Player = {
 };
 export type Room = {
   code: string; seed: number; phase: string; created_at: number;
-  expires_at: number; start_at: number | null; creator_hash: string;
+  expires_at: number; start_at: number | null; creator_hash: string; rules_version?: string;
 };
 export function terminal(status: string) { return ["dead", "forfeit", "disconnected"].includes(status); }
 export function resultFor(players: Player[]) {

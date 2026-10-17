@@ -2,6 +2,7 @@ extends Control
 ## The same combat data, condensed above the two dedicated thumb zones.
 signal pause_requested
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
+const WEAPON_ARSENAL = preload("res://scripts/roguelite/ui/weapon_arsenal_strip.gd")
 var health: Label
 var voyage: Label
 var fold: Label
@@ -13,6 +14,7 @@ var focus_bar: ProgressBar
 var charge_bar: ProgressBar
 var boss_bar: ProgressBar
 var pause_button: Button
+var arsenal: Control
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -20,6 +22,11 @@ func _ready() -> void:
 	health = _text(Vector2(44, 130), Vector2(340, 48), 38, Palette.GOLD)
 	health_bar = _bar(Rect2(44, 184, 340, 12), Palette.GOLD)
 	voyage = _text(Vector2(420, 130), Vector2(920, 44), 32, Palette.PAPER)
+	arsenal = WEAPON_ARSENAL.new()
+	arsenal.name = "MobileWeaponArsenal"
+	arsenal.position = voyage.position
+	arsenal.size = Vector2(voyage.size.x, 58)
+	add_child(arsenal)
 	status = _text(Vector2(1380, 130), Vector2(340, 44), 32, Palette.FOLD)
 	fold = _text(Vector2(44, 212), Vector2(540, 44), 34, Palette.PAPER)
 	focus_bar = _bar(Rect2(44, 263, 380, 12), Palette.FOLD)
@@ -52,6 +59,10 @@ func apply_safe_area(insets: Vector4) -> void:
 	status.size.x = 340.0
 	voyage.position.x = left + 376.0
 	voyage.size.x = maxf(200.0, status.position.x - voyage.position.x - 32.0)
+	# This is the existing voyage slot, ending before the navigation task panel.
+	# Adding another HUD row below it would cover the task or the minimap.
+	arsenal.position = voyage.position
+	arsenal.size = Vector2(voyage.size.x, 58)
 	for node: Control in [boss, boss_bar, objective]:
 		node.position.x = left + 576.0
 		node.size.x = maxf(300.0, pause_button.position.x - node.position.x - 44.0)
@@ -63,6 +74,8 @@ func update_from(source: Node) -> void:
 	health_bar.max_value = source._hud_health_bar.max_value
 	health_bar.value = source._hud_health_bar.value
 	voyage.text = source._hud_region.text + "  ·  " + source._hud_room.text
+	voyage.hide()
+	arsenal.configure(source._hud_inventory, source._hud_resonance, true)
 	# The first line reports current pressure; the secondary evolution count
 	# belongs to the result screen and must not spill under the task panel.
 	status.text = source._hud_status.text.get_slice("\n", 0)

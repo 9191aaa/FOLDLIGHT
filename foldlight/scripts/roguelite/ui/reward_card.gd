@@ -31,6 +31,9 @@ var _attention_tween: Tween
 var _confirm_tween: Tween
 var _dim_tween: Tween
 var _touch_layout := false
+var _choice_action := "刻下折痕  →"
+var _choice_confirmed := "折痕已刻下"
+var _weapon_choice := false
 
 
 func set_touch_layout(enabled: bool) -> void:
@@ -70,8 +73,14 @@ func configure(choice: Dictionary, index: int) -> void:
 	description_label.text = str(choice.get("description", ""))
 	rarity_label.text = str(choice.get("display_rarity", "折痕"))
 	rarity_label.add_theme_color_override("font_color", _accent.lightened(0.14))
-	level_label.text = "刻印  %d / %d" % [int(choice.get("next_level", 1)), int(choice.get("maximum_level", 1))]
-	_action_label.text = "刻下折痕  →"
+	level_label.text = str(choice.get("display_level", "刻印  %d / %d" % [int(choice.get("next_level", 1)), int(choice.get("maximum_level", 1))]))
+	var weapon := StringName(choice.get("choice_kind", &"upgrade")) == &"weapon"
+	_weapon_choice = weapon
+	set_meta("choice_kind", StringName(choice.get("choice_kind", &"upgrade")))
+	var upgrading := int(choice.get("next_level", 1)) > 1
+	_choice_action = ("强化武器  →" if upgrading else "加入同行  →") if weapon else "刻下折痕  →"
+	_choice_confirmed = ("武器已强化" if upgrading else "已加入同行") if weapon else "折痕已刻下"
+	_action_label.text = _choice_action
 	tooltip_text = "%s：%s" % [title_label.text, description_label.text]
 	_locked = false
 	_confirming = false
@@ -98,7 +107,7 @@ func set_selection_available(available: bool) -> void:
 	if _locked or _confirming:
 		return
 	disabled = not available
-	_action_label.text = "刻下折痕  →" if available else "细看折痕…"
+	_action_label.text = _choice_action if available else "细看折痕…"
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if available else Control.CURSOR_ARROW
 
 
@@ -111,7 +120,7 @@ func confirm_selection() -> bool:
 	_set_reveal(1.0)
 	_kill(_attention_tween)
 	_attention = 1.0
-	_action_label.text = "折痕已刻下"
+	_action_label.text = _choice_confirmed
 	_kill(_confirm_tween)
 	_confirm_tween = _motion()
 	_confirm_tween.tween_method(_set_confirm, 0.0, 1.0, CONFIRM_SECONDS)
@@ -169,15 +178,18 @@ func _draw() -> void:
 	# A thin paper edge and a turned corner give the card an actual material.
 	draw_polyline(PackedVector2Array([Vector2(0, h), Vector2.ZERO, Vector2(w - cut, 0), Vector2(w, cut), Vector2(w, h), Vector2(0, h)]), Color(_accent, (0.30 + _attention * 0.48) * opacity), 1.3, true)
 	draw_colored_polygon(PackedVector2Array([Vector2(w - cut, 0), Vector2(w - cut, cut), Vector2(w, cut)]), Color(_accent, (0.16 + _attention * 0.12) * opacity))
-	draw_line(Vector2(30, 260), Vector2(w - 30, 260), Color(_accent, 0.20 * opacity), 1.0, true)
+	var compact_emblem := _weapon_choice and not _touch_layout
+	var divider_y := 218.0 if compact_emblem else 260.0
+	draw_line(Vector2(30, divider_y), Vector2(w - 30, divider_y), Color(_accent, 0.20 * opacity), 1.0, true)
 	draw_line(Vector2(30, h - 78), Vector2(w - 30, h - 78), Color(Palette.MUTED, 0.16 * opacity), 1.0, true)
 	_draw_paper_grain(w, h, opacity)
-	var emblem_center := Vector2(w * 0.5, 154.0 + sin(_clock * 1.1) * 3.0)
-	_draw_emblem_field(emblem_center, opacity)
-	_draw_symbol(emblem_center, 1.0 + _attention * 0.045 + sin(_confirm * PI) * 0.055, opacity)
+	var emblem_scale := 0.75 if compact_emblem else 1.0
+	var emblem_center := Vector2(w * 0.5, (122.0 if compact_emblem else 154.0) + sin(_clock * 1.1) * 3.0)
+	_draw_emblem_field(emblem_center, opacity, emblem_scale)
+	_draw_symbol(emblem_center, emblem_scale * (1.0 + _attention * 0.045 + sin(_confirm * PI) * 0.055), opacity)
 	if _attention > 0.001:
 		var flow := fposmod(_clock * 0.28, 1.0)
-		var start := Vector2(30 + flow * (w - 100), 260)
+		var start := Vector2(30 + flow * (w - 100), divider_y)
 		draw_line(start, start + Vector2(42, 0), Color(_accent, _attention * 0.78 * opacity), 2.0, true)
 	if _confirm > 0.0:
 		var flare := sin(_confirm * PI)
@@ -193,13 +205,13 @@ func _draw_paper_grain(w: float, h: float, opacity: float) -> void:
 		draw_line(Vector2(x, y), Vector2(x + 4.0, y - 1.0), Color(Palette.PAPER, 0.045 * opacity), 1.0)
 
 
-func _draw_emblem_field(center: Vector2, opacity: float) -> void:
-	var diamond := PackedVector2Array([center + Vector2(0, -98), center + Vector2(112, 0), center + Vector2(0, 98), center + Vector2(-112, 0), center + Vector2(0, -98)])
+func _draw_emblem_field(center: Vector2, opacity: float, scale_factor: float = 1.0) -> void:
+	var diamond := PackedVector2Array([center + Vector2(0, -98) * scale_factor, center + Vector2(112, 0) * scale_factor, center + Vector2(0, 98) * scale_factor, center + Vector2(-112, 0) * scale_factor, center + Vector2(0, -98) * scale_factor])
 	draw_polyline(diamond, Color(_accent, (0.10 + _attention * 0.06) * opacity), 1.0, true)
 	draw_arc(center, 87, -PI * 0.85, PI * 0.15, 40, Color(_accent, 0.15 * opacity), 1, true)
 	for index in 3:
 		var angle := _clock * 0.10 + float(index) * TAU / 3.0
-		var point := center + Vector2.from_angle(angle) * (91.0 + index * 5.0)
+		var point := center + Vector2.from_angle(angle) * (91.0 + index * 5.0) * scale_factor
 		draw_circle(point, 1.6, Color(_accent, (0.25 + _attention * 0.28) * opacity))
 
 
@@ -324,18 +336,23 @@ func _update_content_layout() -> void:
 	description_label.position = Vector2(32, 337)
 	description_label.size = Vector2(width, maxf(80.0, size.y - 425))
 	level_label.position = Vector2(32, size.y - 57)
-	level_label.size = Vector2(130, 28)
-	_action_label.position = Vector2(170, size.y - 57)
-	_action_label.size = Vector2(maxf(1, size.x - 202), 28)
+	level_label.size = Vector2(width * 0.54, 28)
+	_action_label.position = Vector2(32 + width * 0.54, size.y - 57)
+	_action_label.size = Vector2(width * 0.46, 28)
+	if _weapon_choice:
+		title_label.position.y = 240
+		description_label.position.y = 292
+		description_label.size.y = maxf(140, size.y - 380)
 	if _touch_layout:
 		rarity_label.size.y = 44
+		title_label.position.y = 281
 		title_label.size.y = 60
 		description_label.position.y = 352
 		description_label.size.y = maxf(150, size.y - 450)
 		level_label.position.y = size.y - 62
-		level_label.size = Vector2(210, 44)
-		_action_label.position = Vector2(250, size.y - 62)
-		_action_label.size = Vector2(maxf(1, size.x - 282), 44)
+		level_label.size = Vector2(width * 0.54, 44)
+		_action_label.position = Vector2(32 + width * 0.54, size.y - 62)
+		_action_label.size = Vector2(width * 0.46, 44)
 
 
 func _surface_offset() -> float:

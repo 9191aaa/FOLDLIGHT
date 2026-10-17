@@ -106,6 +106,11 @@ try {
         'test_cinder_mine_placement',
         'test_projectile_visual_budget',
         'test_weapon_volley_accuracy',
+        'test_weapon_progression',
+        'test_weapon_checkpoint_migration',
+        'test_weapon_reward_flow',
+        'test_weapon_arsenal_combat',
+        'test_weapon_arsenal_ui',
         'test_terrain_context_hint',
         'test_temporary_hazard_pause',
         'test_combat_transient_cleanup'
