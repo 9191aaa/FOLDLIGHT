@@ -37,6 +37,11 @@ var enemies: Array[Node2D] = []
 var projectiles: Array[FoldlightRogueProjectile] = []
 var last_boss_defeat: Dictionary = {}
 var _boss_aftermath_active: bool = false
+## Endless supplies a live shared allowance (including pending spawns).
+## Negative means the authored roguelite encounter owns population limits.
+var directed_spawn_allowance: int = -1
+var directed_threat_allowance: int = -1
+var directed_spawn_validator: Callable
 
 var _spawn_serial: int = 0
 var _support_refresh: float = 0.0
@@ -82,6 +87,9 @@ func _ready() -> void:
 func bind(new_room: FoldlightRoomRuntime, new_player: FoldlightPlayer, run_seed: int = 330031) -> void:
 	_unbind_signals()
 	clear_combat()
+	directed_spawn_allowance = -1
+	directed_threat_allowance = -1
+	directed_spawn_validator = Callable()
 	room = new_room
 	player = new_player
 	_rng.seed = run_seed
@@ -978,37 +986,41 @@ func _spawn_boss_actor(definition: FoldlightRogueBossDefinition, entry: Dictiona
 		return null
 	var boss := BOSS_SCENE.instantiate() as FoldlightRogueBossActor
 	room.enemy_container.add_child(boss)
-	boss.configure(definition, room.room_bounds, _rng.randi())
+	boss.configure(definition, room.room_bounds, _rng.randi(), entry.get("boss_options", {}))
+	_spawn_serial += 1
+	boss.actor_id = StringName("%s_%d" % [definition.content_id, _spawn_serial])
 	boss.global_position = Vector2(entry.get("spawn_position", room.room_bounds.get_center()))
 	boss.defeated.connect(_on_enemy_defeated)
 	boss.volley_requested.connect(_on_boss_volley_requested)
-	boss.telegraph_requested.connect(_on_boss_telegraph_requested)
-	boss.zone_requested.connect(_on_zone_requested)
-	boss.minion_requested.connect(_on_boss_minion_requested)
+	boss.telegraph_requested.connect(_on_boss_telegraph_requested.bind(boss.actor_id))
+	boss.zone_requested.connect(_on_boss_zone_requested.bind(boss.actor_id))
+	boss.minion_requested.connect(_on_boss_minion_requested.bind(boss.actor_id))
 	boss.arena_hit_requested.connect(_try_hit_player)
-	boss.stagger_started.connect(_on_boss_attack_cancelled)
-	boss.phase_changed.connect(_on_boss_attack_cancelled)
+	boss.stagger_started.connect(_on_boss_attack_cancelled.bind(boss.actor_id))
+	boss.phase_changed.connect(_on_boss_attack_cancelled.bind(boss.actor_id))
 	boss.set_meta("counts_for_room", counts_for_room)
+	boss.set_meta("directed_spawn_entry", entry.duplicate(true))
 	enemies.append(boss)
 	_collision_index_dirty = true
 	enemy_spawned.emit(boss, entry.duplicate(true))
 	return boss
 
 
-func _on_boss_telegraph_requested(snapshot: Dictionary) -> void:
+func _on_boss_telegraph_requested(snapshot: Dictionary, source_id: StringName = &"") -> void:
 	if room == null or _boss_aftermath_active:
 		return
 	var telegraph := BOSS_TELEGRAPH_SCENE.instantiate() as FoldlightBossAttackTelegraph
 	room.projectile_container.add_child(telegraph)
 	telegraph.configure(snapshot)
+	telegraph.set_meta("boss_source", source_id)
 	telegraph.set_simulation_active(active)
 
 
-func _on_boss_attack_cancelled(_state_value: float) -> void:
+func _on_boss_attack_cancelled(_state_value: float, source_id: StringName = &"") -> void:
 	if not is_instance_valid(room):
 		return
 	for child in room.projectile_container.get_children():
-		if child is FoldlightBossAttackTelegraph:
+		if child is FoldlightBossAttackTelegraph and StringName(child.get_meta("boss_source", &"")) == source_id:
 			child.queue_free()
 
 
@@ -1039,13 +1051,14 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 	if actor is FoldlightRogueBossActor:
 		var boss := actor as FoldlightRogueBossActor
 		enemy_id = boss.definition.content_id
-		last_boss_defeat = {"title": boss.definition.title, "health": 0.0, "maximum_health": boss.definition.base_health, "phase": boss.phase_controller.phase_index + 1, "defeated": true, "position": boss.global_position}
+		last_boss_defeat = {"title": boss.definition.title, "health": 0.0, "maximum_health": boss.get_maximum_health(), "phase": boss.phase_controller.phase_index + 1, "defeated": true, "position": boss.global_position}
 	var directed_entry_variant: Variant = actor.get_meta("directed_spawn_entry", {})
 	var directed_entry := (directed_entry_variant as Dictionary).duplicate(true) if directed_entry_variant is Dictionary else {}
 	directed_entry["actor_id"] = StringName(actor.get("actor_id"))
 	directed_entry["defeat_reason"] = StringName(actor.get_meta("defeat_reason", &"damage"))
 	directed_entry["grants_kill_credit"] = bool(actor.get_meta("grants_kill_credit", true))
 	enemies.erase(actor)
+	_collision_index_dirty = true
 	enemy_defeated.emit(enemy_id)
 	enemy_defeated_detailed.emit(enemy_id, directed_entry)
 	if actor is FoldlightBroodLantern:
@@ -1057,10 +1070,16 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 	if room != null and bool(actor.get_meta("counts_for_room", true)):
 		room.notify_enemy_defeated()
 	if actor is FoldlightRogueBossActor:
+		var source_id := StringName(actor.get("actor_id"))
+		_on_boss_attack_cancelled(0.0, source_id)
 		for minion in enemies.duplicate():
-			if is_instance_valid(minion) and not bool(minion.get_meta("counts_for_room", true)):
+			if is_instance_valid(minion) and StringName(minion.get_meta("spawned_by", &"")) == source_id:
 				enemies.erase(minion)
 				minion.queue_free()
+		if is_instance_valid(room):
+			for child in room.projectile_container.get_children():
+				if child is FoldlightInkDenialZone and StringName(child.get_meta("boss_source", &"")) == source_id:
+					child.queue_free()
 	actor.queue_free()
 
 
@@ -1081,11 +1100,11 @@ func _on_minion_requested(snapshot: Dictionary) -> void:
 		var spawn_position := Vector2(position_variant)
 		if room != null:
 			spawn_position = spawn_position.clamp(room.room_bounds.position + Vector2(80, 80), room.room_bounds.end - Vector2(80, 80))
-		_spawn_enemy_from_entry({"enemy_id": enemy_id, "spawn_position": spawn_position, "spawned_by": source_id}, false)
-		existing += 1
+		if _spawn_budgeted_minion({"enemy_id": enemy_id, "spawn_position": spawn_position, "spawned_by": source_id}):
+			existing += 1
 
 
-func _on_boss_minion_requested(snapshot: Dictionary) -> void:
+func _on_boss_minion_requested(snapshot: Dictionary, source_id: StringName = &"") -> void:
 	var enemy_ids: Array[StringName] = []
 	var enemy_ids_variant: Variant = snapshot.get("enemy_ids", [])
 	if enemy_ids_variant is Array:
@@ -1101,7 +1120,7 @@ func _on_boss_minion_requested(snapshot: Dictionary) -> void:
 	var total_existing := 0
 	for enemy in enemies:
 		var enemy_definition: Variant = enemy.get("definition") if is_instance_valid(enemy) else null
-		if not enemy_definition is FoldlightRogueEnemyDefinition or bool(enemy.get_meta("counts_for_room", true)):
+		if not enemy_definition is FoldlightRogueEnemyDefinition or bool(enemy.get_meta("counts_for_room", true)) or StringName(enemy.get_meta("spawned_by", &"")) != source_id:
 			continue
 		total_existing += 1
 		if enemy_ids.has((enemy_definition as FoldlightRogueEnemyDefinition).content_id):
@@ -1114,10 +1133,34 @@ func _on_boss_minion_requested(snapshot: Dictionary) -> void:
 		if existing >= maximum or total_existing >= total_maximum:
 			break
 		var enemy_id := enemy_ids[spawn_cursor % enemy_ids.size()]
-		_spawn_enemy_from_entry({"enemy_id": enemy_id, "spawn_position": Vector2(position_variant)}, false)
-		existing += 1
-		total_existing += 1
+		if _spawn_budgeted_minion({"enemy_id": enemy_id, "spawn_position": Vector2(position_variant), "spawned_by": source_id}):
+			existing += 1
+			total_existing += 1
 		spawn_cursor += 1
+
+
+func _spawn_budgeted_minion(entry: Dictionary) -> bool:
+	if directed_spawn_allowance == 0:
+		return false
+	var definition := FoldlightRogueContentCatalog.enemy_by_id(StringName(entry.get("enemy_id", &"")))
+	var cost := int(definition.threat_cost) if definition != null else 1
+	if directed_threat_allowance >= 0 and cost > directed_threat_allowance:
+		return false
+	if directed_spawn_validator.is_valid() and not bool(directed_spawn_validator.call(entry)):
+		return false
+	if _spawn_enemy_from_entry(entry, false) == null:
+		return false
+	if directed_spawn_allowance > 0:
+		directed_spawn_allowance -= 1
+	if directed_threat_allowance >= 0:
+		directed_threat_allowance -= cost
+	return true
+
+
+func _on_boss_zone_requested(snapshot: Dictionary, source_id: StringName) -> void:
+	var owned := snapshot.duplicate(true)
+	owned["boss_source"] = source_id
+	_on_zone_requested(owned)
 
 
 func _on_zone_requested(snapshot: Dictionary) -> void:
@@ -1126,6 +1169,7 @@ func _on_zone_requested(snapshot: Dictionary) -> void:
 	var zone := ZONE_SCENE.instantiate() as FoldlightInkDenialZone
 	room.projectile_container.add_child(zone)
 	zone.configure(snapshot)
+	zone.set_meta("boss_source", snapshot.get("boss_source", &""))
 	zone.set_simulation_active(active)
 
 

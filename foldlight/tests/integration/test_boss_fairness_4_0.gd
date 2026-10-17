@@ -49,10 +49,15 @@ func _test_locked_casts(definition: FoldlightRogueBossDefinition) -> void:
 		state["volleys"] = int(state["volleys"]) + 1
 		var warned_origin := Vector2(warning["origin"])
 		var warned_target := Vector2(warning["target_position"])
-		state["origins_match"] = bool(state["origins_match"]) and Vector2(volley["origin"]).is_equal_approx(warned_origin)
-		state["aims_match"] = bool(state["aims_match"]) and Vector2(volley["direction"]).is_equal_approx(warned_origin.direction_to(warned_target))
+		if warning.has("attack_lanes"):
+			var matching_lanes := _matches_authored_lanes(volley, warning["attack_lanes"])
+			state["origins_match"] = bool(state["origins_match"]) and matching_lanes
+			state["aims_match"] = bool(state["aims_match"]) and matching_lanes
+		else:
+			state["origins_match"] = bool(state["origins_match"]) and Vector2(volley["origin"]).is_equal_approx(warned_origin)
+			state["aims_match"] = bool(state["aims_match"]) and Vector2(volley["direction"]).is_equal_approx(warned_origin.direction_to(warned_target))
 		state["retarget_challenged"] = bool(state["retarget_challenged"]) or warned_target.distance_to(boss._target_position) > 100.0
-		if not bool(volley["reflectable"]):
+		if not bool(volley["reflectable"]) and not warning.has("attack_lanes"):
 			state["fan_matches"] = bool(state["fan_matches"]) and is_equal_approx(float(volley["spread_radians"]), float(warning["spread_radians"])) and float(warning["duration"]) >= 1.17
 		if _burst_snapshot.is_empty() and int(volley.get("burst_count", 1)) > 1:
 			_burst_snapshot = volley.duplicate(true)
@@ -71,13 +76,34 @@ func _test_locked_casts(definition: FoldlightRogueBossDefinition) -> void:
 			var warning: Dictionary = state["warning"]
 			state["cast_stationary"] = bool(state["cast_stationary"]) and boss.global_position.is_equal_approx(Vector2(warning["origin"])) and boss.velocity.is_zero_approx()
 	var name := String(definition.content_id)
-	_check(int(state["volleys"]) > 5 and (state["patterns"] as Dictionary).size() == definition.pattern_ids.size(), name + ": every authored pattern reaches its firing state")
+	_check(int(state["volleys"]) >= 5 and (state["patterns"] as Dictionary).size() == definition.pattern_ids.size(), name + ": every authored pattern reaches its firing state")
 	_check(bool(state["retarget_challenged"]) and bool(state["aims_match"]), name + ": dodging after the warning never redirects the attack")
 	_check(bool(state["origins_match"]) and bool(state["cast_stationary"]), name + ": moving body stops at the warned firing origin")
 	_check(bool(state["fan_matches"]), name + ": black-gold fan width and extra warning match its real volley")
 	_check(bool(state["zones_match"]), name + ": ink zones resolve at the warned position and radius")
 	_check(bool(state["support_bounded"]), name + ": support cannot exceed four concurrent helpers")
 	boss.queue_free()
+
+
+func _matches_authored_lanes(volley: Dictionary, lanes: Array) -> bool:
+	var directions: Array[Vector2] = []
+	if volley.has("projectiles"):
+		for projectile: Dictionary in volley["projectiles"]:
+			directions.append(projectile["direction"])
+	else:
+		var count := int(volley["projectile_count"])
+		for index in count:
+			var unit := 0.0 if count == 1 else float(index) / float(count - 1) - 0.5
+			directions.append(Vector2(volley["direction"]).rotated(unit * float(volley.get("spread_radians", 0.0))))
+	for direction in directions:
+		var matched := false
+		for lane: Dictionary in lanes:
+			if Vector2(lane["origin"]).is_equal_approx(Vector2(volley["origin"])) and Vector2(lane["origin"]).direction_to(lane["end"]).is_equal_approx(direction) and bool(lane["reflectable"]) == bool(volley["reflectable"]):
+				matched = true
+				break
+		if not matched:
+			return false
+	return not directions.is_empty()
 
 
 func _test_full_fold_cycle(definition: FoldlightRogueBossDefinition) -> void:

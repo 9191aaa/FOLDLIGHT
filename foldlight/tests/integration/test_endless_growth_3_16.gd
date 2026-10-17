@@ -49,19 +49,19 @@ func _test_credit_and_independent_axes(controller: FoldlightEndlessSurvivalContr
 	_check(controller.evolution.get_enemy_snapshot() == enemy_before and controller.evolution.get_player_snapshot() == absorb_before and controller.evolution.get_mission_snapshot() == missions_before, "kill experience leaves time pressure, absorption and mission-growth ledgers independent")
 	controller.report_projectiles_absorbed(60)
 	_check(int(controller.get_snapshot().experience.total_xp) == 13, "absorbing bullets does not award kill experience")
-	_check(controller.evolution.experience_required(1) == 18 and controller.evolution.experience_required(2) == 26 and controller.evolution.experience_required(4) == 44, "experience thresholds rise gradually rather than resetting to a flat kill quota")
+	_check(controller.evolution.experience_required(1) == 42 and controller.evolution.experience_required(2) == 60 and controller.evolution.experience_required(4) == 108, "experience thresholds rise gradually rather than resetting to a flat kill quota")
 
 
 func _test_simultaneous_task_and_level(controller: FoldlightEndlessSurvivalController) -> void:
 	controller.start_run(4)
 	_notifications.clear()
-	for index in 5:
+	for index in 17:
 		_report(controller, index + 1, &"drifter")
 	var objective := controller.objectives.get_snapshot()
 	_check(StringName(objective.kind) == &"defeat_captain", "fixture uses an actual live captain objective")
 	controller.report_enemy_defeated({
 		"enemy_id": &"bloomer", "is_captain": true, "captain_id": objective.target_id,
-		"defeat_serial": 6, "defeat_reason": &"player",
+		"defeat_serial": 18, "defeat_reason": &"player",
 	})
 	var first := controller.peek_pending_reward()
 	_check(int(controller.get_snapshot().pending_reward_count) == 2 and int(controller.get_snapshot().experience.level) == 2, "one captain kill queues both the completed task and the earned level")
@@ -83,7 +83,7 @@ func _test_simultaneous_task_and_level(controller: FoldlightEndlessSurvivalContr
 
 func _test_recovery_and_token_lifecycle(controller: FoldlightEndlessSurvivalController) -> void:
 	controller.start_run(3)
-	for index in 22:
+	for index in 51:
 		_report(controller, index + 1, &"drifter")
 	var level_two := controller.peek_pending_reward()
 	controller.claim_pending_reward(StringName(level_two.reward_token), StringName(level_two.options[0].id))
@@ -109,10 +109,10 @@ func _test_population_and_spawn_safety(controller: FoldlightEndlessSurvivalContr
 	for wave in 30:
 		controller.force_next_wave()
 	var population := controller.get_population_snapshot()
-	_check(int(population.pending_count) <= 18 and int(population.pending_threat) <= 24, "uninstantiated waves reserve both population and threat instead of accumulating beyond the cap")
-	controller.report_population({"alive_count": 17, "pending_count": 1, "threat_total": 18})
+	_check(int(population.pending_count) <= 24 and int(population.pending_threat) <= 32, "uninstantiated waves reserve both population and threat instead of accumulating beyond the cap")
+	controller.report_population({"alive_count": 23, "pending_count": 1, "threat_total": 24})
 	_check((controller.force_next_wave().entries as Array).is_empty(), "alive plus pending actors obey the hard population cap")
-	controller.report_population({"alive_count": 4, "threat_total": 18, "pending_threat": 6})
+	controller.report_population({"alive_count": 4, "threat_total": 26, "pending_threat": 6})
 	_check((controller.force_next_wave().entries as Array).is_empty(), "pending threat counts even when the actor cap has free space")
 	controller.report_population({})
 	var safe := true
@@ -134,8 +134,8 @@ func _test_population_and_spawn_safety(controller: FoldlightEndlessSurvivalContr
 	var full_wave := controller.force_next_wave()
 	controller.report_population({})
 	var breathing := controller.force_next_wave()
-	_check(not bool(full_wave.breathing_wave) and bool(breathing.breathing_wave) and _wave_threat(breathing) <= _wave_threat(full_wave) / 2 + 1, "the pressure rhythm alternates a full wave with a smaller breathing wave")
-	_check(int(controller.get_population_snapshot().population_limit) == 36 and int(controller.get_population_snapshot().threat_limit) == 72, "late-game pressure uses bounded population and threat limits")
+	_check(not bool(full_wave.breathing_wave) and bool(breathing.breathing_wave) and _wave_threat(breathing) <= _wave_threat(full_wave) * 0.75 + 1, "the pressure rhythm alternates a full wave with a smaller breathing wave")
+	_check(int(controller.get_population_snapshot().population_limit) == 42 and int(controller.get_population_snapshot().threat_limit) == 86, "late time pressure uses bounded population and threat limits before XP adds further pressure")
 	controller.start_run(3)
 	controller.advance_simulation(100.0, controller.map_definition.player_spawn)
 	var sequence := controller.wave_sequence

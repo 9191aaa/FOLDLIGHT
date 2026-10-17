@@ -109,9 +109,9 @@ func reset(run_config: FoldlightEndlessSurvivalConfig) -> void:
 
 func experience_required(level: int) -> int:
 	if config == null:
-		return 18
+		return 42
 	var step := maxi(0, level - 1)
-	return config.first_level_experience + config.experience_step * step + 2 * (step / 3)
+	return config.first_level_experience + config.experience_step * step + config.experience_quadratic * step * step
 
 
 func record_kill_experience(amount: int) -> Array[int]:
@@ -124,6 +124,8 @@ func record_kill_experience(amount: int) -> Array[int]:
 		experience_in_level -= experience_required(experience_level)
 		experience_level += 1
 		levels.append(experience_level)
+	if not levels.is_empty():
+		enemy_evolution_changed.emit(get_enemy_snapshot())
 	experience_changed.emit(get_experience_snapshot())
 	return levels
 
@@ -218,22 +220,26 @@ func apply_mission_reward(reward_id: StringName) -> Dictionary:
 func get_enemy_snapshot() -> Dictionary:
 	if config == null:
 		return {}
-	var stage_power := float(enemy_stage)
+	var pressure_stage := mini(10, maxi(enemy_stage, (experience_level - 1) / 2))
+	var stage_power := float(pressure_stage)
 	var next_time := -1.0
 	if enemy_stage < config.enemy_stage_times.size():
 		next_time = config.enemy_stage_times[enemy_stage]
 	return {
-		"axis": &"survival_time",
-		"stage": enemy_stage,
+		"axis": &"time_and_experience",
+		"stage": pressure_stage,
+		"time_stage": enemy_stage,
+		"experience_level": experience_level,
+		"objective_tier": mini(8, enemy_stage / 2 + (experience_level - 1) / 3),
 		"survival_seconds": survival_seconds,
 		"next_stage_at": next_time,
 		"health_multiplier": pow(config.health_growth_per_stage, stage_power),
 		"projectile_multiplier": pow(config.projectile_growth_per_stage, stage_power),
-		"wave_budget": mini(config.maximum_wave_budget, config.base_wave_budget + enemy_stage * 3),
-		"spawn_interval": maxf(config.minimum_spawn_interval, config.base_spawn_interval - stage_power * 0.62),
-		"captain_frequency": maxi(5 - enemy_stage / 2, 2),
-		"population_limit": mini(config.maximum_population_limit, config.base_population_limit + enemy_stage * 3),
-		"threat_limit": mini(config.maximum_threat_limit, config.base_threat_limit + enemy_stage * 8),
+		"wave_budget": mini(config.maximum_wave_budget, config.base_wave_budget + pressure_stage * 3),
+		"spawn_interval": maxf(config.minimum_spawn_interval, config.base_spawn_interval - stage_power * 0.36),
+		"captain_frequency": maxi(5 - pressure_stage / 2, 2),
+		"population_limit": mini(config.maximum_population_limit, config.base_population_limit + pressure_stage * 3),
+		"threat_limit": mini(config.maximum_threat_limit, config.base_threat_limit + pressure_stage * 9),
 	}
 
 
@@ -276,7 +282,8 @@ func get_snapshot() -> Dictionary:
 		"player": get_player_snapshot(),
 		"missions": get_mission_snapshot(),
 		"experience": get_experience_snapshot(),
-		"axes_are_independent": true,
+		"axes_are_independent": false,
+		"growth_ledgers_are_independent": true,
 	}
 
 

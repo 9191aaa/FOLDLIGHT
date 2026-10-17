@@ -93,7 +93,10 @@ func run() -> void:
 	var closed_point := Vector2.ZERO
 	for zone: Dictionary in zone_snapshot.zones:
 		if zone.state == &"closed":
-			closed_point = (zone.rect as Rect2).get_center()
+			# New central closure rectangles contain the permanent narrow lane;
+			# sample the actually painted hazard, never the exempt lane at center.
+			var fragments := FoldlightEndlessMapDefinition.zone_fragments(zone.rect, zone_snapshot.safe_corridors)
+			closed_point = fragments[0].get_center()
 			break
 	check(slice.controller.zones.is_point_closed(closed_point), "live closure has a visible hazardous area")
 	slice.player.global_position = closed_point

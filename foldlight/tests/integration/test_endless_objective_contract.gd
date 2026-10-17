@@ -12,12 +12,16 @@ func _run() -> void:
 	var map := load("res://resources/endless/maps/folded_delta.tres") as FoldlightEndlessMapDefinition
 	var director := Director.new()
 	root.add_child(director)
+	var map_runtime := FoldlightEndlessHandcraftedMap.new()
+	root.add_child(map_runtime)
+	map_runtime.configure(map)
+	director.bind_route_provider(map_runtime.find_cover_route)
 	director.reset(config, map, 3)
 	var seen_ids: Dictionary = {}
 	var capture_sites: Dictionary = {}
 	var kinds: Dictionary = {}
 	var unique := true
-	for cycle in 13:
+	for cycle in 35:
 		var objective := director.get_snapshot()
 		var kind := StringName(objective.get("kind", &""))
 		kinds[kind] = true
@@ -32,12 +36,13 @@ func _run() -> void:
 		director.advance(config.objective_intermission + 0.1, Vector2.ZERO)
 	_check(unique, "task instances never reuse target identities across completed rotations")
 	_check(capture_sites.size() >= 3, "successive capture tasks visit all three authored sites rather than one fixed site")
-	_check(kinds.size() == 6, "one deterministic schedule exposes six genuinely different objective kinds")
+	_check(kinds.size() == 7, "one deterministic schedule exposes seven genuinely different objective kinds")
 	_test_identity_and_terminal(director, config, map)
 	_test_capture_deadline(director, config, map)
 	_test_six_interactions(director, config, map)
 	_test_placement(director, config, map)
 	director.queue_free()
+	map_runtime.queue_free()
 	await process_frame
 	(root.get_node("AudioDirector") as FoldlightAudioDirector).shutdown()
 	print("FOLDLIGHT_ENDLESS_OBJECTIVE_CONTRACT: %s" % ("PASS" if failures.is_empty() else "FAIL"))
@@ -54,6 +59,11 @@ func _complete(director: Node) -> void:
 		&"capture_storm": director.call("report_projectiles_absorbed", 12, objective["target_position"])
 		&"clear_swarm":
 			for index in 10: director.call("report_enemy_defeated", StringName("enemy_%s_%d" % [objective["id"], index]), false)
+		&"escort":
+			for step in 500:
+				var snapshot: Dictionary = director.get_snapshot()
+				if snapshot["status"] != &"active": break
+				director.advance(0.1, snapshot["escort_position"])
 
 
 func _test_identity_and_terminal(director: Node, config: Resource, map: Resource) -> void:
@@ -179,6 +189,7 @@ func _test_placement(director: Node, config: Resource, map: Resource) -> void:
 	director.reset(config, map, 771)
 	var other := Director.new()
 	root.add_child(other)
+	other.bind_route_provider(director._route_provider)
 	other.reset(config, map, 771)
 	var deterministic := true
 	for index in 12:

@@ -102,12 +102,12 @@ func _test_extra_shot_coverage() -> void:
 
 func _test_cancelled_boss_warnings() -> void:
 	var boss := _spawn_target(&"reef_crown_battery", 370.0) as FoldlightRogueBossActor
-	_combat._on_boss_telegraph_requested({"pattern_id": &"petal_salvo", "duration": 1.0, "origin": boss.global_position, "target_position": PLAYER_POSITION, "accent": Color.WHITE})
+	boss.telegraph_requested.emit({"pattern_id": &"petal_salvo", "duration": 1.0, "origin": boss.global_position, "target_position": PLAYER_POSITION, "accent": Color.WHITE})
 	var projectile := _combat._spawn_projectile({"origin": Vector2(200, 200), "velocity": Vector2.RIGHT * 50.0, "hostile": true, "lifetime": 4.0})
 	boss.phase_controller.enter_stagger(1.0)
 	_check(_live_warning_count() == 0 and _combat.projectiles.has(projectile), "stagger cancels obsolete warnings while preserving live hostile shots")
 	boss.phase_controller.advance_simulation(1.01, 1.0)
-	_combat._on_boss_telegraph_requested({"pattern_id": &"petal_salvo", "duration": 1.0, "origin": boss.global_position, "target_position": PLAYER_POSITION, "accent": Color.WHITE})
+	boss.telegraph_requested.emit({"pattern_id": &"petal_salvo", "duration": 1.0, "origin": boss.global_position, "target_position": PLAYER_POSITION, "accent": Color.WHITE})
 	boss.health = boss.definition.base_health * 0.5
 	boss.phase_controller.advance_simulation(STEP, 0.5)
 	_check(_live_warning_count() == 0 and _combat.projectiles.has(projectile), "phase transition cancels obsolete warnings while preserving live hostile shots")

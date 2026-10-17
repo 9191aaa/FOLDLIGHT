@@ -47,6 +47,9 @@ func _run() -> void:
 				if map.is_point_blocked(point, 60.0):
 					continue
 				var waypoint: Vector2 = director.get_nearest_safe_position(point, map)
+				if definition.is_permanent_safe(point, 13.0):
+					_check(point.is_equal_approx(waypoint), "%s safe corridor inside a closure rectangle needs no evacuation" % definition.title)
+					continue
 				if point.is_equal_approx(waypoint) or not map.has_line_of_sight(point, waypoint, 13.0):
 					escape_failures.append(str(point))
 		_check(escape_failures.is_empty(), "%s evacuation guidance starts with a real wall-clear segment: %s" % [definition.title, escape_failures])

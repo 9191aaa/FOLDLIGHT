@@ -73,17 +73,17 @@ func _test_reward_recovery(slice: FoldlightEndlessSliceRuntime) -> void:
 func _test_real_deaths_and_dual_reward(slice: FoldlightEndlessSliceRuntime) -> void:
 	_fresh(slice)
 	slice._clear_pending_spawns()
-	for index in 8:
+	for index in 20:
 		var actor := slice.combat_runtime._spawn_enemy_from_entry({"enemy_id": &"drifter", "spawn_position": Vector2(1800, 1600)}, false)
 		actor.take_damage(1000.0)
-	check(int(slice.controller.evolution.get_experience_snapshot().total_xp) == 16, "real ordinary actors award kill XP through shared combat signals")
-	var ninth := slice.combat_runtime._spawn_enemy_from_entry({"enemy_id": &"drifter", "spawn_position": Vector2(1800, 1600)}, false)
-	ninth.take_damage(1000.0)
+	check(int(slice.controller.evolution.get_experience_snapshot().total_xp) == 40, "real ordinary actors award kill XP through shared combat signals")
+	var threshold_kill := slice.combat_runtime._spawn_enemy_from_entry({"enemy_id": &"drifter", "spawn_position": Vector2(1800, 1600)}, false)
+	threshold_kill.take_damage(1000.0)
 	check(slice.controller.evolution.get_experience_snapshot().level == 2 and slice._reward_context.get("source") == &"kill_level", "ordinary kills trigger a real level-up reward without a mission")
 	_claim(slice)
 	check(slice.controller.evolution.get_experience_snapshot().total_modifiers != {} and slice.combat_runtime.active, "experience reward applies build growth and resumes combat")
 	_fresh(slice, 316003)
-	slice.controller.evolution.record_kill_experience(16)
+	slice.controller.evolution.record_kill_experience(34)
 	for step in 7:
 		slice._advance_spawn_queue(0.1)
 	var captain: Node2D
@@ -118,7 +118,7 @@ func _test_spawning_and_retirement(slice: FoldlightEndlessSliceRuntime) -> void:
 	for index in 12:
 		slice._report_population()
 		slice.controller.force_next_wave()
-	check(slice._pending_spawns.size() + slice.combat_runtime.enemies.size() <= 18, "same-frame waves count queued and live actors toward the opening limit")
+	check(slice._pending_spawns.size() + slice.combat_runtime.enemies.size() <= 24, "same-frame waves count queued and live actors toward the opening limit")
 	slice._clear_pending_spawns()
 	slice.combat_runtime.clear_combat()
 	slice.combat_runtime.set_active(true)

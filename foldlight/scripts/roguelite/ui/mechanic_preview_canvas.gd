@@ -99,6 +99,8 @@ func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 			_draw_partitions(origin, target, cycle)
 		&"shrinking_frame", &"moving_safe_frame":
 			_draw_shrinking_frame(origin, target, cycle)
+		&"woven_lanes", &"locked_dash", &"paired_gaps":
+			_draw_new_boss_attack(origin, target, cycle)
 		_:
 			_draw_radial(origin, cycle)
 
@@ -406,7 +408,7 @@ func _draw_petal_enemy(center: Vector2, scale_value: float) -> void:
 
 
 func _infer_preview_kind(id: StringName) -> StringName:
-	return &"boss" if id in [&"reef_crown_battery", &"inverted_archivist", &"origami_judge"] else &"enemy"
+	return &"boss" if FoldlightRogueContentCatalog.boss_by_id(id) != null else &"enemy"
 
 
 func _default_attack_style(id: StringName) -> StringName:
@@ -422,4 +424,42 @@ func _default_attack_style(id: StringName) -> StringName:
 		&"reef_crown_battery": &"tide_gap",
 		&"inverted_archivist": &"partitions",
 		&"origami_judge": &"shrinking_frame",
+		&"tide_loom_mother": &"woven_lanes",
+		&"torn_page_executioner": &"locked_dash",
+		&"eclipse_twin_bells": &"paired_gaps",
 	}.get(id, &"radial")
+
+
+func _draw_new_boss_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var aim := origin.direction_to(target)
+	var travel := clampf((cycle - 0.42) / 0.38, 0.0, 1.0)
+	var distance := origin.distance_to(target) + 35.0
+	var gold := Color(0.95,0.67,0.32,0.65)
+	if attack_style == &"woven_lanes":
+		for lane in 5:
+			var start := origin + aim.orthogonal()*float(lane-2)*23.0
+			if lane == 2:
+				draw_line(start+aim*65.0,start+aim*distance,Color(0.47,0.94,0.82,0.28),13.0,true)
+				continue
+			draw_dashed_line(start,start+aim*distance,Color(accent,0.42),2.0,12.0,true)
+			if cycle >= 0.42:
+				_draw_projectile(start+aim*lerpf(35.0,distance,travel),aim.angle(),true)
+	elif attack_style == &"locked_dash":
+		var side := aim.orthogonal()*20.0
+		draw_line(origin,target+aim*35.0,Color(0.12,0.07,0.10,0.48),40.0,true)
+		draw_dashed_line(origin+side,target+side+aim*35.0,gold,2.0,12.0,true)
+		draw_dashed_line(origin-side,target-side+aim*35.0,gold,2.0,12.0,true)
+		if cycle >= 0.42:
+			_draw_blade(origin+aim*distance*travel,aim.angle())
+	else:
+		for index in 2:
+			var side := -1.0 if index == 0 else 1.0
+			var bell := origin+Vector2(side*36.0,7.0)
+			var gap_angle := aim.angle()+side*0.36
+			draw_arc(bell,50.0,gap_angle-0.78,gap_angle+0.78,18,Color(0.47,0.94,0.82,0.72),3.0,true)
+			var pulse := clampf((cycle-0.42-float(index)*0.145)/0.34,0.0,1.0)
+			if pulse <= 0.0: continue
+			for ray in 10:
+				var angle := gap_angle+float(ray)*TAU/10.0
+				if absf(wrapf(angle-gap_angle,-PI,PI)) < 0.78: continue
+				_draw_projectile(bell+Vector2.from_angle(angle)*lerpf(23.0,106.0,pulse),angle,true)

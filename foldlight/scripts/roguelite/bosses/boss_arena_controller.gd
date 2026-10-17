@@ -87,7 +87,7 @@ func advance_simulation(delta: float, player_position: Vector2) -> void:
 
 
 func is_player_safe(player_position: Vector2) -> bool:
-	if _pressure_suspended or _transition_remaining > 0.0:
+	if rule_id == &"open_paper" or _pressure_suspended or _transition_remaining > 0.0:
 		return true
 	if rule_id == &"moving_safe_frame":
 		return safe_rect.has_point(player_position)

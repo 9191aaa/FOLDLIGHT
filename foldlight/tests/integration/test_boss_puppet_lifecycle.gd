@@ -45,7 +45,11 @@ func _test_actor_clock(definition: FoldlightRogueBossDefinition) -> void:
 	var collisions := actor.get_node("CollisionShape2D") as CollisionShape2D
 	var shape := collisions.shape as CircleShape2D
 	var volleys: Array[Dictionary] = []
+	var attacks: Array[StringName] = []
+	var warnings: Array[Dictionary] = []
 	actor.volley_requested.connect(func(value: Dictionary) -> void: volleys.append(value.duplicate(true)))
+	actor.telegraph_requested.connect(func(value: Dictionary) -> void: warnings.append(value.duplicate(true)))
+	actor.phase_controller.attack_ready.connect(func(pattern: StringName, _duration: float) -> void: attacks.append(pattern))
 	_check(is_equal_approx(shape.radius, 52.0) and actor.scale == Vector2.ONE and collisions.position == Vector2.ZERO, label + "paper model keeps the original physical hit circle")
 	_check(actor.get_node_or_null("Aura") == null and actor.get_node_or_null("PhaseParticles") == null, label + "no independent TIME shader or particle clock runs behind pause")
 	_check(is_zero_approx(float(actor.get_visual_pose()["intro"])), label + "entrance begins folded during the existing harmless introduction")
@@ -58,7 +62,8 @@ func _test_actor_clock(definition: FoldlightRogueBossDefinition) -> void:
 		actor.advance_simulation(STEP, target)
 	var original_direction := Vector2(actor.get_visual_pose()["direction"])
 	var warned_origin := actor.global_position
-	for tick in 30:
+	var half_warning_ticks := int(round(float(warnings[0]["duration"]) * 0.5 / STEP))
+	for tick in half_warning_ticks:
 		actor.advance_simulation(STEP, target + Vector2(800, 0))
 	var charged := actor.get_visual_pose()
 	_check(float(charged["charge"]) > 0.4 and float(charged["charge"]) < 0.6 and volleys.is_empty(), label + "charge builds inside the actual warning, never fires early")
@@ -72,15 +77,24 @@ func _test_actor_clock(definition: FoldlightRogueBossDefinition) -> void:
 	_check(actor.get_visual_pose() == pose_before and actor.phase_controller.get_state_snapshot() == phase_before and actor.arena_controller.get_rule_snapshot() == arena_before, label + "pause freezes pose, warning and arena together")
 	actor.set_simulation_active(true)
 	for tick in 120:
-		if not volleys.is_empty():
+		if not attacks.is_empty():
 			break
 		actor.advance_simulation(STEP, target + Vector2(800, 0))
-	if volleys.is_empty():
+	if attacks.is_empty():
 		_check(false, label + "resumed warning reaches its real attack")
 		actor.queue_free()
 		return
 	_check(float(actor.get_visual_pose()["recoil"]) > 0.99 and float(actor.get_visual_pose()["charge"]) == 0.0, label + "recoil begins only when the real attack fires")
-	_check(Vector2(volleys[0]["direction"]).is_equal_approx(original_direction) and Vector2(volleys[0]["origin"]).is_equal_approx(warned_origin), label + "animation cannot redirect a released attack")
+	var locked_attack := Vector2(actor.get_visual_pose()["direction"]).is_equal_approx(original_direction)
+	if not warnings[0].has("attack_lanes"):
+		locked_attack = locked_attack and not volleys.is_empty() and Vector2(volleys[0]["direction"]).is_equal_approx(original_direction) and Vector2(volleys[0]["origin"]).is_equal_approx(warned_origin)
+	else:
+		for volley in volleys:
+			var matching_source := false
+			for lane: Dictionary in warnings[0]["attack_lanes"]:
+				matching_source = matching_source or Vector2(volley["origin"]).is_equal_approx(lane["origin"])
+			locked_attack = locked_attack and matching_source
+	_check(locked_attack, label + "animation cannot redirect a released attack")
 	for tick in 20:
 		actor.advance_simulation(STEP, target)
 	_check(is_zero_approx(float(actor.get_visual_pose()["recoil"])), label + "recoil resolves within its 0.30-second visual budget")

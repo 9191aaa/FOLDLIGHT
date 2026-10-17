@@ -121,4 +121,10 @@ func _boss_briefing(content_id: StringName) -> Dictionary:
 				"counterplay": "跟着安全框一起移动，留一次冲刺应对框体收缩；普通弹攒够后再打断它的宣判。",
 				"attack_style": &"shrinking_frame",
 			}
+		&"tide_loom_mother":
+			return {"rule": "织母会将纸梭排成平行织线，再交叉换向。青色箭头标出空隙，金黑细针无法收纳。", "counterplay": "看准空隙再横移；连续两轮织线沿同一预警发射，收纳普通弹后返光可打断后续攻击。", "attack_style": &"woven_lanes"}
+		&"torn_page_executioner":
+			return {"rule": "行刑者先锁定金色通道，再沿通道冲刺；随后交替使用留缺口的纸环和不可收纳的金黑扇切。", "counterplay": "离开通道侧边，别沿着冲刺方向后退；趁收招空档收纳纸环，用返光打开破绽。", "attack_style": &"locked_dash"}
+		&"eclipse_twin_bells":
+			return {"rule": "左右纸铃会先后敲出弹环，每个铃口的青色扇区都是缺口；下一轮先响的铃会交换。", "counterplay": "先看两侧各自的缺口，不要只跟着第一圈走；普通铃弹可收纳，返光能打断尚未响起的第二铃。", "attack_style": &"paired_gaps"}
 	return {}

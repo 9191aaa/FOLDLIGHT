@@ -64,6 +64,7 @@ var _reward_transaction: bool = false
 var _claiming_pending_reward: bool = false
 var _population := {"alive_count": 0, "pending_count": 0, "threat_total": 0, "pending_threat": 0}
 var _last_reward_completion: int = 0
+var _last_boss_reward_wave: int = 0
 var _captain_spawned_for_objective: StringName = &""
 var zones := FoldlightEndlessZoneDirector.new()
 
@@ -145,11 +146,13 @@ func start_run(seed: int = 1) -> Dictionary:
 	_claiming_pending_reward = false
 	_population = {"alive_count": 0, "pending_count": 0, "threat_total": 0, "pending_threat": 0}
 	_last_reward_completion = 0
+	_last_boss_reward_wave = 0
 	_captain_spawned_for_objective = &""
 	evolution.reset(config)
 	zones.reset(map_definition, seed)
 	objectives.set_district_access(zones.get_snapshot())
-	objectives.reset(config, map_definition, seed)
+	objectives.bind_route_provider(map_runtime.find_cover_route)
+	objectives.reset(config, map_definition, seed, evolution.get_enemy_snapshot())
 	active = true
 	show()
 	set_process(automatic_tick)
@@ -181,9 +184,10 @@ func advance_simulation(delta: float, player_position: Vector2) -> void:
 	_last_player_position = player_position
 	evolution.advance_survival(delta)
 	var protected_points: PackedVector2Array = objectives.get_snapshot().get("protected_points", PackedVector2Array())
-	zones.advance_to(evolution.survival_seconds, protected_points)
+	zones.advance_to(evolution.survival_seconds, protected_points, player_position)
 	var zone_snapshot := zones.get_snapshot()
 	objectives.set_district_access(zone_snapshot)
+	objectives.set_progression_context(evolution.get_enemy_snapshot(), player_position)
 	map_runtime.set_zone_snapshot(zone_snapshot)
 	objectives.advance(delta, player_position)
 	map_runtime.set_active_objective(objectives.get_snapshot())
@@ -259,6 +263,25 @@ func _experience_for_enemy(snapshot: Dictionary) -> int:
 func report_population(snapshot: Dictionary) -> void:
 	for key: String in _population:
 		_population[key] = maxi(0, int(snapshot.get(key, 0)))
+
+
+func report_escort_pressure(enemy_count: int) -> void:
+	if active:
+		objectives.report_escort_pressure(enemy_count)
+
+
+func queue_boss_reward(boss_id: StringName, title: String, wave_index: int) -> bool:
+	# Runtime reports a cleared whole wave once. Boss rewards have their own
+	# sequence and never spend a task completion or combat experience level.
+	if not active or boss_id.is_empty() or wave_index <= _last_boss_reward_wave:
+		return false
+	_last_boss_reward_wave = wave_index
+	_enqueue_reward({
+		"source": &"boss", "title": title if not title.is_empty() else "深潮首领已击破",
+		"boss_id": boss_id, "wave_index": wave_index, "objective": {}, "heal_on_claim": 1,
+	})
+	_publish_reward_head()
+	return true
 
 
 func get_population_snapshot() -> Dictionary:
@@ -366,7 +389,10 @@ func _prepare_reward_head() -> void:
 	var head := _reward_queue[0]
 	var options: Array = head.get("options", [])
 	if options.is_empty():
-		options = evolution.get_experience_reward_options(int(head["level"])) if StringName(head["source"]) == &"kill_level" else _draft_mission_rewards(int(head["completion_count"]))
+		match StringName(head["source"]):
+			&"kill_level": options = evolution.get_experience_reward_options(int(head["level"]))
+			&"boss": options = _draft_mission_rewards(int(head["wave_index"]) * 2 - 1)
+			_: options = _draft_mission_rewards(int(head["completion_count"]))
 		head["options"] = options
 	_pending_mission_rewards.assign(options)
 
@@ -432,6 +458,8 @@ func get_integration_contract() -> Dictionary:
 			&"report_projectiles_absorbed",
 			&"report_enemy_defeated",
 			&"report_population",
+			&"report_escort_pressure",
+			&"queue_boss_reward",
 			&"peek_pending_reward",
 			&"claim_pending_reward",
 			&"report_captain_defeated",
@@ -461,7 +489,7 @@ func _emit_next_wave() -> Dictionary:
 	var requested_budget := int(enemy_state.get("wave_budget", config.base_wave_budget))
 	var is_breathing_wave := wave_sequence % 4 == 2
 	if is_breathing_wave:
-		requested_budget = maxi(1, requested_budget / 2)
+		requested_budget = maxi(1, floori(requested_budget * config.breathing_wave_ratio))
 	var budget := mini(requested_budget, available_threat)
 	var entries: Array[Dictionary] = []
 	var objective := objectives.get_snapshot()
@@ -517,8 +545,8 @@ func _emit_next_wave() -> Dictionary:
 		"entries": entries,
 		"enemy_evolution": enemy_state,
 		"objective": objective,
-		"authored_spawn_sites": true,
-		"shooter_spawn_policy": &"central_cover_lane",
+		"authored_spawn_sites": false,
+		"shooter_spawn_policy": &"safe_local_reinforcement",
 		"breathing_wave": is_breathing_wave,
 		"population": get_population_snapshot(),
 	}
@@ -541,33 +569,39 @@ func _make_regular_entry(enemy_id: StringName, role: StringName, sequence: int, 
 
 func _safe_spawn_position(role: StringName, sequence: int) -> Vector2:
 	var positions := map_definition.shooter_spawn_positions if role == &"shooter" else map_definition.melee_spawn_positions
-	var fallback := Vector2(INF, INF)
-	var best_distance := INF
 	var safe_distance_squared := config.spawn_safe_distance * config.spawn_safe_distance
-	for offset in positions.size():
-		var candidate := positions[posmod(sequence * 3 + offset, positions.size())]
-		var distance_squared := candidate.distance_squared_to(_last_player_position)
-		if distance_squared < safe_distance_squared or map_runtime.is_point_blocked(candidate, 40.0):
-			continue
-		# The local ring keeps pressure near the route instead of filling the
-		# other side of the large map with actors that never join combat.
-		if distance_squared <= 2200.0 * 2200.0:
-			return candidate
-		if distance_squared < best_distance:
-			best_distance = distance_squared
-			fallback = candidate
-	return fallback
+	var local_radius_squared := config.spawn_local_radius * config.spawn_local_radius
+	if sequence % 3 == 0:
+		for offset in positions.size():
+			var authored := positions[posmod(sequence * 3 + offset, positions.size())]
+			var distance_squared := authored.distance_squared_to(_last_player_position)
+			if distance_squared >= safe_distance_squared and distance_squared <= local_radius_squared and _spawn_site_is_open(authored):
+				return authored
+	# Fixed angles/radii around the actual player keep a larger map populated
+	# near combat. This changes reinforcement placement, never authored terrain.
+	for ring in 3:
+		var radius := lerpf(config.spawn_safe_distance + 100.0, config.spawn_local_radius - 60.0, float(posmod(sequence + ring, 3)) / 2.0)
+		for offset in 32:
+			var angle := TAU * float(posmod(run_seed + sequence * 7 + offset, 32)) / 32.0
+			var candidate := _last_player_position + Vector2.from_angle(angle) * radius
+			if _spawn_site_is_open(candidate):
+				return candidate
+	return Vector2(INF, INF)
+
+
+func _spawn_site_is_open(candidate: Vector2) -> bool:
+	return map_definition.bounds.grow(-44.0).has_point(candidate) and not map_runtime.is_point_blocked(candidate, 40.0) and not zones.is_point_reserved(candidate, 40.0)
 
 
 func _make_captain_entry(objective: Dictionary, enemy_state: Dictionary) -> Dictionary:
-	var stage := int(enemy_state.get("stage", 0))
+	var stage := int(objective.get("difficulty_enemy_stage", enemy_state.get("stage", 0)))
 	var captain_enemy := config.classic_enemy_ids[mini(config.classic_enemy_ids.size() - 1, 3 + stage)]
 	return {
 		"enemy_id": captain_enemy,
 		"spawn_role": &"captain",
 		"position": objective.get("target_position", map_definition.player_spawn),
-		"health_multiplier": float(enemy_state.get("health_multiplier", 1.0)) * 2.2,
-		"projectile_multiplier": float(enemy_state.get("projectile_multiplier", 1.0)) * 1.2,
+		"health_multiplier": float(objective.get("captain_health_multiplier", float(enemy_state.get("health_multiplier", 1.0)) * 2.2)),
+		"projectile_multiplier": float(objective.get("captain_projectile_multiplier", float(enemy_state.get("projectile_multiplier", 1.0)) * 1.2)),
 		"endless_stage": stage,
 		"is_captain": true,
 		"captain_id": objective.get("target_id", &""),

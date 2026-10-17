@@ -42,6 +42,7 @@ const WEAPON_ARSENAL := preload("res://scripts/roguelite/ui/weapon_arsenal_strip
 const ACTIVE_COLLECTION := preload("res://scripts/roguelite/ui/active_skill_collection.gd")
 const ACTIVE_BADGE := preload("res://scripts/roguelite/ui/active_skill_badge.gd")
 const EXPERIENCE_STRIP := preload("res://scripts/roguelite/ui/kill_experience_strip.gd")
+const ENDLESS_BOSS_STATUS := preload("res://scripts/roguelite/ui/endless_boss_status.gd")
 const REWARD_FEEDBACK := preload("res://scripts/roguelite/ui/reward_feedback_text.gd")
 
 var _touch_layout: bool = false
@@ -100,6 +101,7 @@ var _hud_objective_bar: ProgressBar
 var _hud_help: Label
 var _input_device: StringName = &"keyboard"
 var _hud_context: Dictionary = {}
+var _endless_boss_status: Control
 var _last_dash_ready: bool = true
 var _last_active_ready: bool = true
 var _last_fold_ready: bool = true
@@ -215,6 +217,7 @@ func set_touch_layout(enabled: bool) -> void:
 	_touch_safe_insets = MOBILE_LAYOUT.safe_insets(self) if enabled else Vector4.ZERO
 	if is_active_collection_open():
 		_active_collection.present(_active_inventory, _touch_layout, MOBILE_LAYOUT.safe_insets(self), screen_kind)
+	_refresh_endless_boss_status()
 
 
 func _on_touch_layout_changed() -> void:
@@ -226,6 +229,16 @@ func _on_touch_layout_changed() -> void:
 			_navigation_overlay.set_touch_layout(true, _touch_safe_top)
 		if is_active_collection_open():
 			_active_collection.present(_active_inventory, true, _touch_safe_insets, screen_kind)
+	_refresh_endless_boss_status()
+
+
+func _refresh_endless_boss_status() -> void:
+	if not is_instance_valid(_endless_boss_status): return
+	_endless_boss_status.configure(_hud_context.get("boss_director", {}), _hud_context.get("bosses", []), _touch_layout)
+	var touch := get_node_or_null("/root/TouchControls")
+	_endless_boss_status.layout_in_viewport(interface.get_viewport_rect().size, touch.get_layout_snapshot() if touch != null else {})
+	if is_instance_valid(_navigation_overlay):
+		_navigation_overlay.set_bottom_reserved_rect(_endless_boss_status.get_global_rect() if _endless_boss_status.visible else Rect2())
 
 
 ## Modes may attach read-only navigation without depending on private UI nodes.
@@ -516,6 +529,9 @@ func show_reward(choices: Array[Dictionary], room_title: String, metadata: Dicti
 		&"kill_level":
 			_reward_eyebrow.text = "击破成长 · 本局生效"
 			_reward_title.text = "击破升级 · Lv.%d · 选择一项强化" % maxi(1, int(metadata.get("level", 1)))
+		&"boss":
+			_reward_eyebrow.text = "首领已击破 · 三选一战利品"
+			_reward_title.text = "%s · 领取首领战利品" % room_title
 	for index in _reward_buttons.size():
 		var button := _reward_buttons[index]
 		if index >= choices.size():
@@ -852,7 +868,7 @@ func show_mechanic_card(snapshot: Dictionary) -> void:
 	_mechanic_intro_content_id = StringName(snapshot.get("content_id", &""))
 	var accent := FoldlightRogueUITheme.comfort_accent(Color(snapshot.get("accent", GOLD)))
 	var preview_id := StringName(snapshot.get("preview_id", _mechanic_intro_content_id))
-	var preview_kind := StringName(snapshot.get("preview_kind", &"boss" if preview_id in [&"reef_crown_battery", &"inverted_archivist", &"origami_judge"] else &"enemy"))
+	var preview_kind := StringName(snapshot.get("preview_kind", &"boss" if FoldlightRogueContentCatalog.boss_by_id(preview_id) != null else &"enemy"))
 	_mechanic_intro_accent.color = accent
 	_mechanic_intro_role.text = "%s  /  %s" % [str(snapshot.get("role_title", "首领" if preview_kind == &"boss" else "机制单位")), "首领登场" if preview_kind == &"boss" else "首次遭遇"]
 	_mechanic_intro_role.add_theme_color_override("font_color", accent)
@@ -1109,6 +1125,10 @@ func _build_hud() -> void:
 	screen.add_child(_mobile_hud)
 	_mobile_hud.pause_requested.connect(func() -> void: pause_requested.emit())
 	_mobile_hud.hide()
+	_endless_boss_status = ENDLESS_BOSS_STATUS.new()
+	_endless_boss_status.name = "EndlessBossStatus"
+	screen.add_child(_endless_boss_status)
+	_endless_boss_status.hide()
 
 	_prologue_banner = PanelContainer.new()
 	_prologue_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1879,6 +1899,7 @@ func _attack_demo_title(style: StringName, preview_id: StringName) -> String:
 			&"prism_bulwark": &"shield", &"shear_scribe": &"cross_cut",
 			&"reef_crown_battery": &"tide_gap", &"inverted_archivist": &"partitions",
 			&"origami_judge": &"shrinking_frame",
+			&"tide_loom_mother": &"woven_lanes", &"torn_page_executioner": &"locked_dash", &"eclipse_twin_bells": &"paired_gaps",
 		}.get(preview_id, &"radial")
 	return {
 		&"aimed_volley": "动态演示 · 红线锁定 → 横向躲开 → 五弹齐射",
@@ -1900,6 +1921,9 @@ func _attack_demo_title(style: StringName, preview_id: StringName) -> String:
 		&"ink_partitions": "动态演示 · 墨墙改道 → 花瓣环潮追击",
 		&"shrinking_frame": "动态演示 · 安全框收紧 → 留在框内走位",
 		&"moving_safe_frame": "动态演示 · 安全框收紧 → 留在框内走位",
+		&"woven_lanes": "动态演示 · 平行织线 → 青色空隙穿行",
+		&"locked_dash": "动态演示 · 金线锁定 → 横向避让 → 冲刺收招",
+		&"paired_gaps": "动态演示 · 双铃先后响起 → 分别寻找缺口",
 	}.get(resolved, "动态演示 · 先看预警，再看弹道与安全位置")
 
 

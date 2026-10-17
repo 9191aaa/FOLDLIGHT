@@ -10,23 +10,26 @@ extends Resource
 @export var player_absorb_thresholds := PackedInt32Array([24, 60, 112, 184, 280, 400])
 
 @export_group("Pressure Curve")
-@export_range(0.5, 20.0, 0.1) var base_spawn_interval: float = 6.5
-@export_range(0.25, 10.0, 0.1) var minimum_spawn_interval: float = 2.1
-@export_range(1, 30, 1) var base_wave_budget: int = 5
-@export_range(1, 60, 1) var maximum_wave_budget: int = 28
+@export_range(0.5, 20.0, 0.1) var base_spawn_interval: float = 4.4
+@export_range(0.25, 10.0, 0.1) var minimum_spawn_interval: float = 1.9
+@export_range(1, 30, 1) var base_wave_budget: int = 8
+@export_range(1, 60, 1) var maximum_wave_budget: int = 32
 @export_range(1.0, 5.0, 0.05) var health_growth_per_stage: float = 1.18
 @export_range(1.0, 4.0, 0.05) var projectile_growth_per_stage: float = 1.12
 
 @export_group("Population Budget")
-@export_range(4, 48, 1) var base_population_limit: int = 18
-@export_range(4, 48, 1) var maximum_population_limit: int = 36
-@export_range(4, 120, 1) var base_threat_limit: int = 24
-@export_range(4, 120, 1) var maximum_threat_limit: int = 72
+@export_range(4, 48, 1) var base_population_limit: int = 24
+@export_range(4, 48, 1) var maximum_population_limit: int = 48
+@export_range(4, 120, 1) var base_threat_limit: int = 32
+@export_range(4, 120, 1) var maximum_threat_limit: int = 104
 @export_range(320.0, 1200.0, 10.0) var spawn_safe_distance: float = 620.0
+@export_range(800.0, 1800.0, 10.0) var spawn_local_radius: float = 1250.0
+@export_range(0.5, 1.0, 0.05) var breathing_wave_ratio: float = 0.75
 
 @export_group("Kill Experience and Recovery")
-@export_range(1, 100, 1) var first_level_experience: int = 18
-@export_range(1, 40, 1) var experience_step: int = 8
+@export_range(1, 100, 1) var first_level_experience: int = 42
+@export_range(1, 40, 1) var experience_step: int = 16
+@export_range(0, 8, 1) var experience_quadratic: int = 2
 @export_range(0, 3, 1) var mission_recovery: int = 1
 @export_range(2, 10, 1) var recovery_level_interval: int = 3
 
@@ -65,6 +68,10 @@ func validation_errors() -> Array[String]:
 		errors.append("experience thresholds and recovery interval must be positive")
 	if not is_finite(spawn_safe_distance) or spawn_safe_distance < 320.0:
 		errors.append("spawn safety radius must be finite and at least 320 pixels")
+	if not is_finite(spawn_local_radius) or spawn_local_radius <= spawn_safe_distance or breathing_wave_ratio < 0.5 or breathing_wave_ratio > 1.0:
+		errors.append("local reinforcement ring and breathing ratio must be bounded")
+	if experience_quadratic < 0:
+		errors.append("experience curve must not decrease with level")
 	return errors
 
 

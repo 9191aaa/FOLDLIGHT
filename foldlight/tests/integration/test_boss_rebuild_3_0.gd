@@ -12,10 +12,10 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_check(FoldlightRogueContentCatalog.BOSSES.size() == 3, "catalog ships exactly three region bosses")
+	_check(FoldlightRogueContentCatalog.BOSSES.size() == 6, "catalog retains three original bosses plus three region alternatives")
 	var arena_rules: Dictionary = {}
 	var previous_health := 0.0
-	for boss_index in FoldlightRogueContentCatalog.BOSSES.size():
+	for boss_index in 3:
 		var definition := FoldlightRogueContentCatalog.BOSSES[boss_index]
 		_check(definition.base_health > previous_health, "boss durability rises across the three regions")
 		if boss_index == 0:

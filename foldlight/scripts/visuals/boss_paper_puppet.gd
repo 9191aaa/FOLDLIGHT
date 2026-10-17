@@ -1,7 +1,7 @@
 extends RefCounted
 ## Art-only articulated paper models. Call from CanvasItem._draw().
 ## Templates contain one ordered vertex-colored surface per paper part; the
-## bounded three-model cache retains every Mesh RID used by canvas commands.
+## bounded six-model cache retains every Mesh RID used by canvas commands.
 ## No nodes, simulation clocks, random calls or per-frame mesh rebuilds.
 ## Pose: phase 0..2, time, motion_scale 0..1, intro 0..1 (1 = unfolded),
 ## charge/recoil/stagger/flash 0..1, transition 0..1 + transition_active,
@@ -9,7 +9,7 @@ extends RefCounted
 
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
 const Batch = preload("res://scripts/visuals/paper_draw_batch.gd")
-const IDS: Array[StringName] = [&"reef_crown_battery", &"inverted_archivist", &"origami_judge"]
+const IDS: Array[StringName] = [&"reef_crown_battery", &"inverted_archivist", &"origami_judge", &"tide_loom_mother", &"torn_page_executioner", &"eclipse_twin_bells"]
 const SHADOW := Color("061119")
 const REEF := Color("a49772")
 const PAGE := Color("c4ccc0")
@@ -40,6 +40,9 @@ static func get_visual_bounds(boss_id: StringName) -> Rect2:
 	match boss_id:
 		&"reef_crown_battery": return Rect2(-153, -146, 306, 267)
 		&"inverted_archivist": return Rect2(-133, -119, 266, 277)
+		&"tide_loom_mother": return Rect2(-190, -130, 380, 272)
+		&"torn_page_executioner": return Rect2(-146, -181, 292, 359)
+		&"eclipse_twin_bells": return Rect2(-189, -151, 378, 297)
 		_: return Rect2(-196, -146, 392, 282)
 
 
@@ -65,6 +68,9 @@ static func _get_model(boss_id: StringName) -> Dictionary:
 		match resolved:
 			&"reef_crown_battery": _build_reef(parts)
 			&"inverted_archivist": _build_archivist(parts)
+			&"tide_loom_mother": _build_loom(parts)
+			&"torn_page_executioner": _build_executioner(parts)
+			&"eclipse_twin_bells": _build_bells(parts)
 			_: _build_judge(parts)
 		_models[resolved] = {"parts": parts}
 	return _models[resolved]
@@ -110,6 +116,20 @@ static func _part_transform(boss_id: StringName, part: Dictionary, pose: Diction
 	elif role == &"tail":
 		angle += side * (stagger * 0.2 + charge * 0.06) + breathing * 0.024
 		origin.y += breathing * 2.0 + recoil * 5.0
+	elif role == &"shuttle":
+		origin.x += side * (sin(time * 2.0 + float(order)) * 5.0 * motion - charge * 18.0 + stagger * 14.0)
+		origin.y += recoil * (12.0 + float(order) * 2.0)
+		angle += side * ((1.0 - intro) * 0.65 + charge * 0.20 - stagger * 0.25)
+	elif role == &"blade":
+		angle += -charge * 0.38 + recoil * 0.52 + stagger * 0.32 + (1.0 - intro) * 0.8
+		origin.y += -charge * 22.0 + recoil * 35.0 + stagger * 15.0
+	elif role == &"bell":
+		angle += side * (sin(time * 1.6 + side) * 0.065 * motion + charge * 0.24 - recoil * 0.30 + stagger * 0.19)
+		origin.y += -charge * 9.0 + recoil * 12.0 + stagger * 8.0
+		scale.x *= 1.0 - charge * 0.08
+	elif role == &"eclipse":
+		angle += time * 0.10 + charge * 0.15 + change * 0.22
+		scale *= 1.0 + stagger * 0.10 - charge * 0.04
 	elif role == &"core":
 		# The damageable light never drifts away from the actor's physical origin.
 		scale *= 1.0 + charge * 0.035 - recoil * 0.06 + stagger * 0.05
@@ -232,6 +252,90 @@ static func _build_judge(parts: Array[Dictionary]) -> void:
 	face.draw_polyline(PackedVector2Array([Vector2(-12,31),Vector2(0,44),Vector2(12,31)]),Palette.GOLD,1.5,true)
 	_add(parts,face.build_mesh(),Vector2.ZERO,0.0,&"body")
 	_add(parts,_lantern(Vector2(7,21),Palette.GOLD),Vector2(0,1),0.0,&"core")
+
+
+static func _build_loom(parts: Array[Dictionary]) -> void:
+	# A broad weaving frame, eight hanging shuttles, and a low moth-like mask.
+	var frame := Batch.new()
+	for side in [-1.0, 1.0]:
+		_folded(frame, _mirror(PackedVector2Array([Vector2(20,-65),Vector2(110,-101),Vector2(164,-48),Vector2(147,4),Vector2(105,-55),Vector2(30,-35)]), side), Vector2(side*100,-65), Color("638b7c"), Palette.FOLD, 2)
+		frame.draw_line(Vector2(side*48,-52), Vector2(side*161,38), Color(Palette.GOLD,0.70), 2.0)
+	_add(parts, frame.build_mesh(), Vector2.ZERO, 0.0, &"body")
+	for side in [-1.0, 1.0]:
+		for index in 4:
+			var shuttle := Batch.new()
+			var length := 65.0 + float(index % 2)*22.0
+			shuttle.draw_line(Vector2(0,-47),Vector2(0,-15),Color(Palette.FOLD,0.66),1.8)
+			_folded(shuttle,PackedVector2Array([Vector2(0,-21),Vector2(15,9),Vector2(9,length-13),Vector2(0,length),Vector2(-9,length-13),Vector2(-15,9)]),Vector2(0,22),Color("abc7ae"),Palette.PAPER,2)
+			shuttle.draw_colored_polygon(PackedVector2Array([Vector2(0,7),Vector2(6,22),Vector2(0,40),Vector2(-6,22)]),SHADOW)
+			shuttle.draw_line(Vector2(0,15),Vector2(0,33),Palette.FOLD,2.0)
+			_add(parts,shuttle.build_mesh(),Vector2(side*(48+index*31),-16+index*5),side*(0.04+float(index)*0.055),&"shuttle",side,index)
+	var body := Batch.new()
+	_folded(body,PackedVector2Array([Vector2(0,-75),Vector2(42,-44),Vector2(62,12),Vector2(35,71),Vector2(0,109),Vector2(-35,71),Vector2(-62,12),Vector2(-42,-44)]),Vector2(0,4),Color("748f79"),Palette.GOLD,2)
+	for side in [-1.0, 1.0]:
+		_folded(body,_mirror(PackedVector2Array([Vector2(5,-35),Vector2(47,-18),Vector2(34,19),Vector2(9,33)]),side),Vector2(side*23,-1),Color("d0d6b6"),Palette.PAPER,1)
+		body.draw_line(Vector2(side*15,-7),Vector2(side*35,-15),SHADOW,4.0)
+		body.draw_line(Vector2(side*17,-8),Vector2(side*31,-13),Palette.FOLD,1.5)
+	for index in 4:
+		var y := 46.0+float(index)*11.0
+		body.draw_line(Vector2(-22+index*4,y),Vector2(22-index*4,y),Color(Palette.GOLD,0.8),1.5)
+	_add(parts,body.build_mesh(),Vector2.ZERO,0.0,&"body")
+	_add(parts,_lantern(Vector2(11,27),Palette.FOLD),Vector2(0,9),0.0,&"core")
+
+
+static func _build_executioner(parts: Array[Dictionary]) -> void:
+	# Asymmetric torn cloak and a raised guillotine sheet distinguish the dash.
+	for side in [-1.0, 1.0]:
+		for index in 2:
+			var cloak := Batch.new()
+			var length := 100.0+float(index)*25.0
+			_folded(cloak,_mirror(PackedVector2Array([Vector2(0,-23),Vector2(44,4),Vector2(58,length-25),Vector2(39,length-40),Vector2(31,length),Vector2(14,length-24),Vector2(0,58)]),side),Vector2(side*24,39),Color("77738f").darkened(index*0.12),Palette.PAPER,2)
+			cloak.draw_line(Vector2(side*15,18),Vector2(side*31,length-41),Color(Palette.GOLD,0.65),1.5)
+			_add(parts,cloak.build_mesh(),Vector2(side*(24+index*25),-28+index*9),side*-0.15,&"folio",side,index)
+	var beam := Batch.new()
+	_folded(beam,PackedVector2Array([Vector2(-113,-94),Vector2(92,-111),Vector2(116,-83),Vector2(-106,-62)]),Vector2(0,-87),Color("777480"),Palette.GOLD,2)
+	_add(parts,beam.build_mesh(),Vector2.ZERO,0.0,&"body")
+	var blade := Batch.new()
+	_folded(blade,PackedVector2Array([Vector2(-16,-139),Vector2(28,-152),Vector2(49,-91),Vector2(40,64),Vector2(-22,105),Vector2(-16,40)]),Vector2(10,-33),Color("cbd0c4"),Palette.PAPER,2)
+	blade.draw_colored_polygon(PackedVector2Array([Vector2(27,-123),Vector2(37,-89),Vector2(30,58),Vector2(15,69)]),Color("48445a"))
+	blade.draw_line(Vector2(-11,72),Vector2(33,44),Palette.GOLD,3.0)
+	_add(parts,blade.build_mesh(),Vector2(80,-4),-0.09,&"blade",1.0,1)
+	var hood := Batch.new()
+	_folded(hood,PackedVector2Array([Vector2(0,-85),Vector2(44,-35),Vector2(36,38),Vector2(0,67),Vector2(-43,35),Vector2(-48,-26)]),Vector2(0,-2),Color("858393"),Palette.PAPER,2)
+	hood.draw_colored_polygon(PackedVector2Array([Vector2(0,-50),Vector2(29,-21),Vector2(21,22),Vector2(0,37),Vector2(-26,16),Vector2(-29,-20)]),SHADOW)
+	hood.draw_polyline(PackedVector2Array([Vector2(-21,-17),Vector2(0,-7),Vector2(19,-20)]),Palette.GOLD,3.0,true)
+	_add(parts,hood.build_mesh(),Vector2.ZERO,0.0,&"body")
+	_add(parts,_lantern(Vector2(8,19),Palette.GOLD),Vector2(0,14),0.0,&"core")
+
+
+static func _build_bells(parts: Array[Dictionary]) -> void:
+	var eclipse := Batch.new()
+	for ray in 10:
+		var angle := float(ray)*TAU/10.0
+		var direction := Vector2.from_angle(angle)
+		var side := direction.orthogonal()
+		_folded(eclipse,PackedVector2Array([direction*82.0-side*9.0,direction*112.0,direction*97.0+side*14.0,direction*74.0+side*10.0]),direction*89.0,FOIL,Palette.GOLD,0)
+	_add(parts,eclipse.build_mesh(),Vector2(0,-20),0.0,&"eclipse")
+	var yoke := Batch.new()
+	_folded(yoke,PackedVector2Array([Vector2(-151,-64),Vector2(-90,-98),Vector2(0,-72),Vector2(90,-98),Vector2(151,-64),Vector2(104,-50),Vector2(0,-48),Vector2(-104,-50)]),Vector2(0,-59),Color("a28d64"),Palette.PAPER,2)
+	_add(parts,yoke.build_mesh(),Vector2.ZERO,0.0,&"body")
+	for side in [-1.0,1.0]:
+		var bell := Batch.new()
+		bell.draw_line(Vector2(0,-53),Vector2(0,-30),Palette.GOLD,3.0)
+		_folded(bell,PackedVector2Array([Vector2(-23,-30),Vector2(23,-30),Vector2(31,17),Vector2(52,47),Vector2(43,65),Vector2(-43,65),Vector2(-52,47),Vector2(-31,17)]),Vector2(0,18),Color("c2a97a") if side<0.0 else Color("a9b2a3"),Palette.PAPER,2)
+		bell.draw_colored_polygon(PackedVector2Array([Vector2(-34,45),Vector2(34,45),Vector2(26,59),Vector2(-26,59)]),SHADOW)
+		bell.draw_line(Vector2(-32,36),Vector2(32,36),Palette.GOLD,2.0)
+		for index in 3:
+			var x := float(index-1)*15.0
+			bell.draw_line(Vector2(x,-11),Vector2(x,13),Color(Palette.INK,0.48),2.0)
+		_add(parts,bell.build_mesh(),Vector2(side*106,10),0.0,&"bell",side,0 if side<0.0 else 1)
+		_add(parts,_lantern(Vector2(9,21),Palette.GOLD),Vector2(side*106,82),0.0,&"tail",side,1)
+	var core := Batch.new()
+	_folded(core,PackedVector2Array([Vector2(0,-54),Vector2(37,-31),Vector2(47,15),Vector2(25,45),Vector2(0,70),Vector2(-25,45),Vector2(-47,15),Vector2(-37,-31)]),Vector2(0,3),Color("aea382"),Palette.GOLD,2)
+	core.draw_colored_polygon(PackedVector2Array([Vector2(0,-34),Vector2(26,-14),Vector2(25,19),Vector2(0,43),Vector2(-25,19),Vector2(-26,-14)]),SHADOW)
+	core.draw_line(Vector2(-17,-10),Vector2(17,-10),Palette.GOLD,2.0)
+	_add(parts,core.build_mesh(),Vector2.ZERO,0.0,&"body")
+	_add(parts,_lantern(Vector2(12,24),Palette.GOLD),Vector2(0,13),0.0,&"core")
 
 
 static func _lantern(half_size: Vector2, light: Color) -> ArrayMesh:

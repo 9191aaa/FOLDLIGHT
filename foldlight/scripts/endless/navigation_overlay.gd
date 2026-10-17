@@ -88,7 +88,7 @@ class MapSurface extends Control:
 		title_label.add_theme_font_size_override("font_size", 32 if mobile else 20)
 		title_label.position = Vector2(14, 7)
 		title_label.size = Vector2(maxf(1, size.x - 28), 44 if mobile else 30)
-		footer.text = "战斗继续 · 青开 / 金警 / 红关" if mobile else "战斗继续 · 青色开放 / 金色预警 / 珊瑚关闭"
+		footer.text = "战斗继续 · 青道免毒潮，仍防轰炸" if mobile else "战斗继续 · 青色航道不受毒潮影响 · 橙色十字仍会轰炸"
 		footer.add_theme_font_size_override("font_size", 32 if mobile else 20)
 		footer.position = Vector2(18, size.y - 44)
 		footer.size = Vector2(maxf(1, size.x - 36), 40)
@@ -166,14 +166,46 @@ class MapSurface extends Control:
 		var camera: Rect2 = snapshot.get("camera_rect", Rect2())
 		if camera.has_area(): canvas.draw_rect(project_rect(camera).intersection(chart), Color(Palette.PAPER, 0.50), false, 1.0)
 		var objective: Dictionary = snapshot.get("objective", {})
-		for target: Dictionary in objective.get("targets", []):
+		var escort := StringName(objective.get("kind", &"")) == &"escort"
+		if escort and bool(objective.get("target_active", false)):
+			var route: PackedVector2Array = objective.get("escort_route", PackedVector2Array())
+			var projected := PackedVector2Array()
+			for point in route: projected.append(project(point))
+			if projected.size() >= 2: canvas.draw_polyline(projected, Color(Palette.GOLD,0.45), 2, true)
+			var boat := project(objective.get("target_position", bounds.get_center()))
+			var direction: Vector2 = objective.get("escort_direction", Vector2.RIGHT)
+			if direction.length_squared() < 0.001: direction = Vector2.RIGHT
+			var side := direction.orthogonal()
+			canvas.draw_colored_polygon(PackedVector2Array([boat + direction*13,boat - direction*9 + side*8,boat - direction*4,boat-direction*9-side*8]),Palette.GOLD)
+			var destination := project(objective.get("escort_destination", objective.get("destination_position", bounds.get_center())))
+			canvas.draw_rect(Rect2(destination-Vector2(7,7),Vector2(14,14)),Palette.FOLD,false,2)
+		for target: Dictionary in ([] if escort else objective.get("targets", [])):
 			if bool(target.get("active", false)) or bool(target.get("completed", false)):
 				var point := project(target.get("position", bounds.get_center()))
 				canvas.draw_circle(point, 5, Palette.MUTED if bool(target.get("completed", false)) else Palette.GOLD)
-		if bool(objective.get("target_active", false)):
+		if not escort and bool(objective.get("target_active", false)):
 			var point := project(objective.get("target_position", bounds.get_center()))
 			var diamond := PackedVector2Array([point + Vector2(0, -10), point + Vector2(10, 0), point + Vector2(0, 10), point + Vector2(-10, 0), point + Vector2(0, -10)])
 			canvas.draw_polyline(diamond, Palette.GOLD, 3, true)
+		var bombardment: Dictionary = snapshot.get("bombardment", {})
+		if StringName(bombardment.get("state", &"rest")) in [&"warning", &"impact"]:
+			var color := Palette.GOLD if StringName(bombardment.get("state")) == &"warning" else Palette.DANGER
+			var zones: Array = bombardment.get("zones", [])
+			for index in mini(5, zones.size()):
+				var zone: Dictionary = zones[index]
+				var point := project(zone.get("position", bounds.get_center()))
+				var radius := maxf(3, float(zone.get("radius", 1)) * chart.size.x / bounds.size.x)
+				canvas.draw_circle(point,radius,Color(color,0.23))
+				canvas.draw_arc(point,radius,0,TAU,16,color,1.5,true)
+				canvas.draw_line(point-Vector2(5,0),point+Vector2(5,0),color,2,true)
+				canvas.draw_line(point-Vector2(0,5),point+Vector2(0,5),color,2,true)
+		var bosses: Array = snapshot.get("bosses", [])
+		for index in mini(3, bosses.size()):
+			var boss: Dictionary = bosses[index]
+			if bool(boss.get("defeated", false)) or float(boss.get("health",0)) <= 0: continue
+			var point := project(boss.get("position",bounds.get_center()))
+			canvas.draw_circle(point,12,Palette.INK)
+			canvas.draw_colored_polygon(PackedVector2Array([point+Vector2(-9,6),point+Vector2(-11,-6),point+Vector2(-4,-2),point+Vector2(0,-10),point+Vector2(4,-2),point+Vector2(11,-6),point+Vector2(9,6)]),Palette.DANGER)
 		var danger: Dictionary = snapshot.get("danger", {})
 		if StringName(danger.get("state", &"safe")) in [&"warning", &"closed"] and danger.get("safe_position") is Vector2:
 			var safe := project(danger["safe_position"])
@@ -202,6 +234,7 @@ var _indicator_point := Vector2.ZERO
 var _indicator_direction := Vector2.ZERO
 var _indicator_color := Palette.GOLD
 var _indicator_kind: StringName = &""
+var _bottom_reserved := Rect2()
 
 func _ready() -> void:
 	name = "EndlessNavigation"
@@ -269,6 +302,15 @@ func set_objective_feedback(value: Dictionary) -> void:
 	_objective_feedback = value.duplicate(true)
 	if is_node_ready() and not _snapshot.is_empty(): _refresh_task()
 
+func set_bottom_reserved_rect(value: Rect2) -> void:
+	if _bottom_reserved == value: return
+	_bottom_reserved = value
+	if is_node_ready() and not _snapshot.is_empty():
+		if _expanded: _layout()
+		else:
+			_refresh_indicator()
+			queue_redraw()
+
 func set_hud_visible(enabled: bool) -> void:
 	_hud_visible = enabled
 	visible = enabled and not _snapshot.is_empty()
@@ -293,6 +335,8 @@ func get_navigation_snapshot() -> Dictionary:
 		"task_title": _task_title.text if _task_title else "", "progress_text": _task_progress.text if _task_progress else "",
 		"instruction_text": _task_instruction.text if _task_instruction else "", "objective_feedback": _objective_feedback.duplicate(true),
 		"time_text": _task_time.text if _task_time else "", "danger_text": _danger.text if _danger else "",
+		"bombardment": _snapshot.get("bombardment", {}).duplicate(true),
+		"escort": objective.duplicate(true) if StringName(objective.get("kind", &"")) == &"escort" else {},
 		"indicator_kind": _indicator_kind, "indicator_mode": _indicator_kind, "indicator_direction": _indicator_direction, "indicator_position": _indicator_point,
 		"player_map_position": _map.project(_snapshot.get("player_position", _map.bounds.position)) if _map and not _snapshot.is_empty() else Vector2.ZERO}
 
@@ -322,6 +366,9 @@ func _layout() -> void:
 		_task.size.x = minf(1150.0, get_viewport_rect().size.x - insets.z - 44.0 - _task.position.x)
 		_danger.position.x = _task.position.x
 		_danger.size.x = _task.size.x
+		if _expanded and _bottom_reserved.has_area() and _map.get_rect().intersects(_bottom_reserved):
+			_map.position.y = _safe_top + 270
+			_map.size.y = minf(380, maxf(160, _bottom_reserved.position.y - _map.position.y - 12))
 	else:
 		_map.position = Vector2(700, 240) if _expanded else Vector2(1510, 150)
 		_map.size = Vector2(1130, 600) if _expanded else Vector2(366, 245)
@@ -329,6 +376,9 @@ func _layout() -> void:
 		_task.size = Vector2(620, 194)
 		_danger.position = Vector2(680, 150)
 		_danger.size = Vector2(800, 76)
+		if _expanded and _bottom_reserved.has_area() and _map.get_rect().intersects(_bottom_reserved):
+			_map.position.y = _bottom_reserved.end.y + 16
+			_map.size.y = maxf(160, 840 - _map.position.y)
 	_danger.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_danger.max_lines_visible = 2
 	var width := _task.size.x
@@ -368,9 +418,12 @@ func _refresh_task() -> void:
 			&"capture_point": _task_instruction.text = "圈内驻守；每返4弹助燃2秒，最多6秒。"
 			&"defeat_captain": _task_instruction.text = "沿金色指引击破金冠队长；普通敌人不计。"
 			&"destroy_flag": _task_instruction.text = "靠近红金火力旗，用自动攻击或返光摧毁。"
-			&"relay_route": _task_instruction.text = "依次抵达三个信标，每站驻留 1.2 秒。"
-			&"capture_storm": _task_instruction.text = "青圈内按住收纳 12 发敌弹；圈外不计。"
-			&"clear_swarm": _task_instruction.text = "任意海域击破 10 名敌人；火力旗不计。"
+			&"relay_route": _task_instruction.text = "依次抵达 %d 个信标，每站驻留 %.1f 秒。" % [int(objective.get("required",3)),float(objective.get("waypoint_hold_required",1.2))]
+			&"capture_storm": _task_instruction.text = "青圈内按住收纳 %d 发敌弹；圈外不计。" % int(objective.get("required",12))
+			&"clear_swarm": _task_instruction.text = "任意海域击破 %d 名敌人；火力旗不计。" % int(objective.get("required",10))
+			&"escort":
+				var escort_state := StringName(objective.get("escort_state", &"waiting_player"))
+				_task_instruction.text = "靠近金色纸舟护送；离开时纸舟停留。" if escort_state == &"waiting_player" else "敌群令纸舟减速；清理附近敌人。" if escort_state == &"contested" else "伴随纸舟前进，送达青色终点。"
 	var progress := maxf(0, float(objective.get("progress", 0)))
 	var required := maxf(0.001, float(objective.get("required", 1)))
 	_task_progress.text = str(objective.get("progress_text", "%s / %s" % [String.num(progress, 1), String.num(required, 1)]))
@@ -380,8 +433,9 @@ func _refresh_task() -> void:
 		var compact := "%d/%d" % [int(progress), int(required)]
 		match StringName(objective.get("kind", &"")):
 			&"capture_point": compact = "%.1f/%.0f秒" % [progress, required]
-			&"relay_route": compact = "%d/%d站 · %.1f/1.2秒" % [int(progress), int(required), float(objective.get("waypoint_hold", 0.0))]
+			&"relay_route": compact = "%d/%d站 · %.1f/%.1f秒" % [int(progress), int(required), float(objective.get("waypoint_hold", 0.0)), float(objective.get("waypoint_hold_required",1.2))]
 			&"destroy_flag": compact = "%.0f/%.0f" % [progress, required]
+			&"escort": compact = "%d%%" % roundi(clampf(progress / required,0,1)*100)
 		_task_title.text += "  " + compact
 	_task_bar.value = clampf(progress / required, 0, 1) * 100
 	if state in [&"failed", &"completed", &"intermission"]:
@@ -391,16 +445,20 @@ func _refresh_task() -> void:
 		_task_instruction.text = ("本次无奖励 · " if state == &"failed" else "继续航行 · ") + next_hint
 		_task_progress.text = "无需操作，下一任务自动出现。"
 	var feedback_source := StringName(_objective_feedback.get("source", &""))
-	if feedback_source in [&"mission", &"kill_level"]:
+	if feedback_source in [&"mission", &"kill_level", &"boss"]:
 		var mission := feedback_source == &"mission"
+		var boss := feedback_source == &"boss"
 		_task_title.text = "任务完成 · %s" % str(_objective_feedback.get("title", objective.get("title", ""))) if mission else "击破升级 · Lv.%d" % maxi(1, int(_objective_feedback.get("level", 1)))
+		if boss: _task_title.text = "首领已击破 · 领取战利品"
 		_task_title.add_theme_color_override("font_color", Palette.FOLD if mission else Palette.GOLD)
-		_task_time.text = "待领奖" if mission else "待强化"
+		_task_time.text = "待领奖" if mission or boss else "待强化"
 		_task_instruction.text = "任务补给即将展开" if mission else "成长奖励即将展开"
+		if boss: _task_instruction.text = "首领战利品即将展开"
 		var heal_hint := REWARD_FEEDBACK.heal_on_claim(_objective_feedback)
 		if not heal_hint.is_empty(): _task_instruction.text += " · " + heal_hint
 		_task_progress.text = "选择一项任务奖励，继续航行。" if mission else "当前任务保留，选择强化后继续。"
-		if mission: _task_bar.value = 100.0
+		if boss: _task_progress.text = "三选一领取战利品；当前任务保留。"
+		if mission or boss: _task_bar.value = 100.0
 	var danger: Dictionary = _snapshot.get("danger", {})
 	var danger_state := StringName(danger.get("state", &"safe"))
 	var global_warning := false
@@ -412,6 +470,12 @@ func _refresh_task() -> void:
 	elif danger_state == &"warning": fallback = "此处 %d 秒后关闭 · 沿青色方向撤离" % ceili(maxf(0, float(danger.get("seconds_remaining", 0))))
 	_danger.text = str(danger.get("message", fallback))
 	_danger.add_theme_color_override("font_color", Palette.DANGER if danger_state == &"closed" else Palette.GOLD)
+	var bombardment: Dictionary = _snapshot.get("bombardment", {})
+	var bombardment_state := StringName(bombardment.get("state", &"rest"))
+	if bombardment_state in [&"warning", &"impact"]:
+		var alert := "轰炸 %.1f秒 · 离开橙色十字落点" % maxf(0,float(bombardment.get("warning_remaining",0))) if bombardment_state == &"warning" else "轰炸落下 · 避开橙色十字区域"
+		_danger.text = _danger.text + "\n" + alert if _danger.visible else alert
+		_danger.visible = true
 
 func _refresh_indicator() -> void:
 	_indicator_kind = &""
@@ -441,9 +505,14 @@ func _refresh_indicator() -> void:
 	var extent := Vector2(250, 100) if _mobile else Vector2(650, 270)
 	var factor := minf(extent.x / maxf(absf(_indicator_direction.x), 0.001), extent.y / maxf(absf(_indicator_direction.y), 0.001))
 	_indicator_point = center + _indicator_direction * factor
+	# Late multi-boss bars use the empty space between the thumb controls. The
+	# guidance remains above that rail, without changing its world direction.
+	if _mobile and _bottom_reserved.has_area():
+		_indicator_point.y = minf(_indicator_point.y, _bottom_reserved.position.y - 90)
 	# The adapter may provide the first safe-path waypoint around a wall, rather
 	# than the final refuge. Describe that direction without promising immunity.
-	_indicator_text.text = "%s · 距离 %d" % ["撤离航点" if _indicator_kind == &"safe" else "任务目标", roundi(delta.length())]
+	var target_title := "护送纸舟" if StringName(objective.get("kind", &"")) == &"escort" else "任务目标"
+	_indicator_text.text = "%s · 距离 %d" % ["撤离航点" if _indicator_kind == &"safe" else target_title, roundi(delta.length())]
 	_indicator_text.position = _indicator_point + Vector2(-160, 34)
 	if _mobile: _indicator_text.position.x = clampf(_indicator_text.position.x, 600, 1000)
 	_indicator_text.size = Vector2(320, 44)

@@ -496,4 +496,6 @@ func get_objective_marker_snapshot() -> Dictionary:
 	var radius := 94.0
 	if kind in [&"capture_point", &"capture_storm", &"relay_route"]:
 		radius = maxf(1.0, float(_active_objective.get("capture_radius", 170.0)))
+	elif kind == &"escort":
+		radius = maxf(1.0, float(_active_objective.get("escort_radius", 280.0)))
 	return {"position": Vector2(_active_objective.get("target_position", Vector2.ZERO)), "radius": radius, "color": PaperArt.FOLD if kind == &"capture_storm" else PaperArt.GOLD}

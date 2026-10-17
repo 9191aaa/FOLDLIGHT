@@ -7,7 +7,7 @@ signal attack_ready(pattern_id: StringName, telegraph_duration: float)
 signal stagger_started(duration: float)
 signal stagger_ended
 
-enum State { INTRO, TELEGRAPH, RECOVERY, STAGGERED, DEFEATED }
+enum State { INTRO, TELEGRAPH, RECOVERY, STAGGERED, DEFEATED, ATTACK }
 
 var state: State = State.INTRO
 var phase_index: int = 0
@@ -27,16 +27,16 @@ var _state_duration: float = 1.35
 var _transition_remaining: float = 0.0
 
 
-func configure(new_definition: FoldlightRogueBossDefinition) -> void:
+func configure(new_definition: FoldlightRogueBossDefinition, intro_delay: float = 0.0) -> void:
 	definition = new_definition
 	state = State.INTRO
 	phase_index = 0
 	current_pattern = &""
-	_remaining = 1.35
+	_remaining = 1.35 + clampf(intro_delay, 0.0, 2.0)
 	_attack_cursor = 0
 	_last_telegraph_duration = 0.9
 	_pending_phase = -1
-	_state_duration = 1.35
+	_state_duration = _remaining
 	_transition_remaining = 0.0
 
 
@@ -52,9 +52,16 @@ func advance_simulation(delta: float, health_ratio: float) -> void:
 		State.INTRO, State.RECOVERY:
 			_begin_telegraph()
 		State.TELEGRAPH:
+			var active_seconds := definition.get_active_seconds(current_pattern)
+			# Enter the active state before notifying the actor; a synchronous
+			# stagger/defeat callback must not be overwritten after the signal.
+			state = State.ATTACK if active_seconds > 0.0 else State.RECOVERY
+			_remaining = active_seconds if active_seconds > 0.0 else _recovery_seconds()
+			_state_duration = _remaining
 			attack_ready.emit(current_pattern, _last_telegraph_duration)
+		State.ATTACK:
 			state = State.RECOVERY
-			_remaining = float(RECOVERY_SECONDS[mini(phase_index, 2)])
+			_remaining = _recovery_seconds()
 			_state_duration = _remaining
 		State.STAGGERED:
 			stagger_ended.emit()
@@ -62,7 +69,7 @@ func advance_simulation(delta: float, health_ratio: float) -> void:
 				_apply_phase(_pending_phase)
 			else:
 				state = State.RECOVERY
-				_remaining = float(RECOVERY_SECONDS[mini(phase_index, 2)])
+				_remaining = _recovery_seconds()
 				_state_duration = _remaining
 
 
@@ -132,9 +139,15 @@ func _begin_telegraph() -> void:
 	current_pattern = definition.pattern_ids[pattern_index]
 	_attack_cursor += 1
 	_last_telegraph_duration = float(TELEGRAPH_SECONDS[mini(phase_index, 2)])
+	if definition.telegraph_seconds > 0.0:
+		_last_telegraph_duration = definition.telegraph_seconds
 	if current_pattern in [&"black_lane", &"margin_cut", &"unreflectable_cut", &"shrinking_frame"]:
 		_last_telegraph_duration += BLACK_GOLD_WARNING_BONUS
 	state = State.TELEGRAPH
 	_remaining = _last_telegraph_duration
 	_state_duration = _remaining
 	telegraph_started.emit(current_pattern, _last_telegraph_duration)
+
+
+func _recovery_seconds() -> float:
+	return definition.recovery_seconds if definition.recovery_seconds > 0.0 else float(RECOVERY_SECONDS[mini(phase_index, 2)])

@@ -9,6 +9,11 @@ extends FoldlightRogueContentDefinition
 @export_range(0.1, 1.0, 0.05) var return_damage_outside_stagger: float = 0.25
 @export_range(120.0, 600.0, 1.0) var target_duration: float = 240.0
 @export var pattern_ids: Array[StringName] = []
+@export var region_id: StringName = &""
+## Zero keeps the original three bosses' authored phase timings unchanged.
+@export_range(0.0, 3.0, 0.05) var telegraph_seconds: float = 0.0
+@export_range(0.0, 3.0, 0.05) var recovery_seconds: float = 0.0
+@export var active_pattern_seconds: Dictionary = {}
 
 
 func validation_errors() -> Array[String]:
@@ -21,4 +26,11 @@ func validation_errors() -> Array[String]:
 		errors.append("boss %s needs an arena rule" % content_id)
 	if pattern_ids.is_empty():
 		errors.append("boss %s needs attack patterns" % content_id)
+	for pattern: Variant in active_pattern_seconds:
+		if not pattern_ids.has(StringName(pattern)) or not is_finite(float(active_pattern_seconds[pattern])) or float(active_pattern_seconds[pattern]) <= 0.0 or float(active_pattern_seconds[pattern]) > 2.0:
+			errors.append("boss %s has invalid active pattern timing" % content_id)
 	return errors
+
+
+func get_active_seconds(pattern_id: StringName) -> float:
+	return clampf(float(active_pattern_seconds.get(pattern_id, 0.0)), 0.0, 2.0)

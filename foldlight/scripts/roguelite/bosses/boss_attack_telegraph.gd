@@ -10,6 +10,9 @@ var unreflectable: bool = false
 var spread_radians: float = 0.0
 var zone_radius: float = 0.0
 var _simulation_active: bool = true
+var attack_lanes: Array = []
+var safe_gaps: Array = []
+var hold_seconds: float = 0.0
 
 
 func configure(snapshot: Dictionary) -> void:
@@ -18,9 +21,14 @@ func configure(snapshot: Dictionary) -> void:
 	target_position = Vector2(snapshot.get("target_position", global_position + Vector2.DOWN))
 	pattern_id = StringName(snapshot.get("pattern_id", &""))
 	duration = maxf(0.25, float(snapshot.get("duration", 0.8)))
-	remaining = duration
+	hold_seconds = clampf(float(snapshot.get("hold_seconds", 0.0)), 0.0, 2.0)
+	remaining = duration + hold_seconds
+	attack_lanes = snapshot.get("attack_lanes", []).duplicate(true)
+	safe_gaps = snapshot.get("safe_gaps", []).duplicate(true)
 	accent = Color(snapshot.get("accent", accent))
 	unreflectable = pattern_id in [&"black_lane", &"margin_cut", &"unreflectable_cut"]
+	if not attack_lanes.is_empty():
+		unreflectable = attack_lanes.all(func(lane: Dictionary) -> bool: return not bool(lane.get("reflectable", true)))
 	spread_radians = maxf(0.0, float(snapshot.get("spread_radians", 0.0)))
 	zone_radius = maxf(0.0, float(snapshot.get("zone_radius", 0.0)))
 	z_as_relative = false
@@ -55,16 +63,22 @@ func get_visual_contract() -> Dictionary:
 		"warned_spread": spread_radians,
 		"zone_radius": zone_radius,
 		"mixed_unreflectable": pattern_id == &"shrinking_frame",
-		"authored": pattern_id in [&"judgement_petals", &"unreflectable_cut", &"shrinking_frame"],
+		"authored": not attack_lanes.is_empty() or pattern_id in [&"judgement_petals", &"unreflectable_cut", &"shrinking_frame"],
+		"attack_lanes": attack_lanes.duplicate(true),
+		"safe_gaps": safe_gaps.duplicate(true),
+		"hold_seconds": hold_seconds,
 	}
 
 
 func _draw() -> void:
-	var ratio := clampf(remaining / duration, 0.0, 1.0)
+	var ratio := clampf((remaining - hold_seconds) / duration, 0.0, 1.0)
 	var warning_color := Color(1.0, 0.66, 0.20) if unreflectable else accent
 	var pulse := 0.62 + sin((duration - remaining) * 18.0) * 0.16
 	draw_circle(Vector2.ZERO, 78.0 + ratio * 34.0, Color(warning_color, 0.04 + (1.0 - ratio) * 0.08))
 	draw_arc(Vector2.ZERO, 80.0 + ratio * 34.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - ratio), 56, Color(warning_color, 0.84), 5.0, true)
+	if not attack_lanes.is_empty():
+		_draw_authored_lanes(ratio)
+		return
 	if spread_radians > 0.0:
 		_draw_black_gold_spread(pulse)
 	if zone_radius > 0.0:
@@ -135,6 +149,41 @@ func _draw() -> void:
 				for petal in 6:
 					var angle := float(petal) * TAU / 6.0
 					draw_line(Vector2.from_angle(angle) * 48.0, Vector2.from_angle(angle) * (92.0 + (1.0 - ratio) * 24.0), Color(warning_color, 0.36), 3.0, true)
+
+
+func _draw_authored_lanes(ratio: float) -> void:
+	# Every segment comes from the same immutable plan as its actual projectile.
+	# Mint openings and gold forbidden lanes remain readable with motion disabled.
+	for lane: Dictionary in attack_lanes:
+		var start: Vector2 = Vector2(lane["origin"]) - global_position
+		var end: Vector2 = Vector2(lane["end"]) - global_position
+		var width := float(lane.get("width", 22.0))
+		var color := accent if bool(lane.get("reflectable", true)) else Color(1.0, 0.66, 0.2)
+		var dash := bool(lane.get("dash", false))
+		draw_line(start, end, Color(0.03, 0.015, 0.03, 0.35 if dash else 0.16), width, true)
+		var side := start.direction_to(end).orthogonal() * width * 0.5
+		if dash:
+			draw_dashed_line(start + side, end + side, Color(color, 0.82), 2.5, 22.0, true)
+			draw_dashed_line(start - side, end - side, Color(color, 0.82), 2.5, 22.0, true)
+			draw_arc(end, width * 0.5, 0.0, TAU, 24, Color(color, 0.65), 2.0, true)
+		draw_dashed_line(start, end, Color(color, 0.30 + (1.0 - ratio) * 0.30), 2.0, 24.0, true)
+	for gap: Dictionary in safe_gaps:
+		var start: Vector2 = Vector2(gap["origin"]) - global_position
+		var direction: Vector2 = gap["direction"]
+		var reach := float(gap["reach"])
+		var color := Color(0.47, 0.94, 0.82, 0.62)
+		if gap.has("half_angle"):
+			var half_angle := float(gap["half_angle"])
+			draw_arc(start, 118.0, direction.angle() - half_angle, direction.angle() + half_angle, 20, color, 4.0, true)
+			for side in [-1.0, 1.0]:
+				draw_dashed_line(start + direction.rotated(side * half_angle) * 90.0, start + direction.rotated(side * half_angle) * reach, Color(color, 0.36), 2.0, 18.0, true)
+		else:
+			var side := direction.orthogonal() * float(gap["width"]) * 0.5
+			for sign_value in [-1.0, 1.0]:
+				draw_dashed_line(start + side * sign_value, start + side * sign_value + direction * reach, Color(color, 0.38), 2.0, 24.0, true)
+		for index in 3:
+			var mark := start + direction * (130.0 + float(index) * 105.0)
+			draw_polyline(PackedVector2Array([mark - direction * 11.0 - direction.orthogonal() * 8.0, mark, mark - direction * 11.0 + direction.orthogonal() * 8.0]), color, 2.0, true)
 
 
 func _draw_black_gold_spread(pulse: float) -> void:

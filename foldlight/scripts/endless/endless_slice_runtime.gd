@@ -9,7 +9,7 @@ extends Node2D
 signal title_requested
 
 const DASH_COOLDOWN := 2.0
-const MAX_LIVE_ENEMIES := 36
+const MAX_LIVE_ENEMIES := 48
 const SPAWN_WARNING_SECONDS := 0.65
 const SPAWNS_PER_STEP := 2
 const DISTANT_RETIRE_DISTANCE := 1800.0
@@ -57,6 +57,10 @@ var _defeat_serial: int = 0
 var _pending_spawns: Array[Dictionary] = []
 var _distant_enemy_age: Dictionary = {}
 var _population_clock: float = 0.0
+var _boss_director := FoldlightEndlessBossDirector.new()
+var _boss_entries: Array[Dictionary] = []
+var _boss_placement_retry: float = 0.0
+var _bombardment: FoldlightEndlessBombardment
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
@@ -71,6 +75,9 @@ var _population_clock: float = 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_bombardment = FoldlightEndlessBombardment.new()
+	_bombardment.name = "BombardmentLandingSites"
+	add_child(_bombardment)
 	presentation.show_hud()
 	_navigation = preload("res://scripts/endless/navigation_overlay.gd").new()
 	presentation.attach_navigation_overlay(_navigation)
@@ -193,6 +200,8 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	_distant_enemy_age.clear()
 	_defeat_serial = 0
 	_population_clock = 0.0
+	_boss_director.reset(seed)
+	_boss_placement_retry = 0.0
 	if controller.active:
 		controller.exit_mode(&"restart")
 	world.deactivate()
@@ -239,6 +248,8 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	presentation.show_hud()
 	_transitioning_to_title = false
 	var snapshot := controller.enter_mode(seed, player)
+	_bombardment.configure(controller.map_definition, controller.map_runtime, seed)
+	combat_runtime.directed_spawn_validator = _minion_position_is_safe
 	player.weapon_mount.set_weapon_levels(controller.weapon_levels)
 	player.active_item_slot.restore_collection(snapshot)
 	_refresh_active_inventory()
@@ -253,11 +264,15 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 func _physics_process(delta: float) -> void:
 	if run_ended or not _modal_kind.is_empty() or not controller.active:
 		return
+	if _combat_host_suspended():
+		return
 	_population_clock -= delta
 	if _population_clock <= 0.0:
 		_retire_distant_enemies(0.5)
+		_update_boss_navigation()
 		_population_clock = 0.5
 	_report_population()
+	_report_escort_pressure()
 	controller.advance_simulation(delta, player.global_position)
 	# Completing a mission synchronously opens a reward modal. Do not apply
 	# environmental damage after that modal has suspended combat this frame.
@@ -284,6 +299,7 @@ func _process(delta: float) -> void:
 	_try_present_pending_reward()
 	_advance_reward_completion(delta)
 	_advance_spawn_queue(delta)
+	_advance_encounters(delta)
 
 
 func _notification(what: int) -> void:
@@ -291,6 +307,13 @@ func _notification(what: int) -> void:
 		_application_suspended = true
 	elif what in [NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_APPLICATION_RESUMED]:
 		_application_suspended = false
+
+
+func _combat_host_suspended() -> bool:
+	# A race's rotate prompt or host dialog cancels touch input, not combat.
+	# Keep its score clock, reinforcements and hazards advancing together while
+	# the engine is ticking. Actual reward/waiting/result modals own their pause.
+	return _web_race_bridge == null and (_application_suspended or (_touch_controls != null and bool(_touch_controls.call("is_host_suspended"))))
 
 
 func _advance_reward_completion(delta: float) -> void:
@@ -438,7 +461,7 @@ func _complete_title_transition() -> void:
 
 
 func _on_enemy_wave_requested(request: Dictionary) -> void:
-	var limit := int(controller.evolution.get_enemy_snapshot().get("population_limit", MAX_LIVE_ENEMIES))
+	var limit := _effective_population_limit()
 	var open_slots := maxi(0, mini(MAX_LIVE_ENEMIES, limit) - combat_runtime.enemies.size() - _pending_spawns.size())
 	if open_slots <= 0:
 		return
@@ -538,6 +561,9 @@ func _clear_pending_spawns() -> void:
 	for entry in _pending_spawns:
 		_release_spawn_marker(entry)
 	_pending_spawns.clear()
+	_clear_boss_warning()
+	if is_instance_valid(_bombardment):
+		_bombardment.cancel()
 
 
 func _release_spawn_marker(entry: Dictionary) -> void:
@@ -550,7 +576,7 @@ func _release_spawn_marker(entry: Dictionary) -> void:
 func _advance_spawn_queue(delta: float) -> void:
 	if run_ended or not _modal_kind.is_empty() or not combat_runtime.active or not is_finite(delta) or delta <= 0.0:
 		return
-	if _application_suspended or (_touch_controls != null and bool(_touch_controls.call("is_host_suspended"))):
+	if _combat_host_suspended():
 		return
 	# Advance once per rendered frame, so catch-up physics and a background
 	# return cannot consume an entire warning before the player sees it.
@@ -582,6 +608,203 @@ func _advance_spawn_queue(delta: float) -> void:
 				controller.confirm_captain_spawned(StringName(entry.get("captain_id", &"")))
 
 
+func _boss_snapshots() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for actor in combat_runtime.enemies:
+		if actor is FoldlightRogueBossActor and is_instance_valid(actor) and not actor.is_queued_for_deletion() and actor.health > 0.0:
+			result.append(actor.get_combat_snapshot())
+	return result
+
+
+func _effective_population_limit() -> int:
+	var limit := int(controller.evolution.get_enemy_snapshot().get("population_limit", MAX_LIVE_ENEMIES))
+	var boss_count := maxi(_boss_snapshots().size(), _boss_entries.size())
+	# Bosses replace some ordinary pressure. They do not bypass the same frame
+	# budget by adding three full waves on top of a crowded battlefield.
+	return maxi(16, mini(MAX_LIVE_ENEMIES, limit) - boss_count * 8)
+
+
+func _minion_position_is_safe(entry: Dictionary) -> bool:
+	var point := Vector2(entry.get("spawn_position", Vector2.INF))
+	return point.is_finite() and point.distance_to(player.global_position) >= 180.0 and not controller.map_runtime.is_point_blocked(point, 40.0) and not controller.zones.is_point_reserved(point, 40.0)
+
+
+func _report_escort_pressure() -> void:
+	var objective := controller.objectives.get_snapshot()
+	if StringName(objective.get("kind", &"")) != &"escort" or not bool(objective.get("target_active", false)):
+		return
+	var point := Vector2(objective.get("escort_position", Vector2.INF))
+	var count := 0
+	for actor in combat_runtime.enemies:
+		if is_instance_valid(actor) and not actor.is_queued_for_deletion() and float(actor.get("health")) > 0.0 and actor.global_position.distance_squared_to(point) < 180.0 * 180.0:
+			count += 1
+	controller.report_escort_pressure(count)
+
+
+func _clear_boss_warning() -> void:
+	for entry in _boss_entries:
+		_release_spawn_marker(entry)
+	_boss_entries.clear()
+
+
+func _plan_boss_positions() -> bool:
+	_clear_boss_warning()
+	var occupied := PackedVector2Array()
+	var wave := int(_boss_director.get_snapshot().wave_index)
+	for boss_id in _boss_director.planned_boss_ids():
+		var chosen := Vector2.INF
+		for ring in 3:
+			for index in 32:
+				var angle := TAU * float(posmod(controller.run_seed + wave * 7 + index, 32)) / 32.0
+				var candidate := player.global_position + Vector2.from_angle(angle) * (760.0 + 220.0 * ring)
+				if controller.map_runtime.is_point_blocked(candidate, 96.0) or controller.zones.is_point_reserved(candidate, 96.0):
+					continue
+				var crowded := false
+				for other in occupied:
+					crowded = crowded or other.distance_squared_to(candidate) < 480.0 * 480.0
+				if crowded or controller.map_runtime.find_cover_route(candidate, _boss_navigation_goal(), 90.0).is_empty():
+					continue
+				chosen = candidate
+				break
+			if chosen.is_finite():
+				break
+		if not chosen.is_finite():
+			_clear_boss_warning()
+			return false
+		occupied.append(chosen)
+		var scale := minf(2.5, 0.72 + 0.12 * float(wave - 1))
+		if _boss_director.planned_boss_ids().size() > 1:
+			scale *= 0.82
+		var entry := {
+			"boss_id": boss_id, "is_boss": true, "boss_wave": wave, "threat_cost": 12,
+			"spawn_position": chosen, "position": chosen, "role": FoldlightRogueEnemyDefinition.EnemyRole.BOSS,
+			"boss_options": {"health_scale": scale, "endless_roam": true, "arena_pressure": false,
+				"intro_delay": float(occupied.size() - 1) * 0.65,
+				"local_arena": Rect2(chosen - Vector2(900, 700), Vector2(1800, 1400)).intersection(controller.map_definition.bounds)},
+		}
+		var marker := FoldlightSpawnTelegraph.new()
+		world.room_runtime.add_child(marker)
+		marker.configure(entry, FoldlightEndlessBossDirector.WARNING_SECONDS)
+		marker.scale = Vector2(2.0, 2.0)
+		marker.use_external_clock()
+		entry["marker"] = weakref(marker)
+		_boss_entries.append(entry)
+	return true
+
+
+func _advance_encounters(delta: float) -> void:
+	if run_ended or not _modal_kind.is_empty() or not controller.active or not combat_runtime.active or _combat_host_suspended():
+		return
+	if get_tree().paused or not is_finite(delta) or delta <= 0.0:
+		return
+	_advance_boss_encounter(delta)
+	if run_ended or not _modal_kind.is_empty():
+		return
+	var objective := controller.objectives.get_snapshot()
+	var impacts := _bombardment.advance(delta, controller.evolution.survival_seconds, player.global_position, objective.get("protected_points", PackedVector2Array()), _boss_snapshots().size())
+	for impact in impacts:
+		if player.global_position.distance_to(Vector2(impact.position)) <= float(impact.radius) + player.get_hit_radius():
+			combat_runtime._try_hit_player(player.global_position - Vector2(impact.position))
+			break
+
+
+func _advance_boss_encounter(delta: float) -> void:
+	_boss_placement_retry = maxf(0.0, _boss_placement_retry - minf(delta, 0.1))
+	if _boss_placement_retry > 0.0:
+		return
+	var prior := StringName(_boss_director.get_snapshot().state)
+	var level := int(controller.evolution.get_experience_snapshot().get("level", 1))
+	var boss_state := _boss_director.advance(delta, level, controller.evolution.survival_seconds)
+	if StringName(boss_state.state) == &"warning" and (prior != &"warning" or _boss_entries.is_empty()):
+		if not _plan_boss_positions():
+			_boss_director.retry_warning()
+			_boss_placement_retry = 1.0
+		else:
+			presentation.show_notice(str(boss_state.title), "落点已标记 · 收纳弹幕，趁破绽返光")
+	for entry in _boss_entries:
+		var marker: Node = (entry.marker as WeakRef).get_ref()
+		if is_instance_valid(marker):
+			marker.set_warning_remaining(float(boss_state.warning_remaining))
+	if StringName(boss_state.state) == &"ready":
+		var positions_valid := _boss_entries.size() == _boss_director.planned_boss_ids().size()
+		for entry in _boss_entries:
+			var point := Vector2(entry.spawn_position)
+			positions_valid = positions_valid and point.distance_to(player.global_position) >= 300.0 and not controller.zones.is_point_reserved(point, 96.0)
+		if not positions_valid:
+			_boss_director.retry_warning()
+			if not _plan_boss_positions():
+				_boss_placement_retry = 1.0
+		else:
+			# Reserve real actor slots. Only surplus distant ordinary reinforcements
+			# are retired; captains and existing bosses are never removed here.
+			for entry in _pending_spawns:
+				_release_spawn_marker(entry)
+			_pending_spawns.clear()
+			var candidates := combat_runtime.enemies.duplicate()
+			var live_threat := 0
+			for actor in candidates:
+				live_threat += _actor_threat(actor)
+			var threat_limit := int(controller.evolution.get_enemy_snapshot().get("threat_limit", 104))
+			var boss_threat := _boss_entries.size() * 12
+			candidates.sort_custom(func(a: Node2D, b: Node2D) -> bool: return a.global_position.distance_squared_to(player.global_position) > b.global_position.distance_squared_to(player.global_position))
+			for actor in candidates:
+				if combat_runtime.enemies.size() + _boss_entries.size() <= _effective_population_limit() and live_threat + boss_threat <= threat_limit:
+					break
+				var cost := _actor_threat(actor)
+				if combat_runtime.retire_directed_enemy(actor):
+					live_threat -= cost
+			if combat_runtime.enemies.size() + _boss_entries.size() <= _effective_population_limit() and live_threat + boss_threat <= threat_limit:
+				var entries: Array[Dictionary] = []
+				for entry in _boss_entries:
+					var source := entry.duplicate(true)
+					source.erase("marker")
+					entries.append(source)
+				var spawned := combat_runtime.spawn_directed_wave(entries)
+				var identities: Array[StringName] = []
+				for actor in spawned:
+					identities.append(StringName(actor.get("actor_id")))
+				if _boss_director.confirm_spawned(identities):
+					_clear_boss_warning()
+					_restore_survival_music()
+					_refresh_hud()
+				else:
+					for actor in spawned:
+						combat_runtime.enemies.erase(actor)
+						actor.queue_free()
+					_boss_director.retry_warning()
+					_boss_placement_retry = 1.0
+
+
+func _boss_navigation_goal() -> Vector2:
+	var point := player.global_position
+	if not controller.map_runtime.is_point_blocked(point, 90.0):
+		return point
+	for ring in 2:
+		for index in 12:
+			var candidate := point + Vector2.from_angle(TAU * index / 12.0) * (128.0 + ring * 96.0)
+			if not controller.map_runtime.is_point_blocked(candidate, 90.0):
+				return candidate
+	return point
+
+
+func _update_boss_navigation() -> void:
+	var goal := _boss_navigation_goal()
+	for actor in combat_runtime.enemies:
+		if not actor is FoldlightRogueBossActor or not is_instance_valid(actor) or actor.is_queued_for_deletion():
+			continue
+		var route := controller.map_runtime.find_cover_route(actor.global_position, goal, 90.0)
+		actor.set_navigation_target(route[0] if not route.is_empty() else actor.global_position)
+
+
+func _actor_threat(actor: Node2D) -> int:
+	if not is_instance_valid(actor) or actor.is_queued_for_deletion() or float(actor.get("health")) <= 0.0:
+		return 0
+	var definition: Variant = actor.get("definition")
+	var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+	var fallback := 12 if actor is FoldlightRogueBossActor else (int(definition.threat_cost) if definition != null else 1)
+	return 6 if bool(entry.get("is_captain", false)) else int(entry.get("threat_cost", fallback))
+
+
 func _report_population() -> void:
 	var alive := 0
 	var threat := 0
@@ -589,14 +812,13 @@ func _report_population() -> void:
 		if not is_instance_valid(actor) or actor.is_queued_for_deletion() or float(actor.get("health")) <= 0.0:
 			continue
 		alive += 1
-		var definition: Variant = actor.get("definition")
-		var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
-		var fallback := int(definition.threat_cost) if definition != null else 1
-		threat += 6 if bool(entry.get("is_captain", false)) else int(entry.get("threat_cost", fallback))
+		threat += _actor_threat(actor)
 	var pending_threat := 0
 	for entry in _pending_spawns:
 		pending_threat += 6 if bool(entry.get("is_captain", false)) else int(entry.get("threat_cost", controller.THREAT_COSTS.get(StringName(entry.get("enemy_id", &"drifter")), 1)))
-	controller.report_population({"alive_count": alive, "pending_count": _pending_spawns.size(), "threat_total": threat, "pending_threat": pending_threat})
+	controller.report_population({"alive_count": alive, "pending_count": _pending_spawns.size() + _boss_entries.size(), "threat_total": threat, "pending_threat": pending_threat + _boss_entries.size() * 12})
+	combat_runtime.directed_spawn_allowance = maxi(0, _effective_population_limit() - alive - _pending_spawns.size() - _boss_entries.size())
+	combat_runtime.directed_threat_allowance = maxi(0, int(controller.evolution.get_enemy_snapshot().get("threat_limit", 104)) - threat - pending_threat - _boss_entries.size() * 12)
 
 
 func _retire_distant_enemies(delta: float) -> void:
@@ -604,6 +826,8 @@ func _retire_distant_enemies(delta: float) -> void:
 	var objective := controller.objectives.get_snapshot()
 	for actor: Node2D in combat_runtime.enemies.duplicate():
 		if not is_instance_valid(actor) or actor.is_queued_for_deletion():
+			continue
+		if actor is FoldlightRogueBossActor:
 			continue
 		var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
 		if bool(entry.get("is_captain", false)) or bool(entry.get("is_objective_target", false)) or (entry.has("objective_support") and StringName(entry["objective_support"]) == StringName(objective.get("id", &"")) and bool(objective.get("target_active", false))):
@@ -635,6 +859,10 @@ func _on_enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary) -> voi
 	report["defeat_serial"] = _defeat_serial
 	report["defeat_reason"] = &"player"
 	controller.report_enemy_defeated(report)
+	if bool(entry.get("is_boss", false)) and _boss_director.report_defeated(StringName(entry.get("actor_id", &"")), controller.evolution.survival_seconds):
+		var wave := int(_boss_director.get_snapshot().wave_index)
+		controller.queue_boss_reward(enemy_id, "首领遭遇 %d · 已击破" % wave, wave)
+		_restore_survival_music()
 	if _kill_shake_cooldown <= 0.0:
 		var shake := 0.34 if bool(entry.get("is_captain", false)) else 0.16
 		camera.add_trauma(shake * _feedback_motion_scale)
@@ -749,7 +977,8 @@ func _reward_card_choices() -> Array[Dictionary]:
 		var choice := option.duplicate(true)
 		choice["content_id"] = StringName(option.get("id", &""))
 		if StringName(option.get("choice_kind", &"")) not in [&"weapon", &"active"]:
-			choice["display_rarity"] = "%s · %s" % [str(option.get("lane_title", "成长")), "击破升级" if StringName(_reward_context.get("source", &"mission")) == &"kill_level" else "任务强化"]
+			var source := StringName(_reward_context.get("source", &"mission"))
+			choice["display_rarity"] = "%s · %s" % [str(option.get("lane_title", "成长")), "击破升级" if source == &"kill_level" else ("首领战利品" if source == &"boss" else "任务强化")]
 			choice["display_level"] = "刻印  Lv.%d · 本局累积" % int(option.get("next_level", 1))
 			choice["accent"] = FoldlightTheme.GOLD if StringName(option.get("lane_id", &"")) == &"sustain" else FoldlightTheme.FOLD
 		choices.append(choice)
@@ -884,7 +1113,7 @@ func _restore_survival_music() -> void:
 		&"ink_city": &"inverted_ink_city",
 		&"sun_court": &"nameless_sun_court",
 	}.get(controller.map_definition.region_style, controller.map_definition.region_style)
-	audio_director.set_music_context(&"endless", region, _survival_music_pressure())
+	audio_director.set_music_context(&"boss" if not _boss_snapshots().is_empty() else &"endless", region, _survival_music_pressure())
 	_music_sample_clock = 1.0
 
 
@@ -894,6 +1123,7 @@ func _survival_music_pressure() -> float:
 	pressure += minf(0.12, float(controller.wave_sequence) / 36.0 * 0.12)
 	pressure += minf(0.20, float(combat_runtime.enemies.size()) * 0.005)
 	pressure += minf(0.10, float(stage) * 0.015)
+	pressure += float(_boss_snapshots().size()) * 0.12
 	return clampf(pressure, 0.0, 0.96)
 
 
@@ -1047,16 +1277,24 @@ func _refresh_hud() -> void:
 	var enemy_state := controller.evolution.get_enemy_snapshot()
 	var player_state := controller.evolution.get_player_snapshot()
 	var objective := controller.objectives.get_snapshot()
+	var completion_title := "任务完成 · 奖励即将展开"
+	if StringName(_reward_context.get("source", &"")) == &"boss":
+		completion_title = "首领击破 · 战利品即将展开"
+	elif StringName(_reward_context.get("source", &"")) == &"kill_level":
+		completion_title = "击破升级 · 强化即将展开"
 	var context := {
 		"region_text": ("好友无尽" if _web_race_bridge != null else "无尽挑战") + " / " + controller.map_definition.title,
 		"voyage_text": "航行 %s  ·  击破 %d" % [_format_time(float(enemy_state.get("survival_seconds", 0.0))), controller.defeated_total],
-		"objective_title": "任务完成 · 奖励即将展开" if _modal_kind == &"objective_complete" else "%s  ·  %d 秒" % [str(objective.get("title", "任务准备中")), ceili(float(objective.get("time_remaining", 0.0)))],
+		"objective_title": completion_title if _modal_kind == &"objective_complete" else "%s  ·  %d 秒" % [str(objective.get("title", "任务准备中")), ceili(float(objective.get("time_remaining", 0.0)))],
 		"objective_detail": "航灯已响应，稍候选择本局强化。" if _modal_kind == &"objective_complete" else str(objective.get("instruction", "")),
 		"objective_progress": float(objective.get("progress_ratio", 0.0)),
 		"race": _web_race_bridge != null,
 		"endless_navigation": true,
 		"experience": controller.evolution.get_experience_snapshot(),
 		"objective_feedback": _reward_ui_metadata() if _modal_kind == &"objective_complete" else {},
+		"bosses": _boss_snapshots(),
+		"boss_director": _boss_director.get_snapshot(),
+		"bombardment": _bombardment.get_snapshot() if is_instance_valid(_bombardment) else {},
 	}
 	var pressure := "威胁 %d · 场上 %d\n收纳进化 %d" % [int(enemy_state.get("stage", 0)), combat_runtime.enemies.size(), int(player_state.get("stage", 0))]
 	presentation.update_hud(player, {}, {}, "无尽挑战", pressure, {}, context)
@@ -1082,7 +1320,7 @@ func get_navigation_snapshot() -> Dictionary:
 	var map := controller.map_definition
 	var zone_state := controller.zones.get_snapshot()
 	var state := "safe"
-	var message := "中央青色航道始终开放"
+	var message := "青色航道不受毒潮影响 · 橙色落点需躲避"
 	var remaining := float(zone_state.get("remaining", 0.0))
 	if controller.zones.is_point_closed(player.global_position):
 		state = "closed"
@@ -1109,6 +1347,9 @@ func get_navigation_snapshot() -> Dictionary:
 		"safe_corridors": zone_state.get("safe_corridors", []),
 		"refuges": zone_state.get("refuges", PackedVector2Array()),
 		"objective": controller.objectives.get_snapshot(),
+		"bosses": _boss_snapshots(),
+		"boss_director": _boss_director.get_snapshot(),
+		"bombardment": _bombardment.get_snapshot() if is_instance_valid(_bombardment) else {},
 		"danger": {"state": state, "message": message, "seconds_remaining": remaining, "safe_position": _safe_route_position},
 	}
 
@@ -1126,6 +1367,8 @@ func get_slice_snapshot() -> Dictionary:
 		"modal_kind": _modal_kind,
 		"combat_reuse": get_combat_reuse_contract(),
 		"navigation": get_navigation_snapshot(),
+		"boss_director": _boss_director.get_snapshot(),
+		"bosses": _boss_snapshots(),
 	}
 
 

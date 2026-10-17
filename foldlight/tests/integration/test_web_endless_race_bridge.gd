@@ -126,6 +126,8 @@ func _run() -> void:
 		ending_slice.queue_free()
 		ending_bridge.queue_free()
 		await process_frame
+	_test_host_suspend_clock()
+	await process_frame
 	_check(profile.profile == saved_profile, "race progression and results do not alter the existing profile")
 	var autoload_bridge := root.get_node("WebRaceBridge")
 	_check(autoload_bridge.configure_session(_config("autoload-entry")), "the actual autoload accepts one browser-style boot configuration")
@@ -156,6 +158,72 @@ func _test_config_validation() -> void:
 	bridge.queue_free()
 
 
+func _test_host_suspend_clock() -> void:
+	var fixture := _create_fixture("host-suspended")
+	var bridge: RecordingBridge = fixture.bridge
+	var slice: FoldlightEndlessSliceRuntime = fixture.slice
+	bridge.accept_page_state({"phase": "running", "mayStart": true})
+	slice.set_process(false)
+	slice.set_physics_process(false)
+	slice.player.set_physics_process(false)
+	slice.combat_runtime.set_physics_process(false)
+	slice.player.set_debug_invincible(true)
+	# Use the real host-state input and the real runtime clocks. Only transport
+	# is recorded; portrait suspension must not become an unreported race pause.
+	var touch := slice._touch_controls
+	var old_host: Dictionary = {}
+	for key: String in ["_host_suspended", "_host_layout", "_host_cancel_epoch", "_touch_mode", "_safe_insets"]:
+		old_host[key] = touch.get(key)
+	slice.controller.evolution.experience_level = 8
+	slice.controller.evolution.advance_survival(90.0)
+	slice.controller.objectives.rotation_index = 5
+	slice.controller.objectives._task_serial = 0
+	slice.controller.objectives._start_current_objective()
+	slice._advance_encounters(0.1)
+	_check(slice._boss_entries.size() == 1 and slice._bombardment.get_snapshot().state == &"warning" and not slice._pending_spawns.is_empty(), "host-suspension fixture contains real boss, bombardment and ordinary arrival warnings")
+	if slice._pending_spawns.is_empty():
+		slice.queue_free()
+		bridge.queue_free()
+		return
+	var before_time := slice.controller.evolution.survival_seconds
+	var before_spawn := float(slice._pending_spawns[0].remaining)
+	var before_boss := float(slice._boss_director.get_snapshot().warning_remaining)
+	var before_bomb := float(slice._bombardment.get_snapshot().warning_remaining)
+	touch.call("apply_host_state", {"layout": "mobile", "enabled": true, "suspended": true, "cancelEpoch": int(old_host._host_cancel_epoch) + 1})
+	_check(bool(touch.call("is_host_suspended")), "real mobile host state suspends touch input for the portrait prompt")
+	slice._physics_process(0.1)
+	slice._advance_spawn_queue(0.1)
+	slice._advance_encounters(0.1)
+	bridge._process(1.01)
+	_check(slice.controller.evolution.survival_seconds > before_time and not bridge.last_report.paused and bridge.last_report.survivalMs == slice.get_race_stats().survivalMs, "portrait race keeps real score time advancing with an unpaused heartbeat")
+	_check(float(slice._pending_spawns[0].remaining) < before_spawn, "portrait race cannot freeze ordinary reinforcement warnings")
+	_check(float(slice._boss_director.get_snapshot().warning_remaining) < before_boss and float(slice._bombardment.get_snapshot().warning_remaining) < before_bomb, "portrait race advances both real boss and bombardment warning clocks")
+	before_time = slice.controller.evolution.survival_seconds
+	before_spawn = float(slice._pending_spawns[0].remaining)
+	before_boss = float(slice._boss_director.get_snapshot().warning_remaining)
+	before_bomb = float(slice._bombardment.get_snapshot().warning_remaining)
+	slice._application_suspended = true
+	slice._physics_process(0.1)
+	slice._advance_spawn_queue(0.1)
+	slice._advance_encounters(0.1)
+	_check(slice.controller.evolution.survival_seconds > before_time and float(slice._pending_spawns[0].remaining) < before_spawn and float(slice._boss_director.get_snapshot().warning_remaining) < before_boss and float(slice._bombardment.get_snapshot().warning_remaining) < before_bomb, "a race focus notification cannot freeze scoring or danger while engine ticks continue")
+	slice._application_suspended = false
+	slice.controller._on_objective_completed({"title": "host reward", "completion_count": 1})
+	before_time = slice.controller.evolution.survival_seconds
+	var before_completion := slice._reward_completion_remaining
+	slice._physics_process(0.1)
+	slice._advance_spawn_queue(0.1)
+	slice._advance_encounters(0.1)
+	slice._advance_reward_completion(0.1)
+	bridge._process(1.01)
+	_check(slice.controller.evolution.survival_seconds == before_time and bridge.last_report.paused and bridge.last_report.pauseReason == "reward" and slice._reward_completion_remaining == before_completion, "a real queued reward still freezes race score and retains unread completion behind the host overlay")
+	for key: String in old_host:
+		touch.set(key, old_host[key])
+	touch.call("_refresh_active")
+	slice.queue_free()
+	bridge.queue_free()
+
+
 func _create_fixture(id: String, durable_attempts: Dictionary = {}) -> Dictionary:
 	var bridge := RecordingBridge.new()
 	root.add_child(bridge)
@@ -169,7 +237,7 @@ func _create_fixture(id: String, durable_attempts: Dictionary = {}) -> Dictionar
 
 
 func _config(id: String) -> Dictionary:
-	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v7"}
+	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v8"}
 
 
 func _prepared_spawn_positions(slice: FoldlightEndlessSliceRuntime) -> Array[Vector2]:
@@ -193,7 +261,7 @@ func _valid_reports(messages: Array[Dictionary]) -> bool:
 		if message.method != &"report":
 			continue
 		var payload: Dictionary = JSON.parse_string(message.json)
-		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v7":
+		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v8":
 			return false
 		if int(payload.seq) <= sequence or int(payload.survivalMs) < elapsed or int(payload.kills) < 0:
 			return false

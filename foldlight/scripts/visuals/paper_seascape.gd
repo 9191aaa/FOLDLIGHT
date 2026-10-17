@@ -122,11 +122,12 @@ static func _draw_district_commands(canvas, bounds: Rect2, style: StringName, se
 	# Loose contours join districts without drawing false rectangular walls.
 	for layer in 3:
 		var contour := PackedVector2Array()
-		for point in 25:
+		for point in 24:
 			var angle := float(point) * TAU / 24.0
 			var wave := 0.86 + sin(angle * 3.0 + float(seed % 19)) * 0.07
 			contour.append(center + Vector2.from_angle(angle) * bounds.size * (0.41 + float(layer) * 0.025) * wave)
 		canvas.draw_colored_polygon(contour, Color(tint, 0.025))
+		contour.append(contour[0])
 		canvas.draw_polyline(contour, Color(tint, 0.09), 1.5, true)
 	_draw_landmark_commands(canvas, center, bounds.size * Vector2(0.66, 0.73), kind, seed)
 

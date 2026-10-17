@@ -12,5 +12,5 @@ tags = Array[StringName]([&"mixed", &"sun"])
 depth_count = 8
 base_threat_budget = 40
 encounter_ids = Array[StringName]([&"sun_court_verdict"])
-boss_ids = Array[StringName]([&"origami_judge"])
+boss_ids = Array[StringName]([&"origami_judge", &"eclipse_twin_bells"])
 backdrop_style = &"sun_court"

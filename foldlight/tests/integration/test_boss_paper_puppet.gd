@@ -43,7 +43,7 @@ func _run() -> void:
 		print("PUPPET %s parts=%d vertices=%d" % [boss_id,parts.size(),total_vertices])
 	for index in 20:
 		Puppet.get_visual_contract(StringName("unknown_%d" % index))
-	_check(Puppet._models.size() == 3, "unknown preview ids cannot grow the three-model resource cache")
+	_check(Puppet._models.size() == Puppet.IDS.size(), "unknown preview ids cannot grow the six-model resource cache")
 	seed(4281)
 	var expected := randi()
 	seed(4281)

@@ -6,22 +6,22 @@
 script = ExtResource("1_map")
 map_id = &"solar_archipelago"
 title = "日轮列岛"
-authored_version = &"handcrafted_2_0"
+authored_version = &"handcrafted_3_17"
 region_style = &"sun_court"
-bounds = Rect2(0, 0, 6720, 4480)
+bounds = Rect2(0, 0, 8256, 5504)
 player_spawn = Vector2(3360, 3000)
 landmark_kind = &"broken_sun"
 landmark_center = Vector2(3360, 2630)
 landmark_size = Vector2(1120, 820)
-district_names = PackedStringArray("金箔西礁", "晨照北庭", "日轮镜庭", "归航灯湾", "晚照东礁", "余晖南岛")
-district_rects = Array[Rect2]([Rect2(0, 640, 2200, 3140), Rect2(1900, 0, 2920, 1150), Rect2(2200, 1100, 2320, 1420), Rect2(2200, 2440, 2320, 1120), Rect2(4520, 640, 2200, 3140), Rect2(1600, 3500, 3520, 980)])
-district_colors = PackedColorArray(0.16, 0.18, 0.15, 1, 0.18, 0.20, 0.15, 1, 0.13, 0.20, 0.19, 1, 0.08, 0.18, 0.19, 1, 0.18, 0.17, 0.14, 1, 0.13, 0.16, 0.16, 1)
-district_styles = Array[StringName]([&"sun_court", &"sun_court", &"sun_court", &"paper_reef", &"sun_court", &"sun_court"])
-closure_zone_ids = Array[StringName]([&"west_gold", &"west_sunset", &"north_dawn", &"east_gold", &"east_sunset", &"south_afterglow"])
-closure_zone_names = PackedStringArray("金箔西礁", "暮光西岛", "晨照北庭", "金箔东礁", "暮光东岛", "余晖南岛")
-closure_zone_rects = Array[Rect2]([Rect2(0, 0, 2200, 2080), Rect2(0, 2440, 2200, 2040), Rect2(2200, 0, 2320, 1120), Rect2(4520, 0, 2200, 2080), Rect2(4520, 2440, 2200, 2040), Rect2(2200, 3500, 2320, 980)])
-safe_corridors = Array[Rect2]([Rect2(2200, 1120, 2320, 2380), Rect2(0, 2080, 6720, 360)])
-refuge_points = PackedVector2Array(2320, 2260, 3360, 2260, 4400, 2260, 3360, 3000)
+district_names = PackedStringArray("金箔西礁", "晨照北庭", "日轮镜庭", "归航灯湾", "晚照东礁", "余晖南岛", "远帆东台", "外海南港")
+district_rects = Array[Rect2]([Rect2(0, 640, 2200, 3140), Rect2(1900, 0, 2920, 1150), Rect2(2200, 1100, 2320, 1420), Rect2(2200, 2440, 2320, 1120), Rect2(4520, 640, 2200, 3140), Rect2(1600, 3500, 3520, 980), Rect2(6720, 0, 1536, 5504), Rect2(0, 4480, 6720, 1024)])
+district_colors = PackedColorArray(0.16, 0.18, 0.15, 1, 0.18, 0.20, 0.15, 1, 0.13, 0.20, 0.19, 1, 0.08, 0.18, 0.19, 1, 0.18, 0.17, 0.14, 1, 0.13, 0.16, 0.16, 1, 0.09, 0.22, 0.24, 1, 0.12, 0.19, 0.20, 1)
+district_styles = Array[StringName]([&"sun_court", &"sun_court", &"sun_court", &"paper_reef", &"sun_court", &"sun_court", &"sun_court", &"sun_court"])
+closure_zone_ids = Array[StringName]([&"west_gold", &"west_sunset", &"north_dawn", &"east_gold", &"east_sunset", &"south_afterglow", &"inner_north", &"inner_south", &"outer_east_north", &"outer_east_south", &"outer_south"])
+closure_zone_names = PackedStringArray("金箔西礁", "暮光西岛", "晨照北庭", "金箔东礁", "暮光东岛", "余晖南岛", "内海北汊", "内海南汊", "远帆东台", "东南灯湾", "外海南航道")
+closure_zone_rects = Array[Rect2]([Rect2(0, 0, 2200, 2080), Rect2(0, 2440, 2200, 2040), Rect2(2200, 0, 2320, 1120), Rect2(4520, 0, 2200, 2080), Rect2(4520, 2440, 2200, 2040), Rect2(2200, 3500, 2320, 980), Rect2(2200, 1120, 2320, 960), Rect2(2200, 2440, 2320, 1060), Rect2(6720, 0, 1536, 2080), Rect2(6720, 2440, 1536, 3064), Rect2(0, 4480, 6720, 1024)])
+safe_corridors = Array[Rect2]([Rect2(3200, 1120, 320, 4384), Rect2(0, 2080, 8256, 360)])
+refuge_points = PackedVector2Array(2320, 2260, 3360, 2260, 4400, 2260, 3360, 3000, 7420, 2260, 3360, 5180)
 walls = Array[Rect2]([
 Rect2(600, 760, 680, 140), Rect2(600, 900, 140, 420), Rect2(1660, 1130, 140, 580), Rect2(1000, 1660, 570, 140),
 Rect2(5440, 760, 680, 140), Rect2(5980, 900, 140, 420), Rect2(4920, 1130, 140, 580), Rect2(5150, 1660, 570, 140),
@@ -30,11 +30,12 @@ Rect2(5440, 3330, 680, 140), Rect2(5980, 2910, 140, 420), Rect2(4920, 2700, 140,
 Rect2(2600, 1370, 400, 140), Rect2(3720, 1370, 400, 140), Rect2(2450, 1720, 140, 310), Rect2(4130, 1720, 140, 310),
 Rect2(2600, 2750, 400, 140), Rect2(3720, 2750, 400, 140), Rect2(2450, 2480, 140, 260), Rect2(4130, 2480, 140, 260),
 Rect2(2420, 500, 570, 140), Rect2(3730, 500, 570, 140), Rect2(2420, 3890, 570, 140), Rect2(3730, 3890, 570, 140),
-Rect2(1140, 380, 140, 230), Rect2(5440, 380, 140, 230), Rect2(1140, 3810, 140, 230), Rect2(5440, 3810, 140, 230)
+Rect2(1140, 380, 140, 230), Rect2(5440, 380, 140, 230), Rect2(1140, 3810, 140, 230), Rect2(5440, 3810, 140, 230),
+Rect2(7020, 500, 650, 120), Rect2(7720, 900, 120, 600), Rect2(7020, 2870, 600, 120), Rect2(7720, 3090, 120, 600), Rect2(7000, 5020, 650, 120), Rect2(600, 4730, 700, 120), Rect2(1700, 5050, 700, 120), Rect2(3810, 4730, 650, 120), Rect2(5720, 5050, 650, 120)
 ])
-capture_points = PackedVector2Array(3360, 2260, 1280, 1250, 5440, 1250, 3360, 850)
-flag_positions = PackedVector2Array(1260, 3040, 5460, 3040, 3360, 3730, 3360, 840)
-captain_spawn_positions = PackedVector2Array(2020, 1850, 3360, 1670, 4700, 1850, 2020, 2930, 4700, 2930, 3360, 3300)
-shooter_spawn_positions = PackedVector2Array(2300, 1780, 2840, 1730, 3880, 1730, 4420, 1780, 2300, 2620, 2840, 2480, 3880, 2480, 4420, 2620, 3360, 1920, 3360, 2670)
-melee_spawn_positions = PackedVector2Array(260, 620, 260, 1580, 260, 2260, 260, 3170, 400, 4120, 1950, 250, 3360, 250, 4770, 250, 6460, 620, 6460, 1580, 6460, 2260, 6460, 3170, 6320, 4120, 1950, 4230, 3360, 4230, 4770, 4230)
-rally_positions = PackedVector2Array(1280, 1250, 2320, 2260, 3360, 850, 4400, 2260, 5440, 1250, 5460, 3040, 3360, 3730, 1260, 3040)
+capture_points = PackedVector2Array(3360, 2260, 1280, 1250, 5440, 1250, 3360, 850, 7390, 1100, 3360, 5180)
+flag_positions = PackedVector2Array(1260, 3040, 5460, 3040, 3360, 3730, 3360, 840, 7320, 4080, 1100, 5130)
+captain_spawn_positions = PackedVector2Array(2020, 1850, 3360, 1670, 4700, 1850, 2020, 2930, 4700, 2930, 3360, 3300, 7420, 1700, 6020, 4780)
+shooter_spawn_positions = PackedVector2Array(2300, 1780, 2840, 1730, 3880, 1730, 4420, 1780, 2300, 2620, 2840, 2480, 3880, 2480, 4420, 2620, 3360, 1920, 3360, 2670, 7220, 1600, 7220, 3490, 2460, 4780, 4660, 5280)
+melee_spawn_positions = PackedVector2Array(260, 620, 260, 1580, 260, 2260, 260, 3170, 400, 4120, 1950, 250, 3360, 250, 4770, 250, 6460, 620, 6460, 1580, 6460, 2260, 6460, 3170, 6320, 4120, 1950, 4230, 3360, 4230, 4770, 4230, 8020, 300, 8020, 1700, 8020, 3980, 8020, 5280, 300, 5280, 4560, 5280)
+rally_positions = PackedVector2Array(1280, 1250, 2320, 2260, 3360, 850, 4400, 2260, 5440, 1250, 5460, 3040, 3360, 3730, 1260, 3040, 7390, 1100, 7320, 4080, 1100, 5130, 3360, 5180)

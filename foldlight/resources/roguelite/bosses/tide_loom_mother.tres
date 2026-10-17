@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="FoldlightRogueBossDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_boss_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"tide_loom_mother"
+title = "潮汐织母"
+description = "展开折纸织梭，用平行潮线与交错经纬编织战场；青色留白是可穿过的空隙。"
+accent = Color(0.38, 0.88, 0.76, 1)
+tags = Array[StringName]([&"weaver", &"gaps"])
+region_id = &"paper_reef"
+base_health = 460.0
+phase_thresholds = PackedFloat32Array(0.68, 0.34)
+arena_rule = &"open_paper"
+return_window_fraction = 0.2
+return_window_seconds = 3.4
+return_damage_outside_stagger = 0.55
+target_duration = 95.0
+telegraph_seconds = 1.35
+recovery_seconds = 1.25
+active_pattern_seconds = {&"loom_shuttle": 0.75, &"loom_crossweave": 0.8, &"loom_needle": 0.35}
+pattern_ids = Array[StringName]([&"loom_shuttle", &"loom_crossweave", &"loom_needle"])

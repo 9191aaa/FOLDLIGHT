@@ -81,9 +81,13 @@ func get_visual_snapshot() -> Dictionary:
 		"occupied": bool(_objective.get("occupied", false)),
 		"return_charge_count": int(_objective.get("return_charge_count", 0)),
 		"return_boost_seconds": float(_objective.get("return_boost_seconds", 0.0)),
-		"facility_count": mini(3, (_objective.get("route_points", PackedVector2Array()) as PackedVector2Array).size()) if kind == &"relay_route" else (0 if kind == &"clear_swarm" else 1),
-		"lit_petals": clampi(int(_objective.get("progress", 0)), 0, 12) if kind == &"capture_storm" else 0,
-		"kill_marks": clampi(int(_objective.get("progress", 0)), 0, 10) if kind == &"clear_swarm" else 0,
+		"facility_count": mini(5, (_objective.get("route_points", PackedVector2Array()) as PackedVector2Array).size()) if kind == &"relay_route" else (0 if kind == &"clear_swarm" else 1),
+		"lit_petals": clampi(floori(float(_objective.get("progress_ratio",0))*12),0,12) if kind == &"capture_storm" else 0,
+		"kill_marks": clampi(floori(float(_objective.get("progress_ratio",0))*10),0,10) if kind == &"clear_swarm" else 0,
+		"escort_position": _objective.get("escort_position", _objective.get("target_position", Vector2.ZERO)),
+		"escort_destination": _objective.get("escort_destination", Vector2.ZERO),
+		"escort_state": _objective.get("escort_state", &"waiting_player"),
+		"escort_radius": _objective.get("escort_radius", 280.0),
 	}
 
 
@@ -112,6 +116,9 @@ func _draw() -> void:
 	if kind == &"clear_swarm":
 		if _feedback_left > 0.0 and _objective.has("player_position"):
 			_draw_kill_marks(Vector2(_objective.player_position), alpha)
+		return
+	if kind == &"escort":
+		_draw_escort(view, alpha, unfold, finished)
 		return
 	if not view.has_point(point):
 		return
@@ -178,7 +185,7 @@ func _draw_windmill(point: Vector2, ratio: float, alpha: float, unfold: float) -
 		var angle := float(index) * TAU / 12.0 - PI * 0.5 + spin
 		var direction := Vector2.from_angle(angle)
 		var tangent := direction.orthogonal()
-		var lit := index < clampi(int(_objective.get("progress", 0)), 0, 12)
+		var lit := index < clampi(floori(ratio * 12.0), 0, 12)
 		var radius := 58.0 + unfold * 16.0
 		var blade := PackedVector2Array([hub + direction * 19, hub + direction * radius - tangent * 12, hub + direction * (radius + 4) + tangent * 2, hub + direction * 30 + tangent * 13])
 		_facet(blade, Art.FOLD.darkened(0.06) if lit else Color("294947"), alpha)
@@ -191,13 +198,13 @@ func _draw_windmill(point: Vector2, ratio: float, alpha: float, unfold: float) -
 			var spark := hub + direction * (90.0 - (1.0 - _feedback_left / 0.5) * 60.0)
 			draw_line(spark, spark + direction * 8, Color(Art.FOLD, _feedback_left * alpha), 2.0, true)
 	if not _is_terminal(_objective):
-		_label(point + Vector2(0, 86), "集光 %d / 12" % int(_objective.get("progress", 0)), Art.FOLD, alpha)
+		_label(point + Vector2(0, 86), "集光 %d / %d" % [int(_objective.get("progress", 0)), int(_objective.get("required", 12))], Art.FOLD, alpha)
 
 
 func _draw_relay(view: Rect2, alpha: float, unfold: float, finished: bool) -> void:
 	var points: PackedVector2Array = _objective.get("route_points", PackedVector2Array())
 	var done := clampi(int(_objective.get("progress", 0)), 0, points.size())
-	for index in mini(3, points.size()):
+	for index in mini(5, points.size()):
 		var point := points[index]
 		if not view.has_point(point):
 			continue
@@ -208,7 +215,8 @@ func _draw_relay(view: Rect2, alpha: float, unfold: float, finished: bool) -> vo
 		if current:
 			_draw_boundary(point, float(_objective.get("capture_radius", 90.0)), Art.GOLD, bool(_objective.get("occupied", false)), alpha)
 		_plate(point + Vector2(0, 18), 33.0, 16.0, tint, opacity)
-		var opening := unfold if finished else clampf(float(_objective.get("waypoint_hold", 0.0)) / 1.2, 0.0, 1.0) if current else (1.0 if lit else 0.0)
+		var hold_required := maxf(0.1, float(_objective.get("waypoint_hold_required", 1.2)))
+		var opening := unfold if finished else clampf(float(_objective.get("waypoint_hold", 0.0)) / hold_required, 0.0, 1.0) if current else (1.0 if lit else 0.0)
 		var top := point + Vector2(0, -41 - opening * 10)
 		_facet(PackedVector2Array([point + Vector2(-21, 10), top, point + Vector2(21, 10), point + Vector2(0, 25)]), tint.darkened(0.43 if not lit else 0.2), opacity)
 		draw_line(top, point + Vector2(0, 24), Color(Art.PAPER, 0.6 * opacity), 1.5, true)
@@ -216,7 +224,7 @@ func _draw_relay(view: Rect2, alpha: float, unfold: float, finished: bool) -> vo
 		if current:
 			draw_line(point + Vector2(-24, 38), point + Vector2(24, 38), Color(Art.PAPER, 0.2 * alpha), 3.0, true)
 			draw_line(point + Vector2(-24, 38), point + Vector2(-24 + 48 * opening, 38), Color(Art.GOLD, 0.8 * alpha), 3.0, true)
-			_label(point + Vector2(0, 76), "接力 · 驻留 %.1f / 1.2" % float(_objective.get("waypoint_hold", 0.0)), Art.GOLD, alpha, 21)
+			_label(point + Vector2(0, 76), "接力 · 驻留 %.1f / %.1f" % [float(_objective.get("waypoint_hold", 0.0)), hold_required], Art.GOLD, alpha, 21)
 
 
 func _draw_crown(point: Vector2, alpha: float, unfold: float) -> void:
@@ -240,9 +248,52 @@ func _draw_kill_marks(point: Vector2, alpha: float) -> void:
 	var at := point + Vector2(-49, -76)
 	var fade := alpha * clampf(_feedback_left / 0.15, 0.0, 1.0)
 	for index in 10:
-		var lit := index < int(_objective.get("progress", 0))
+		var lit := index < floori(float(_objective.get("progress", 0)) / maxf(1, float(_objective.get("required", 10))) * 10)
 		var tick := at + Vector2(index * 11, 0)
 		draw_line(tick, tick + Vector2(3, -12), Color(Art.GOLD if lit else Art.PAPER, (0.78 if lit else 0.18) * fade), 2.5, true)
+
+
+func _draw_escort(view: Rect2, alpha: float, unfold: float, finished: bool) -> void:
+	var at: Vector2 = _objective.get("escort_position", _objective.get("target_position", Vector2.ZERO))
+	var destination: Vector2 = _objective.get("escort_destination", _objective.get("destination_position", at))
+	var next: Vector2 = _objective.get("escort_next_position", destination)
+	var direction: Vector2 = _objective.get("escort_direction", (next - at).normalized())
+	if direction.length_squared() < 0.001: direction = Vector2.RIGHT
+	var occupied := bool(_objective.get("occupied", false))
+	var state := StringName(_objective.get("escort_state", &"waiting_player"))
+	var failed := bool(_objective.get("failed", false))
+	var accent: Color = Art.DANGER if failed or state == &"contested" else Art.FOLD if occupied else Art.GOLD
+	if view.has_point(destination):
+		_plate(destination, 48, 25, Art.FOLD, alpha * 0.7)
+		for side in [-1.0, 1.0]:
+			draw_line(destination + Vector2(side * 36, 12), destination + Vector2(side * 36, -57), Color(Art.FOLD, alpha * 0.7), 3.0, true)
+		_label(destination + Vector2(0, 58), "护送终点", Art.FOLD, alpha, 24)
+	if not view.has_point(at): return
+	# Four short boundary stitches state the real escort radius. A folded boat
+	# replaces the old circular facility silhouette rather than adding a halo.
+	var radius := maxf(1, float(_objective.get("escort_radius", 280)))
+	for index in 4:
+		var outward := Vector2.from_angle(index * PI * 0.5)
+		var tangent := outward.orthogonal()
+		var edge := at + outward * radius
+		draw_polyline(PackedVector2Array([edge - tangent * 20 - outward * 8, edge, edge + tangent * 20 - outward * 8]), Color(accent, alpha * (0.60 if occupied else 0.34)), 2.0, true)
+	var bob := sin(_clock * 1.6) * 2.0 if not _reduced and bool(_objective.get("escort_moving", false)) else 0.0
+	draw_set_transform(at + Vector2(0, bob), direction.angle())
+	_facet(PackedVector2Array([Vector2(-82,-30),Vector2(65,-23),Vector2(98,0),Vector2(48,35),Vector2(-65,34),Vector2(-91,0)]), Art.GOLD.darkened(0.56), alpha)
+	_facet(PackedVector2Array([Vector2(-72,-23),Vector2(72,0),Vector2(-68,26),Vector2(-40,0)]), Art.PAPER.darkened(0.2), alpha)
+	_facet(PackedVector2Array([Vector2(-32,-9),Vector2(7,-74-unfold*15),Vector2(53,-4),Vector2(3,13)]), Art.PAPER.darkened(0.10), alpha)
+	draw_line(Vector2(7,-70),Vector2(3,13),Color(Art.GOLD,alpha*0.8),2,true)
+	draw_circle(Vector2(52,0), 6, Color(accent,alpha))
+	if not finished:
+		for index in 2:
+			var x := 119.0 + index * 27
+			draw_polyline(PackedVector2Array([Vector2(x-10,-12),Vector2(x,0),Vector2(x-10,12)]),Color(accent,alpha*(0.5 if occupied else 0.25)),2,true)
+	draw_set_transform(Vector2.ZERO)
+	var hint := "纸舟已抵达" if finished else "靠近纸舟 · 同行护送"
+	if failed: hint = "护送中断"
+	elif not finished and occupied:
+		hint = "敌群减速 · 清理附近敌人" if state == &"contested" else "护送前进 · %d%%" % roundi(clampf(float(_objective.get("escort_progress", _objective.get("progress_ratio",0))),0,1)*100)
+	_label(at + Vector2(0,107),hint,accent,alpha,27)
 
 
 func _plate(at: Vector2, width: float, depth: float, color: Color, alpha: float) -> void:

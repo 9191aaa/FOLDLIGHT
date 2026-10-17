@@ -41,7 +41,7 @@ func reset(definition: FoldlightEndlessMapDefinition, run_seed: int, options: Di
 	return get_snapshot()
 
 
-func advance_to(combat_seconds: float, protected_points: PackedVector2Array = PackedVector2Array()) -> Dictionary:
+func advance_to(combat_seconds: float, protected_points: PackedVector2Array = PackedVector2Array(), player_position: Vector2 = Vector2.INF) -> Dictionary:
 	# A stale callback must not rewind a live closure. Reset is the only rewind.
 	if not is_finite(combat_seconds):
 		return get_snapshot()
@@ -57,7 +57,7 @@ func advance_to(combat_seconds: float, protected_points: PackedVector2Array = Pa
 	var phase_time := fposmod(_clock - first, period)
 	if next_cycle != _cycle:
 		_cycle = next_cycle
-		_select_zones(first + float(_cycle) * period, protected_points)
+		_select_zones(first + float(_cycle) * period, protected_points, player_position)
 	if phase_time < warning:
 		_phase = &"warning"
 		_remaining = warning - phase_time
@@ -114,7 +114,7 @@ func get_nearest_safe_position(point: Vector2, route_provider: Object = null, cl
 	return nearest
 
 
-func _select_zones(warning_start: float, protected_points: PackedVector2Array) -> void:
+func _select_zones(warning_start: float, protected_points: PackedVector2Array, player_position: Vector2) -> void:
 	_selected.clear()
 	if _map == null:
 		return
@@ -133,6 +133,21 @@ func _select_zones(warning_start: float, protected_points: PackedVector2Array) -
 		if not blocked:
 			available.append(index)
 	var maximum := 2 if warning_start >= float(_rules["two_zone_after_seconds"]) else 1
+	# Two out of three rounds pressure the current neighborhood. This is an
+	# explicit player input, locked for the full warning/closure; never chase a
+	# player after announcing a target or sacrifice an active mission route.
+	if player_position.is_finite() and _cycle % 3 != 2 and not available.is_empty():
+		var nearest := -1
+		var nearest_distance := 900.0 * 900.0
+		for index in available:
+			var rect := _map.closure_zone_rects[index]
+			var distance := player_position.distance_squared_to(player_position.clamp(rect.position, rect.end))
+			if distance < nearest_distance:
+				nearest = index
+				nearest_distance = distance
+		if nearest >= 0:
+			_selected.append(nearest)
+			available.erase(nearest)
 	while not available.is_empty() and _selected.size() < maximum:
 		var slot := rng.randi_range(0, available.size() - 1)
 		_selected.append(available[slot])

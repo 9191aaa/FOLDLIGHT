@@ -91,7 +91,11 @@ func _run() -> void:
 	_check(room_guard < 40, "complete route finishes without a transition loop")
 	_check(session.mode == FoldlightRogueSessionController.SessionMode.RESULT, "third boss produces final result")
 	_check(visited_regions.size() == 3, "complete voyage visits all three regions")
-	_check(defeated_bosses.size() == 3 and defeated_bosses.has(&"reef_crown_battery") and defeated_bosses.has(&"inverted_archivist") and defeated_bosses.has(&"origami_judge"), "complete voyage fights all three rebuilt bosses")
+	var regional_bosses_valid := defeated_bosses.size() == FoldlightRogueContentCatalog.REGIONS.size()
+	if regional_bosses_valid:
+		for index in defeated_bosses.size():
+			regional_bosses_valid = regional_bosses_valid and FoldlightRogueContentCatalog.REGIONS[index].boss_ids.has(defeated_bosses[index])
+	_check(regional_bosses_valid, "complete voyage fights one valid authored boss from every region")
 	_check(session.run_controller.run_state.room_count >= 18, "branch route delivers a sustained thirty-to-forty-five-minute room count")
 	var total_upgrade_stacks := 0
 	for stack_count in session.run_controller.run_state.upgrade_levels.values():

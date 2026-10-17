@@ -4,6 +4,7 @@ extends CharacterBody2D
 const HitReaction = preload("res://scripts/visuals/paper_hit_reaction.gd")
 const Puppet = preload("res://scripts/visuals/boss_paper_puppet.gd")
 const REMNANT = preload("res://scripts/visuals/boss_paper_remnant.gd")
+const PatternGeometry = preload("res://scripts/roguelite/bosses/boss_pattern_geometry.gd")
 const RECOIL_SECONDS: float = 0.30
 
 signal damaged(amount: float, health_remaining: float, source: StringName)
@@ -19,9 +20,13 @@ signal stagger_started(duration: float)
 var definition: FoldlightRogueBossDefinition
 var actor_id: StringName = &"boss"
 var health: float = 1.0
+var maximum_health: float = 1.0
 var return_meter: float = 0.0
 
 var _room_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
+var _world_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
+var _navigation_target := Vector2.ZERO
+var _has_navigation_target: bool = false
 var _target_position: Vector2 = Vector2.ZERO
 var _locked_attack_origin: Vector2 = Vector2.ZERO
 var _locked_attack_target: Vector2 = Vector2.ZERO
@@ -37,6 +42,14 @@ var _visual_direction := Vector2.DOWN
 var _simulation_active: bool = true
 var _death_remnant_spawned: bool = false
 var _rng := RandomNumberGenerator.new()
+var _endless_roam: bool = false
+var _arena_pressure: bool = true
+var _attack_plan: Dictionary = {}
+var _pending_volleys: Array[Dictionary] = []
+var _attack_elapsed: float = 0.0
+var _cast_index: int = 0
+var _dash_end := Vector2.ZERO
+var _dash_active: bool = false
 
 @onready var phase_controller: FoldlightBossPhaseController = $PhaseController
 @onready var arena_controller: FoldlightBossArenaController = $ArenaController
@@ -52,10 +65,11 @@ func _ready() -> void:
 	queue_redraw()
 
 
-func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed: int = 330031) -> void:
+func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed: int = 330031, options: Dictionary = {}) -> void:
 	definition = new_definition
 	actor_id = definition.content_id if definition != null else &"boss"
-	health = definition.base_health if definition != null else 1.0
+	maximum_health = (definition.base_health if definition != null else 1.0) * clampf(float(options.get("health_scale", 1.0)), 0.05, 20.0)
+	health = maximum_health
 	_hit_reaction.reset()
 	_visual_time = 0.0
 	_recoil_remaining = 0.0
@@ -65,14 +79,26 @@ func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed
 	_death_remnant_spawned = false
 	_refresh_motion_setting()
 	_room_bounds = bounds
+	_world_bounds = bounds
+	_has_navigation_target = false
+	var local_arena: Rect2 = options.get("local_arena", bounds)
+	if local_arena.has_area() and bounds.intersects(local_arena):
+		_room_bounds = bounds.intersection(local_arena)
+	_endless_roam = bool(options.get("endless_roam", false))
+	_arena_pressure = bool(options.get("arena_pressure", true))
+	_cancel_attack_plan()
+	_cast_index = 0
+	velocity = Vector2.ZERO
 	_rng.seed = seed
 	return_meter = 0.0
 	_return_window_budget = 0.0
 	_attack_locked = false
 	_arena_damage_remaining = 0.0
-	global_position = bounds.get_center()
-	phase_controller.configure(definition)
-	arena_controller.configure(definition.arena_rule, bounds)
+	global_position = _room_bounds.get_center()
+	phase_controller.configure(definition, float(options.get("intro_delay", 0.0)))
+	arena_controller.configure(definition.arena_rule if definition != null else &"open_paper", _room_bounds)
+	arena_controller.set_pressure_suspended(not _arena_pressure)
+	arena_controller.visible = _arena_pressure
 	queue_redraw()
 
 
@@ -85,17 +111,28 @@ func advance_simulation(delta: float, player_position: Vector2, hostile_time_sca
 	_visual_time += safe_delta
 	_recoil_remaining = maxf(0.0, _recoil_remaining - safe_delta)
 	_target_position = player_position
-	phase_controller.advance_simulation(safe_delta, health / definition.base_health)
+	var previous_state := phase_controller.state
+	var previous_phase := phase_controller.phase_index
+	phase_controller.advance_simulation(safe_delta, health / maximum_health)
+	# Phase transitions cancel old queued pulses before they can fire. New casts
+	# start at t=0 rather than consuming the entire current frame immediately.
+	if previous_state == FoldlightBossPhaseController.State.ATTACK and previous_phase == phase_controller.phase_index:
+		_advance_attack_plan(safe_delta)
 	var stagger_target := 1.0 if phase_controller.state == FoldlightBossPhaseController.State.STAGGERED else 0.0
 	_stagger_pose = move_toward(_stagger_pose, stagger_target, safe_delta * 6.0)
-	arena_controller.set_pressure_suspended(phase_controller.state in [FoldlightBossPhaseController.State.INTRO, FoldlightBossPhaseController.State.STAGGERED])
+	arena_controller.set_pressure_suspended(not _arena_pressure or phase_controller.state in [FoldlightBossPhaseController.State.INTRO, FoldlightBossPhaseController.State.STAGGERED])
 	arena_controller.advance_simulation(safe_delta, player_position)
 	_update_movement(safe_delta)
 	_arena_damage_remaining = maxf(0.0, _arena_damage_remaining - safe_delta)
 	if not arena_controller.is_player_safe(player_position) and _arena_damage_remaining <= 0.0:
 		_arena_damage_remaining = 0.72
 		arena_hit_requested.emit()
-	move_and_slide()
+	if _dash_active and phase_controller.state == FoldlightBossPhaseController.State.ATTACK:
+		# A blocked dash stops against the wall instead of sliding sideways out
+		# of its warned corridor. Ordinary pursuit keeps the usual wall sliding.
+		move_and_collide(velocity * get_physics_process_delta_time())
+	else:
+		move_and_slide()
 	_clamp_to_active_arena()
 	queue_redraw()
 
@@ -110,11 +147,11 @@ func take_damage(amount: float, source: StringName = &"weapon", incoming_velocit
 			applied = minf(amount, _return_window_budget)
 			_return_window_budget = maxf(0.0, _return_window_budget - applied)
 		else:
-			applied = minf(amount * definition.return_damage_outside_stagger, definition.base_health * 0.12)
+			applied = minf(amount * definition.return_damage_outside_stagger, maximum_health * 0.12)
 			return_meter += amount
 			# A full basic store (8 charged lights, 22.4 damage) must be enough
 			# to earn a window even against the final boss's larger health pool.
-			if return_meter >= clampf(definition.base_health * 0.025, 18.0, 22.0):
+			if return_meter >= clampf(maximum_health * 0.025, 18.0, 22.0):
 				return_meter = 0.0
 				phase_controller.enter_stagger(definition.return_window_seconds)
 	if applied <= 0.0:
@@ -127,6 +164,7 @@ func take_damage(amount: float, source: StringName = &"weapon", incoming_velocit
 	_hit_reaction.trigger(impact_direction, source, health <= 0.0 or opened_window)
 	damaged.emit(applied, health, source)
 	if health <= 0.0:
+		_cancel_attack_plan()
 		phase_controller.mark_defeated()
 		_spawn_death_remnant()
 		defeated.emit(self)
@@ -145,7 +183,11 @@ func request_opening_support() -> void:
 
 
 func get_combat_snapshot() -> Dictionary:
-	return {"id": actor_id, "position": global_position, "alive": health > 0.0, "role": FoldlightRogueEnemyDefinition.EnemyRole.BOSS, "health": health, "maximum_health": definition.base_health if definition != null else 1.0}
+	return {"id": actor_id, "position": global_position, "alive": health > 0.0, "defeated": health <= 0.0, "role": FoldlightRogueEnemyDefinition.EnemyRole.BOSS, "health": health, "maximum_health": maximum_health, "title": definition.title if definition != null else "", "phase": phase_controller.phase_index}
+
+
+func get_maximum_health() -> float:
+	return maximum_health
 
 
 func get_hit_feedback_snapshot() -> Dictionary:
@@ -154,6 +196,11 @@ func get_hit_feedback_snapshot() -> Dictionary:
 
 func set_simulation_active(value: bool) -> void:
 	_simulation_active = value
+
+
+func set_navigation_target(point: Vector2) -> void:
+	_navigation_target = point
+	_has_navigation_target = true
 
 
 func _refresh_motion_setting() -> void:
@@ -198,11 +245,22 @@ func _spawn_death_remnant() -> void:
 	remnant.name = "BossPaperRemnant"
 	holder.add_child(remnant)
 	remnant.global_transform = global_transform
-	remnant.configure(actor_id, get_visual_pose())
+	remnant.configure(definition.content_id, get_visual_pose())
 	remnant.set_simulation_active(_simulation_active)
 
 
 func _update_movement(delta: float) -> void:
+	if _dash_active and phase_controller.state != FoldlightBossPhaseController.State.ATTACK:
+		_dash_active = false
+		velocity = Vector2.ZERO
+	if phase_controller.state == FoldlightBossPhaseController.State.ATTACK:
+		if _dash_active:
+			var duration := definition.get_active_seconds(phase_controller.current_pattern)
+			var expected := _locked_attack_origin.lerp(_dash_end, clampf(_attack_elapsed / maxf(duration, 0.01), 0.0, 1.0))
+			velocity = (expected - global_position) / maxf(delta, 0.001)
+		else:
+			velocity = Vector2.ZERO
+		return
 	if phase_controller.state == FoldlightBossPhaseController.State.TELEGRAPH:
 		# The warning and the volley share one origin and one target. Keeping the
 		# body still also prevents a mobile boss firing behind its drawn warning.
@@ -210,6 +268,12 @@ func _update_movement(delta: float) -> void:
 		return
 	if phase_controller.state in [FoldlightBossPhaseController.State.INTRO, FoldlightBossPhaseController.State.STAGGERED]:
 		velocity = velocity.move_toward(Vector2.ZERO, 900.0 * delta)
+		return
+	if _endless_roam:
+		var offset := _target_position - global_position
+		var travel_direction := global_position.direction_to(_navigation_target) if _has_navigation_target and offset.length() > 470.0 else offset.normalized()
+		var desired := travel_direction * clampf((offset.length() - 390.0) * 0.35, -45.0, 105.0)
+		velocity = velocity.move_toward(desired, 260.0 * delta)
 		return
 	match definition.content_id:
 		&"reef_crown_battery":
@@ -225,18 +289,28 @@ func _update_movement(delta: float) -> void:
 		&"origami_judge":
 			var frame_center := arena_controller.safe_rect.get_center()
 			velocity = velocity.move_toward(global_position.direction_to(frame_center) * 76.0, 300.0 * delta)
+		_:
+			var offset := _target_position - global_position
+			var desired := offset.normalized() * clampf((offset.length() - 460.0) * 0.3, -45.0, 80.0)
+			velocity = velocity.move_toward(desired, 240.0 * delta)
 
 
 func _clamp_to_active_arena() -> void:
-	var legal_bounds := _room_bounds.grow(-100.0)
-	if definition != null and definition.arena_rule == &"moving_safe_frame":
+	var legal_bounds := _legal_body_bounds()
+	if _arena_pressure and definition != null and definition.arena_rule == &"moving_safe_frame":
 		# The judge must obey the same moving frame it imposes on the player.
 		# Clamping after move_and_slide closes the one-frame escape visible in 3.0.
 		legal_bounds = arena_controller.safe_rect.grow(-86.0)
 	global_position = global_position.clamp(legal_bounds.position + Vector2.ONE, legal_bounds.end - Vector2.ONE)
 
 
+func _legal_body_bounds() -> Rect2:
+	var navigation_bounds := _world_bounds if _endless_roam else _room_bounds
+	return navigation_bounds.grow(-minf(100.0, minf(navigation_bounds.size.x, navigation_bounds.size.y) * 0.2))
+
+
 func _on_phase_changed(new_phase: int) -> void:
+	_cancel_attack_plan()
 	_attack_locked = false
 	arena_controller.set_phase(new_phase)
 	if definition.content_id == &"reef_crown_battery":
@@ -254,19 +328,36 @@ func _on_telegraph_started(pattern_id: StringName, duration: float) -> void:
 	if _visual_direction.is_zero_approx():
 		_visual_direction = Vector2.DOWN
 	_attack_locked = true
-	telegraph_requested.emit({"pattern_id": pattern_id, "duration": duration, "origin": _locked_attack_origin, "target_position": _locked_attack_target, "accent": definition.accent, "phase": phase_controller.phase_index, "spread_radians": _black_gold_spread(pattern_id), "zone_radius": 165.0 if pattern_id == &"ink_partition" else 0.0})
+	var warning := {"pattern_id": pattern_id, "duration": duration, "origin": _locked_attack_origin, "target_position": _locked_attack_target, "accent": definition.accent, "phase": phase_controller.phase_index, "spread_radians": _black_gold_spread(pattern_id), "zone_radius": 165.0 if pattern_id == &"ink_partition" else 0.0}
+	if definition.content_id in PatternGeometry.NEW_IDS:
+		_attack_plan = PatternGeometry.build(pattern_id, _locked_attack_origin, _locked_attack_target, phase_controller.phase_index, _cast_index, _legal_body_bounds())
+		_cast_index += 1
+		warning["attack_lanes"] = _attack_plan["lanes"].duplicate(true)
+		warning["safe_gaps"] = _attack_plan["gaps"].duplicate(true)
+		warning["hold_seconds"] = definition.get_active_seconds(pattern_id)
+	telegraph_requested.emit(warning)
 
 
 func _on_stagger_started(duration: float) -> void:
+	_cancel_attack_plan()
 	_attack_locked = false
 	_recoil_remaining = 0.0
-	_return_window_budget = definition.base_health * definition.return_window_fraction
+	_return_window_budget = maximum_health * definition.return_window_fraction
 	arena_controller.set_pressure_suspended(true)
 	stagger_started.emit(duration)
 
 
 func _on_attack_ready(pattern_id: StringName, telegraph_duration: float) -> void:
 	_recoil_remaining = RECOIL_SECONDS
+	if definition.content_id in PatternGeometry.NEW_IDS:
+		_pending_volleys.assign(_attack_plan.get("volleys", []).duplicate(true))
+		_attack_elapsed = 0.0
+		_dash_end = _attack_plan.get("dash_end", _locked_attack_origin)
+		_dash_active = pattern_id == &"execution_dash"
+		for pending in _pending_volleys:
+			pending["snapshot"]["telegraph"] = telegraph_duration
+		_advance_attack_plan(0.0)
+		return
 	match definition.content_id:
 		&"reef_crown_battery":
 			_emit_reef_pattern(pattern_id, telegraph_duration)
@@ -275,6 +366,27 @@ func _on_attack_ready(pattern_id: StringName, telegraph_duration: float) -> void
 		&"origami_judge":
 			_emit_judge_pattern(pattern_id, telegraph_duration)
 	_attack_locked = false
+
+
+func _advance_attack_plan(delta: float) -> void:
+	if phase_controller.state != FoldlightBossPhaseController.State.ATTACK:
+		return
+	_attack_elapsed += delta
+	# Plans contain at most eighteen bullets; no catch-up loop or recursive spawn.
+	while not _pending_volleys.is_empty() and float(_pending_volleys[0]["at"]) <= _attack_elapsed:
+		var pending: Dictionary = _pending_volleys.pop_front()
+		volley_requested.emit(pending["snapshot"])
+		if health <= 0.0 or phase_controller.state != FoldlightBossPhaseController.State.ATTACK:
+			break
+
+
+func _cancel_attack_plan() -> void:
+	_attack_plan.clear()
+	_pending_volleys.clear()
+	_attack_elapsed = 0.0
+	_dash_active = false
+	_attack_locked = false
+	velocity = Vector2.ZERO
 
 
 func _emit_reef_pattern(pattern_id: StringName, telegraph: float) -> void:
@@ -305,7 +417,7 @@ func _emit_reef_pattern(pattern_id: StringName, telegraph: float) -> void:
 				"enemy_id": &"paper_turret",
 				"maximum": 2,
 				"total_maximum": 4,
-				"positions": [Vector2(_room_bounds.position.x + 220.0, _room_bounds.position.y + 240.0), Vector2(_room_bounds.end.x - 220.0, _room_bounds.position.y + 240.0)],
+				"positions": _support_positions([Vector2(_room_bounds.position.x + 220.0, _room_bounds.position.y + 240.0), Vector2(_room_bounds.end.x - 220.0, _room_bounds.position.y + 240.0)]),
 			})
 		_:
 			push_warning("Reef Crown: unknown pattern %s" % pattern_id)
@@ -324,12 +436,12 @@ func _request_reef_support() -> void:
 		"enemy_ids": support_ids,
 		"maximum": 2 if phase_controller.phase_index < 2 else 3,
 		"total_maximum": 3 if phase_controller.phase_index < 2 else 4,
-		"positions": [
+		"positions": _support_positions([
 			Vector2(_room_bounds.position.x + 380.0, _room_bounds.position.y + 360.0),
 			Vector2(_room_bounds.end.x - 380.0, _room_bounds.position.y + 360.0),
 			Vector2(_room_bounds.position.x + 440.0, _room_bounds.end.y - 330.0),
 			Vector2(_room_bounds.end.x - 440.0, _room_bounds.end.y - 330.0),
-		],
+		]),
 	})
 
 
@@ -355,13 +467,24 @@ func _request_archivist_support() -> void:
 		"total_maximum": 3 if phase_controller.phase_index < 2 else 4,
 		# Central positions keep projectile sources visible and prevent the fight
 		# from degenerating into off-screen edge fire.
-		"positions": [
+		"positions": _support_positions([
 			_room_bounds.get_center() + Vector2(-520, -270),
 			_room_bounds.get_center() + Vector2(520, -270),
 			_room_bounds.get_center() + Vector2(-560, 300),
 			_room_bounds.get_center() + Vector2(560, 300),
-		],
+		]),
 	})
+
+
+func _support_positions(authored: Array) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	for point: Vector2 in authored:
+		if _endless_roam:
+			point = global_position + point - _room_bounds.get_center()
+			var legal := _world_bounds.grow(-100.0)
+			point = point.clamp(legal.position, legal.end)
+		result.append(point)
+	return result
 
 
 func _emit_judge_pattern(pattern_id: StringName, telegraph: float) -> void:
@@ -415,12 +538,12 @@ func _draw() -> void:
 	# Pose transforms are visual only: the actual body and 52px hit circle stay
 	# at the authored attack origin throughout charge, recoil and unfolding.
 	draw_set_transform(hit_offset, 0.0, hit_scale)
-	Puppet.draw_puppet(self, actor_id, pose)
+	Puppet.draw_puppet(self, definition.content_id, pose)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if _motion_scale > 0.0:
 		_hit_reaction.draw_details(self, 68.0)
-	var bounds := Puppet.get_visual_bounds(actor_id)
-	var health_ratio := clampf(health / definition.base_health, 0.0, 1.0)
+	var bounds := Puppet.get_visual_bounds(definition.content_id)
+	var health_ratio := clampf(health / maximum_health, 0.0, 1.0)
 	var accent := definition.accent.lerp(Color.WHITE, _hit_reaction.flash * 0.62)
 	if phase_controller.state == FoldlightBossPhaseController.State.STAGGERED:
 		accent = FoldlightTheme.FOLD

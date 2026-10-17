@@ -98,6 +98,9 @@ const BOSSES: Array[FoldlightRogueBossDefinition] = [
 	preload("res://resources/roguelite/bosses/reef_crown_battery.tres"),
 	preload("res://resources/roguelite/bosses/inverted_archivist.tres"),
 	preload("res://resources/roguelite/bosses/origami_judge.tres"),
+	preload("res://resources/roguelite/bosses/tide_loom_mother.tres"),
+	preload("res://resources/roguelite/bosses/torn_page_executioner.tres"),
+	preload("res://resources/roguelite/bosses/eclipse_twin_bells.tres"),
 ]
 
 
@@ -175,6 +178,18 @@ static func boss_by_id(content_id: StringName) -> FoldlightRogueBossDefinition:
 		if definition.content_id == content_id:
 			return definition
 	return null
+
+
+static func boss_options_for_region(region_id: StringName) -> Array[FoldlightRogueBossDefinition]:
+	var result: Array[FoldlightRogueBossDefinition] = []
+	for region in REGIONS:
+		if region.content_id != region_id:
+			continue
+		for boss_id in region.boss_ids:
+			var boss := boss_by_id(boss_id)
+			if boss != null:
+				result.append(boss)
+	return result
 
 
 static func _validate_collection(label: String, definitions: Array, errors: Array[String]) -> void:
