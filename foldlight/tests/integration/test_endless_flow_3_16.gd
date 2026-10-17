@@ -118,7 +118,7 @@ func _test_spawning_and_retirement(slice: FoldlightEndlessSliceRuntime) -> void:
 	for index in 12:
 		slice._report_population()
 		slice.controller.force_next_wave()
-	check(slice._pending_spawns.size() + slice.combat_runtime.enemies.size() <= 24, "same-frame waves count queued and live actors toward the opening limit")
+	check(slice._pending_spawns.size() + slice.combat_runtime.enemies.size() <= 28, "same-frame waves count queued and live actors toward the opening limit")
 	slice._clear_pending_spawns()
 	slice.combat_runtime.clear_combat()
 	slice.combat_runtime.set_active(true)

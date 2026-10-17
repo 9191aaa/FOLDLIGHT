@@ -13,6 +13,8 @@ var _simulation_active: bool = true
 var attack_lanes: Array = []
 var safe_gaps: Array = []
 var hold_seconds: float = 0.0
+var charge_number: int = 0
+var charge_total: int = 0
 
 
 func configure(snapshot: Dictionary) -> void:
@@ -23,6 +25,8 @@ func configure(snapshot: Dictionary) -> void:
 	duration = maxf(0.25, float(snapshot.get("duration", 0.8)))
 	hold_seconds = clampf(float(snapshot.get("hold_seconds", 0.0)), 0.0, 2.0)
 	remaining = duration + hold_seconds
+	charge_number = int(snapshot.get("charge_number", 0))
+	charge_total = int(snapshot.get("charge_total", 0))
 	attack_lanes = snapshot.get("attack_lanes", []).duplicate(true)
 	safe_gaps = snapshot.get("safe_gaps", []).duplicate(true)
 	accent = Color(snapshot.get("accent", accent))
@@ -42,9 +46,11 @@ func set_simulation_active(value: bool) -> void:
 
 
 func _process(delta: float) -> void:
-	if not _simulation_active:
+	if not _simulation_active or not is_finite(delta) or delta <= 0.0:
 		return
-	remaining = maxf(0.0, remaining - delta)
+	# Rendering resumes with one large delta after a stall. Preserve the visible
+	# warning instead of deleting its whole lifespan before the next drawn frame.
+	remaining = maxf(0.0, remaining - minf(delta, 0.1))
 	queue_redraw()
 	if remaining <= 0.0:
 		queue_free()
@@ -78,6 +84,8 @@ func _draw() -> void:
 	draw_arc(Vector2.ZERO, 80.0 + ratio * 34.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - ratio), 56, Color(warning_color, 0.84), 5.0, true)
 	if not attack_lanes.is_empty():
 		_draw_authored_lanes(ratio)
+		if charge_number > 0:
+			draw_string(FoldlightTheme.body_font(), Vector2(-84, -122), "连冲 %d / %d" % [charge_number, charge_total], HORIZONTAL_ALIGNMENT_CENTER, 168, 24, Color(1.0,0.73,0.34))
 		return
 	if spread_radians > 0.0:
 		_draw_black_gold_spread(pulse)

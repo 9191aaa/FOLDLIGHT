@@ -1,6 +1,8 @@
 class_name FoldlightPrismBulwark
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal prism_broken(position: Vector2, duration: float)
 signal damaged(amount: float, health_remaining: float)
 signal defeated(actor: Node2D)
@@ -23,14 +25,14 @@ var _visual_time: float = 0.0
 func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 0) | (1 << 2) | (1 << 3)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: StringName) -> void:
 	definition = new_definition
 	actor_id = new_actor_id
 	health = definition.base_health if definition != null else 12.0
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, target_position: Vector2, hostile_time_scale: float = 1.0) -> void:
@@ -55,7 +57,7 @@ func advance_simulation(delta: float, target_position: Vector2, hostile_time_sca
 		_broken_remaining = maxf(0.0, _broken_remaining - safe_delta)
 		if _broken_remaining <= 0.0:
 			prism_active = true
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func take_projectile_damage(amount: float, incoming_velocity: Vector2, style: StringName) -> bool:
@@ -88,7 +90,7 @@ func _apply_damage(amount: float) -> bool:
 	if health <= 0.0:
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 

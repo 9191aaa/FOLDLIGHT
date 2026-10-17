@@ -85,6 +85,8 @@ static func _part_transform(boss_id: StringName, part: Dictionary, pose: Diction
 	var time := float(pose.get("time", 0.0)) * motion
 	var intro := lerpf(1.0, clampf(float(pose.get("intro", 1.0)), 0.0, 1.0), motion)
 	var charge := clampf(float(pose.get("charge", 0.0)), 0.0, 1.0) * motion
+	var charging := motion if bool(pose.get("charging", false)) else 0.0
+	var commanding := motion if bool(pose.get("command_frenzy", false)) else 0.0
 	var recoil := clampf(float(pose.get("recoil", 0.0)), 0.0, 1.0) * motion
 	var stagger := clampf(float(pose.get("stagger", 0.0)), 0.0, 1.0) * motion
 	var phase := clampi(int(pose.get("phase", 0)), 0, 2)
@@ -117,12 +119,13 @@ static func _part_transform(boss_id: StringName, part: Dictionary, pose: Diction
 		angle += side * (stagger * 0.2 + charge * 0.06) + breathing * 0.024
 		origin.y += breathing * 2.0 + recoil * 5.0
 	elif role == &"shuttle":
-		origin.x += side * (sin(time * 2.0 + float(order)) * 5.0 * motion - charge * 18.0 + stagger * 14.0)
+		origin.x += side * (sin(time * (2.0 + commanding * 4.0) + float(order)) * (5.0 + commanding * 8.0) * motion - charge * 18.0 + stagger * 14.0 + commanding * 15.0)
 		origin.y += recoil * (12.0 + float(order) * 2.0)
 		angle += side * ((1.0 - intro) * 0.65 + charge * 0.20 - stagger * 0.25)
 	elif role == &"blade":
-		angle += -charge * 0.38 + recoil * 0.52 + stagger * 0.32 + (1.0 - intro) * 0.8
+		angle += -charge * 0.38 + recoil * 0.52 + stagger * 0.32 + (1.0 - intro) * 0.8 + charging * 0.75
 		origin.y += -charge * 22.0 + recoil * 35.0 + stagger * 15.0
+		scale.y *= 1.0 + charging * 0.15
 	elif role == &"bell":
 		angle += side * (sin(time * 1.6 + side) * 0.065 * motion + charge * 0.24 - recoil * 0.30 + stagger * 0.19)
 		origin.y += -charge * 9.0 + recoil * 12.0 + stagger * 8.0

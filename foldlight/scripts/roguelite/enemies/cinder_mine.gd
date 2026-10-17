@@ -1,6 +1,8 @@
 class_name FoldlightCinderMine
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal blast_requested(snapshot: Dictionary)
 signal damaged(amount: float, health_remaining: float)
 signal defeated(actor: Node2D)
@@ -44,7 +46,7 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	velocity = Vector2.ZERO
 	set_meta("defeat_reason", &"damage")
 	set_meta("grants_kill_credit", true)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, target_position: Vector2, hostile_time_scale: float = 1.0) -> void:
@@ -80,7 +82,7 @@ func advance_simulation(delta: float, target_position: Vector2, hostile_time_sca
 				defeated.emit(self)
 				return
 	move_and_slide()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func take_damage(amount: float) -> bool:
@@ -97,7 +99,7 @@ func take_damage(amount: float) -> bool:
 		velocity = Vector2.ZERO
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 

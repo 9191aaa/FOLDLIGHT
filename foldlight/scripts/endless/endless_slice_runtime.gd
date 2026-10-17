@@ -9,7 +9,7 @@ extends Node2D
 signal title_requested
 
 const DASH_COOLDOWN := 2.0
-const MAX_LIVE_ENEMIES := 48
+const MAX_LIVE_ENEMIES := 80
 const SPAWN_WARNING_SECONDS := 0.65
 const SPAWNS_PER_STEP := 2
 const DISTANT_RETIRE_DISTANCE := 1800.0
@@ -43,6 +43,7 @@ var _kill_shake_cooldown: float = 0.0
 var _return_kick_cooldown: float = 0.0
 var _barrage_elite_introduced: bool = false
 var _bomber_introduced: bool = false
+var _miasma_introduced: bool = false
 var _music_sample_clock: float = 0.0
 var _reward_completion_remaining: float = 0.0
 var _reward_objective_title: String = ""
@@ -61,6 +62,10 @@ var _boss_director := FoldlightEndlessBossDirector.new()
 var _boss_entries: Array[Dictionary] = []
 var _boss_placement_retry: float = 0.0
 var _bombardment: FoldlightEndlessBombardment
+var _inversion: FoldlightEndlessInversionField
+var _boss_lockdown: FoldlightEndlessBossLockdown
+var _lockdown_route_clock := 0.0
+var _lockdown_waypoint := Vector2.ZERO
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
@@ -78,6 +83,12 @@ func _ready() -> void:
 	_bombardment = FoldlightEndlessBombardment.new()
 	_bombardment.name = "BombardmentLandingSites"
 	add_child(_bombardment)
+	_inversion = FoldlightEndlessInversionField.new()
+	_inversion.name = "InvertedPaperCurrent"
+	add_child(_inversion)
+	_boss_lockdown = FoldlightEndlessBossLockdown.new()
+	_boss_lockdown.name = "BossHuntPerimeter"
+	add_child(_boss_lockdown)
 	presentation.show_hud()
 	_navigation = preload("res://scripts/endless/navigation_overlay.gd").new()
 	presentation.attach_navigation_overlay(_navigation)
@@ -215,6 +226,7 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	_return_kick_cooldown = 0.0
 	_barrage_elite_introduced = false
 	_bomber_introduced = false
+	_miasma_introduced = false
 	player.set_debug_invincible(false)
 	controller.map_runtime.build_physics_walls = false
 	controller.map_runtime.draw_cover_visuals = false
@@ -249,7 +261,9 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	_transitioning_to_title = false
 	var snapshot := controller.enter_mode(seed, player)
 	_bombardment.configure(controller.map_definition, controller.map_runtime, seed)
+	_inversion.configure(controller.map_definition, controller.map_runtime, seed)
 	combat_runtime.directed_spawn_validator = _minion_position_is_safe
+	combat_runtime.effect_suspension_guard = _combat_host_suspended
 	player.weapon_mount.set_weapon_levels(controller.weapon_levels)
 	player.active_item_slot.restore_collection(snapshot)
 	_refresh_active_inventory()
@@ -468,16 +482,22 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 	var directed: Array[Dictionary] = []
 	var has_barrage_elite := false
 	var bomber_count := 0
+	var miasma_count := 0
+	var miasma_limit := 3 if controller.evolution.experience_level >= 24 or controller.evolution.survival_seconds >= 720.0 else 2
 	for enemy in combat_runtime.enemies:
 		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.definition.content_id == &"shutter_seraph":
 			has_barrage_elite = true
 		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.definition.content_id == &"cinder_mine":
 			bomber_count += 1
+		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.definition.content_id == &"miasma_wraith":
+			miasma_count += 1
 	for pending in _pending_spawns:
 		var pending_id := StringName(pending.get("enemy_id", &""))
 		has_barrage_elite = has_barrage_elite or pending_id == &"shutter_seraph"
 		if pending_id == &"cinder_mine":
 			bomber_count += 1
+		if pending_id == &"miasma_wraith":
+			miasma_count += 1
 	var entries_variant: Variant = request.get("entries", [])
 	if entries_variant is Array:
 		for entry_variant: Variant in entries_variant:
@@ -511,6 +531,13 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 				if not _bomber_introduced:
 					_bomber_introduced = true
 					presentation.show_notice("烬火纸雷 · 定点自爆", "红圈亮起后有 1.5 秒离圈；冲刺避开或提前击破，不会殉爆。")
+			if StringName(entry.get("enemy_id", &"")) == &"miasma_wraith":
+				if miasma_count >= miasma_limit:
+					continue
+				miasma_count += 1
+				if not _miasma_introduced:
+					_miasma_introduced = true
+					presentation.show_notice("瘴纸游魂 · 沿路留毒", "避开绿雾；击破游魂会清除它留下的毒气。")
 			directed.append(entry)
 	_queue_directed_spawns(directed)
 	_report_population()
@@ -564,6 +591,13 @@ func _clear_pending_spawns() -> void:
 	_clear_boss_warning()
 	if is_instance_valid(_bombardment):
 		_bombardment.cancel()
+	if is_instance_valid(_inversion):
+		_inversion.cancel()
+	if is_instance_valid(_boss_lockdown):
+		_boss_lockdown.cancel()
+	_lockdown_route_clock = 0.0
+	if is_instance_valid(player):
+		player.set_horizontal_input_reversed(false)
 
 
 func _release_spawn_marker(entry: Dictionary) -> void:
@@ -621,7 +655,7 @@ func _effective_population_limit() -> int:
 	var boss_count := maxi(_boss_snapshots().size(), _boss_entries.size())
 	# Bosses replace some ordinary pressure. They do not bypass the same frame
 	# budget by adding three full waves on top of a crowded battlefield.
-	return maxi(16, mini(MAX_LIVE_ENEMIES, limit) - boss_count * 8)
+	return maxi(mini(limit, 32 + boss_count), mini(MAX_LIVE_ENEMIES, limit) - boss_count * 4)
 
 
 func _minion_position_is_safe(entry: Dictionary) -> bool:
@@ -673,12 +707,11 @@ func _plan_boss_positions() -> bool:
 			return false
 		occupied.append(chosen)
 		var scale := minf(2.5, 0.72 + 0.12 * float(wave - 1))
-		if _boss_director.planned_boss_ids().size() > 1:
-			scale *= 0.82
 		var entry := {
 			"boss_id": boss_id, "is_boss": true, "boss_wave": wave, "threat_cost": 12,
 			"spawn_position": chosen, "position": chosen, "role": FoldlightRogueEnemyDefinition.EnemyRole.BOSS,
 			"boss_options": {"health_scale": scale, "endless_roam": true, "arena_pressure": false,
+				"intensity_tier": _boss_director.intensity_tier(),
 				"intro_delay": float(occupied.size() - 1) * 0.65,
 				"local_arena": Rect2(chosen - Vector2(900, 700), Vector2(1800, 1400)).intersection(controller.map_definition.bounds)},
 		}
@@ -700,7 +733,19 @@ func _advance_encounters(delta: float) -> void:
 	_advance_boss_encounter(delta)
 	if run_ended or not _modal_kind.is_empty():
 		return
+	_lockdown_route_clock = maxf(0.0, _lockdown_route_clock - minf(delta, 0.1))
+	var previous_lockdown_state := StringName(_boss_lockdown.get_snapshot().state)
+	if _boss_lockdown.advance(delta, _boss_director.get_snapshot(), _boss_snapshots(), player.global_position):
+		combat_runtime._try_hit_player(player.global_position - Vector2(_boss_lockdown.get_snapshot().position))
+		if run_ended:
+			return
+	if previous_lockdown_state == &"approach" and StringName(_boss_lockdown.get_snapshot().state) == &"warning":
+		_lockdown_route_clock = 0.0
+		_lockdown_navigation_snapshot()
+		_boss_lockdown.extend_return_warning()
 	var objective := controller.objectives.get_snapshot()
+	var reversed := _inversion.advance(delta, controller.evolution.survival_seconds, controller.evolution.experience_level, player.global_position, objective.get("protected_points", PackedVector2Array()))
+	player.set_horizontal_input_reversed(reversed)
 	var impacts := _bombardment.advance(delta, controller.evolution.survival_seconds, player.global_position, objective.get("protected_points", PackedVector2Array()), _boss_snapshots().size())
 	for impact in impacts:
 		if player.global_position.distance_to(Vector2(impact.position)) <= float(impact.radius) + player.get_hit_radius():
@@ -808,15 +853,21 @@ func _actor_threat(actor: Node2D) -> int:
 func _report_population() -> void:
 	var alive := 0
 	var threat := 0
+	var miasma_alive := 0
+	var miasma_pending := 0
 	for actor: Node2D in combat_runtime.enemies:
 		if not is_instance_valid(actor) or actor.is_queued_for_deletion() or float(actor.get("health")) <= 0.0:
 			continue
 		alive += 1
 		threat += _actor_threat(actor)
+		if actor.definition.content_id == &"miasma_wraith":
+			miasma_alive += 1
 	var pending_threat := 0
 	for entry in _pending_spawns:
+		if StringName(entry.get("enemy_id", &"")) == &"miasma_wraith":
+			miasma_pending += 1
 		pending_threat += 6 if bool(entry.get("is_captain", false)) else int(entry.get("threat_cost", controller.THREAT_COSTS.get(StringName(entry.get("enemy_id", &"drifter")), 1)))
-	controller.report_population({"alive_count": alive, "pending_count": _pending_spawns.size() + _boss_entries.size(), "threat_total": threat, "pending_threat": pending_threat + _boss_entries.size() * 12})
+	controller.report_population({"alive_count": alive, "pending_count": _pending_spawns.size() + _boss_entries.size(), "threat_total": threat, "pending_threat": pending_threat + _boss_entries.size() * 12, "miasma_alive_count": miasma_alive, "miasma_pending_count": miasma_pending})
 	combat_runtime.directed_spawn_allowance = maxi(0, _effective_population_limit() - alive - _pending_spawns.size() - _boss_entries.size())
 	combat_runtime.directed_threat_allowance = maxi(0, int(controller.evolution.get_enemy_snapshot().get("threat_limit", 104)) - threat - pending_threat - _boss_entries.size() * 12)
 
@@ -858,11 +909,16 @@ func _on_enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary) -> voi
 	_defeat_serial += 1
 	report["defeat_serial"] = _defeat_serial
 	report["defeat_reason"] = &"player"
+	var boss_wave_cleared := bool(entry.get("is_boss", false)) and _boss_director.report_defeated(StringName(entry.get("actor_id", &"")), controller.evolution.survival_seconds)
+	if boss_wave_cleared:
+		# A kill may synchronously open a mission/level reward and cache the HUD.
+		# Remove the arena before that notification, while retaining reward order.
+		_boss_lockdown.cancel()
+		_restore_survival_music()
 	controller.report_enemy_defeated(report)
-	if bool(entry.get("is_boss", false)) and _boss_director.report_defeated(StringName(entry.get("actor_id", &"")), controller.evolution.survival_seconds):
+	if boss_wave_cleared:
 		var wave := int(_boss_director.get_snapshot().wave_index)
 		controller.queue_boss_reward(enemy_id, "首领遭遇 %d · 已击破" % wave, wave)
-		_restore_survival_music()
 	if _kill_shake_cooldown <= 0.0:
 		var shake := 0.34 if bool(entry.get("is_captain", false)) else 0.16
 		camera.add_trauma(shake * _feedback_motion_scale)
@@ -1140,6 +1196,8 @@ func _refresh_combined_modifiers() -> void:
 	var resolved := {
 		"capture_capacity": float(_combined_modifiers.get("capture_capacity", 0.0)),
 		"fold_radius_multiplier": 1.0 + float(_combined_modifiers.get("fold_radius_multiplier", 0.0)),
+		"fold_cooldown_multiplier": pow(0.9, float(_combined_modifiers.get("fold_cooldown_level", 0.0))),
+		"dash_blast_level": int(_combined_modifiers.get("dash_blast_level", 0)),
 		"return_damage_multiplier": 1.0 + float(_combined_modifiers.get("return_damage_multiplier", 0.0)),
 		"fold_move_speed_add": float(_combined_modifiers.get("fold_move_speed_multiplier", 0.0)),
 		"move_speed_multiplier": 1.0 + float(_combined_modifiers.get("move_speed_multiplier", 0.0)),
@@ -1163,6 +1221,7 @@ func _on_objective_started(objective: Dictionary) -> void:
 		var target := ObjectiveTarget.new()
 		target.configure(objective)
 		target.damage_reported.connect(controller.report_flag_damage)
+		target.destroyed.connect(controller.report_flag_destroyed)
 		combat_runtime.register_objective_target(target, {
 			"objective_id": objective.get("id", &""),
 			"target_id": objective.get("target_id", &""),
@@ -1293,8 +1352,9 @@ func _refresh_hud() -> void:
 		"experience": controller.evolution.get_experience_snapshot(),
 		"objective_feedback": _reward_ui_metadata() if _modal_kind == &"objective_complete" else {},
 		"bosses": _boss_snapshots(),
-		"boss_director": _boss_director.get_snapshot(),
+		"boss_director": _boss_hud_snapshot(),
 		"bombardment": _bombardment.get_snapshot() if is_instance_valid(_bombardment) else {},
+		"inversion": _inversion.get_snapshot() if is_instance_valid(_inversion) else {},
 	}
 	var pressure := "威胁 %d · 场上 %d\n收纳进化 %d" % [int(enemy_state.get("stage", 0)), combat_runtime.enemies.size(), int(player_state.get("stage", 0))]
 	presentation.update_hud(player, {}, {}, "无尽挑战", pressure, {}, context)
@@ -1348,10 +1408,30 @@ func get_navigation_snapshot() -> Dictionary:
 		"refuges": zone_state.get("refuges", PackedVector2Array()),
 		"objective": controller.objectives.get_snapshot(),
 		"bosses": _boss_snapshots(),
-		"boss_director": _boss_director.get_snapshot(),
+		"boss_director": _boss_hud_snapshot(),
+		"boss_lockdown": _lockdown_navigation_snapshot(),
 		"bombardment": _bombardment.get_snapshot() if is_instance_valid(_bombardment) else {},
+		"inversion": _inversion.get_snapshot() if is_instance_valid(_inversion) else {},
 		"danger": {"state": state, "message": message, "seconds_remaining": remaining, "safe_position": _safe_route_position},
 	}
+
+
+func _boss_hud_snapshot() -> Dictionary:
+	var state := _boss_director.get_snapshot()
+	state["lockdown"] = _boss_lockdown.get_snapshot() if is_instance_valid(_boss_lockdown) else {}
+	return state
+
+
+func _lockdown_navigation_snapshot() -> Dictionary:
+	if not is_instance_valid(_boss_lockdown):
+		return {}
+	var state := _boss_lockdown.get_snapshot()
+	if bool(state.outside) and _lockdown_route_clock <= 0.0:
+		_lockdown_route_clock = 0.5
+		_lockdown_waypoint = _boss_lockdown.return_waypoint(player.global_position, controller.map_runtime, controller.zones)
+		state = _boss_lockdown.get_snapshot()
+	state["safe_position"] = _lockdown_waypoint
+	return state
 
 
 func get_slice_snapshot() -> Dictionary:

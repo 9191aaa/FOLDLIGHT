@@ -40,6 +40,7 @@ func run() -> void:
 		damage_events.append(damage)
 		director.report_flag_damage(id, damage)
 	)
+	actor.destroyed.connect(director.report_flag_destroyed)
 	check(combat.register_objective_target(actor, {"target_id": snapshot["target_id"]}), "real objective registers in shared targeting")
 	check(not combat.register_objective_target(actor), "registering the same target cannot duplicate collision or death callbacks")
 	check(actor.global_position == Vector2(1000, 600) and actor.get_node("CollisionShape2D").shape is CircleShape2D, "target uses the advertised world position and a real circle hit shape")

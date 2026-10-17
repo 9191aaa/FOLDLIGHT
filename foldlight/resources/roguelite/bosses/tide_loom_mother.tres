@@ -6,9 +6,9 @@
 script = ExtResource("1")
 content_id = &"tide_loom_mother"
 title = "潮汐织母"
-description = "展开折纸织梭，用平行潮线与交错经纬编织战场；青色留白是可穿过的空隙。"
+description = "以赤金织域持续强化附近敌群，每次织线攻击再掀狂潮；越到后期范围越大、敌群越快。引敌离域或返光打断织母，可解除强化。"
 accent = Color(0.38, 0.88, 0.76, 1)
-tags = Array[StringName]([&"weaver", &"gaps"])
+tags = Array[StringName]([&"commander", &"weaver", &"gaps"])
 region_id = &"paper_reef"
 base_health = 460.0
 phase_thresholds = PackedFloat32Array(0.68, 0.34)

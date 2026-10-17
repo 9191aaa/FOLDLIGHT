@@ -50,11 +50,14 @@ func run() -> void:
 	slice._report_population()
 	slice.controller.force_next_wave()
 	check(slice.controller._captain_spawned_for_objective.is_empty(), "full enemy capacity cannot falsely acknowledge a task captain")
-	var removed: Node2D = slice.combat_runtime.enemies.pop_back()
-	removed.queue_free()
+	# Opening population 28 and threat 32 leave only five threat after removing
+	# one drifter. A real captain costs six, so release two ordinary slots.
+	for index in 2:
+		var removed: Node2D = slice.combat_runtime.enemies.pop_back()
+		removed.queue_free()
 	slice._report_population()
 	slice.controller.force_next_wave()
-	check(slice.controller._captain_spawned_for_objective.is_empty() and slice._pending_spawns.size() == 1, "opening a slot queues the captain warning without acknowledging an actor early")
+	check(slice.controller._captain_spawned_for_objective.is_empty() and slice._pending_spawns.size() == 1 and bool(slice._pending_spawns[0].get("is_captain", false)), "opening both population and six threat queues the captain warning without acknowledging an actor early")
 	_flush_arrivals(slice)
 	check(slice.controller._captain_spawned_for_objective == StringName(slice.controller.objectives.get_snapshot().target_id), "captain retries and is acknowledged once a real actor slot opens")
 	var captain_count := 0
@@ -64,7 +67,7 @@ func run() -> void:
 	slice._report_population()
 	slice.controller.force_next_wave()
 	_flush_arrivals(slice)
-	check(captain_count == 1 and slice.combat_runtime.enemies.size() == population_limit, "acknowledged captain is not duplicated by subsequent full waves")
+	check(captain_count == 1 and slice.combat_runtime.enemies.size() == population_limit - 1, "acknowledged captain is not duplicated after its full threat budget leaves one actor slot unused")
 
 	slice.start_slice(0)
 	slice._clear_pending_spawns()

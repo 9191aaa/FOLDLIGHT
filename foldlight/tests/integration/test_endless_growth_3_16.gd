@@ -109,8 +109,8 @@ func _test_population_and_spawn_safety(controller: FoldlightEndlessSurvivalContr
 	for wave in 30:
 		controller.force_next_wave()
 	var population := controller.get_population_snapshot()
-	_check(int(population.pending_count) <= 24 and int(population.pending_threat) <= 32, "uninstantiated waves reserve both population and threat instead of accumulating beyond the cap")
-	controller.report_population({"alive_count": 23, "pending_count": 1, "threat_total": 24})
+	_check(int(population.pending_count) <= 28 and int(population.pending_threat) <= 32, "uninstantiated waves reserve both population and threat instead of accumulating beyond the cap")
+	controller.report_population({"alive_count": 27, "pending_count": 1, "threat_total": 28})
 	_check((controller.force_next_wave().entries as Array).is_empty(), "alive plus pending actors obey the hard population cap")
 	controller.report_population({"alive_count": 4, "threat_total": 26, "pending_threat": 6})
 	_check((controller.force_next_wave().entries as Array).is_empty(), "pending threat counts even when the actor cap has free space")
@@ -135,7 +135,7 @@ func _test_population_and_spawn_safety(controller: FoldlightEndlessSurvivalContr
 	controller.report_population({})
 	var breathing := controller.force_next_wave()
 	_check(not bool(full_wave.breathing_wave) and bool(breathing.breathing_wave) and _wave_threat(breathing) <= _wave_threat(full_wave) * 0.75 + 1, "the pressure rhythm alternates a full wave with a smaller breathing wave")
-	_check(int(controller.get_population_snapshot().population_limit) == 42 and int(controller.get_population_snapshot().threat_limit) == 86, "late time pressure uses bounded population and threat limits before XP adds further pressure")
+	_check(int(controller.get_population_snapshot().population_limit) == 56 and int(controller.get_population_snapshot().threat_limit) == 102, "ten-minute time pressure keeps increasing actor and threat budgets after the authored opening stages")
 	controller.start_run(3)
 	controller.advance_simulation(100.0, controller.map_definition.player_spawn)
 	var sequence := controller.wave_sequence

@@ -48,7 +48,7 @@ func _test_experience(controller: FoldlightEndlessSurvivalController) -> void:
 func _test_density(controller: FoldlightEndlessSurvivalController) -> void:
 	controller.start_run(3)
 	var early := controller.evolution.get_enemy_snapshot()
-	_check(early.population_limit == 24 and early.threat_limit == 32 and is_equal_approx(early.spawn_interval, 4.4), "opening reinforcement is denser with 24 actors, 32 threat and 4.4-second cadence")
+	_check(early.population_limit == 28 and early.threat_limit == 32 and is_equal_approx(early.spawn_interval, 4.4), "opening reinforcement starts with 28 actors, 32 threat and 4.4-second cadence")
 	var requested := 0
 	for wave in 5:
 		controller.report_population({})
@@ -56,15 +56,15 @@ func _test_density(controller: FoldlightEndlessSurvivalController) -> void:
 	_check(requested >= 18, "five uncongested opening waves request at least eighteen nearby enemies")
 	controller.evolution.record_kill_experience(100000)
 	var late := controller.evolution.get_enemy_snapshot()
-	_check(late.population_limit == 48 and late.threat_limit == 104 and late.spawn_interval >= 1.9, "late reinforcement has bounded actor, threat and minimum interval budgets")
+	_check(late.population_limit == 80 and late.threat_limit == 160 and late.spawn_interval >= 1.9, "late reinforcement has bounded actor, threat and minimum interval budgets")
 	controller.report_population({})
 	for wave in 40:
 		controller.force_next_wave()
 	var population := controller.get_population_snapshot()
-	_check(population.pending_count <= 48 and population.pending_threat <= 104, "uncreated reinforcements reserve both limits without an unlimited queue")
-	controller.report_population({"alive_count": 46, "pending_count": 2})
-	_check((controller.force_next_wave().entries as Array).is_empty(), "48 live plus warned actors block further waves")
-	controller.report_population({"threat_total": 98, "pending_threat": 6})
+	_check(population.pending_count <= 80 and population.pending_threat <= 160, "uncreated reinforcements reserve both limits without an unlimited queue")
+	controller.report_population({"alive_count": 78, "pending_count": 2})
+	_check((controller.force_next_wave().entries as Array).is_empty(), "80 live plus warned actors block further waves")
+	controller.report_population({"threat_total": 154, "pending_threat": 6})
 	_check((controller.force_next_wave().entries as Array).is_empty(), "pending boss or captain threat participates in the full threat budget")
 	var legal := true
 	var present := true

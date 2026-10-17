@@ -1,6 +1,8 @@
 class_name FoldlightShutterSeraph
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal volley_requested(snapshot: Dictionary)
 signal damaged(amount: float, health_remaining: float)
 signal defeated(actor: Node2D)
@@ -34,7 +36,7 @@ func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 0) | (1 << 2) | (1 << 3)
 	_refresh_motion_setting()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: StringName) -> void:
@@ -50,7 +52,7 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	_hit_flash = 0.0
 	_hit_punch = 0.0
 	velocity = Vector2.ZERO
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, target_position: Vector2, hostile_time_scale: float = 1.0) -> void:
@@ -104,7 +106,7 @@ func advance_simulation(delta: float, target_position: Vector2, hostile_time_sca
 				phase = Phase.CLOSED
 				_phase_remaining = CLOSED_DURATION
 	move_and_slide()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func _shot_interval() -> float:
@@ -149,14 +151,14 @@ func take_damage(amount: float) -> bool:
 		return false
 	if not is_damageable():
 		_shield_flash = 1.0
-		queue_redraw()
+		RenderRedraw.request(self)
 		return false
 	var applied := minf(health, amount)
 	health -= applied
 	_hit_flash = 1.0
 	_hit_punch = 0.9
 	damaged.emit(applied, health)
-	queue_redraw()
+	RenderRedraw.request(self)
 	if health <= 0.0:
 		defeated.emit(self)
 		return true

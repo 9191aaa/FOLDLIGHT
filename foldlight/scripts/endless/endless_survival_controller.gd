@@ -26,12 +26,15 @@ const THREAT_COSTS := {
 	&"rewinder": 6,
 	&"shutter_seraph": 6,
 	&"cinder_mine": 3,
+	&"miasma_wraith": 4,
 }
 
 const BARRAGE_ELITE_START_SECONDS := 105.0
 const BARRAGE_ELITE_WAVE_INTERVAL := 4
 const BOMBER_START_SECONDS := 150.0
 const BOMBER_WAVE_INTERVAL := 3
+const MIASMA_START_SECONDS := 180.0
+const MIASMA_WAVE_INTERVAL := 4
 const MAP_PATHS := [
 	"res://resources/endless/maps/folded_delta.tres",
 	"res://resources/endless/maps/inverted_canals.tres",
@@ -62,7 +65,7 @@ var _run_generation: int = 0
 var _last_defeat_serial: int = 0
 var _reward_transaction: bool = false
 var _claiming_pending_reward: bool = false
-var _population := {"alive_count": 0, "pending_count": 0, "threat_total": 0, "pending_threat": 0}
+var _population := {"alive_count": 0, "pending_count": 0, "threat_total": 0, "pending_threat": 0, "miasma_alive_count": 0, "miasma_pending_count": 0}
 var _last_reward_completion: int = 0
 var _last_boss_reward_wave: int = 0
 var _captain_spawned_for_objective: StringName = &""
@@ -144,7 +147,7 @@ func start_run(seed: int = 1) -> Dictionary:
 	_last_defeat_serial = 0
 	_reward_transaction = false
 	_claiming_pending_reward = false
-	_population = {"alive_count": 0, "pending_count": 0, "threat_total": 0, "pending_threat": 0}
+	_population = {"alive_count": 0, "pending_count": 0, "threat_total": 0, "pending_threat": 0, "miasma_alive_count": 0, "miasma_pending_count": 0}
 	_last_reward_completion = 0
 	_last_boss_reward_wave = 0
 	_captain_spawned_for_objective = &""
@@ -516,12 +519,27 @@ func _emit_next_wave() -> Dictionary:
 			entries.append(bomber)
 			budget -= 3
 			available_count -= 1
+	if evolution.survival_seconds >= MIASMA_START_SECONDS and wave_sequence % MIASMA_WAVE_INTERVAL == 0:
+		var maximum_miasma := 3 if evolution.experience_level >= 24 or evolution.survival_seconds >= 720.0 else 2
+		var available_miasma := maxi(0, maximum_miasma - int(_population["miasma_alive_count"]) - int(_population["miasma_pending_count"]))
+		for index in mini(2, available_miasma):
+			if available_count <= 0 or budget < 4:
+				break
+			var miasma := _make_regular_entry(&"miasma_wraith", &"melee", wave_sequence * 17 + 83 + index * 11, enemy_state)
+			if not miasma.is_empty():
+				entries.append(miasma)
+				budget -= 4
+				available_count -= 1
 	var unlocked_count := mini(config.classic_enemy_ids.size(), 2 + int(enemy_state.get("stage", 0)))
 	var guard := 0
 	while budget > 0 and available_count > 0 and guard < 48:
 		guard += 1
 		var enemy_index := posmod(run_seed + wave_sequence * 5 + guard * 3, unlocked_count)
 		var enemy_id := config.classic_enemy_ids[enemy_index]
+		# Most extra bodies are readable, low-health fodder. Specialist quotas
+		# keep their cadence instead of filling every new slot with dense fire.
+		if guard % 3 != 0:
+			enemy_id = &"drifter"
 		var cost := int(THREAT_COSTS.get(enemy_id, 1))
 		if cost > budget:
 			enemy_id = &"drifter"
@@ -538,6 +556,8 @@ func _emit_next_wave() -> Dictionary:
 	var reserved_threat := 0
 	for entry: Dictionary in entries:
 		reserved_threat += int(entry.get("threat_cost", 1))
+		if StringName(entry.get("enemy_id", &"")) == &"miasma_wraith":
+			_population["miasma_pending_count"] = int(_population["miasma_pending_count"]) + 1
 	_population["pending_count"] = int(_population["pending_count"]) + entries.size()
 	_population["pending_threat"] = int(_population["pending_threat"]) + reserved_threat
 	var request := {

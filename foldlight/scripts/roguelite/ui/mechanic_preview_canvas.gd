@@ -79,6 +79,12 @@ func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 	match attack_style:
 		&"anchored_blast":
 			_draw_anchored_blast(origin, cycle)
+		&"poison_trail":
+			_draw_poison_trail(origin, cycle)
+		&"command_swarm":
+			_draw_command_swarm(origin, target, cycle)
+		&"relentless_charge":
+			_draw_relentless_charge(origin, target, cycle)
 		&"exposure_barrage":
 			_draw_exposure_barrage(origin, target, cycle)
 		&"aimed_volley", &"line_volley":
@@ -231,8 +237,14 @@ func _draw_radial(origin: Vector2, cycle: float) -> void:
 
 func _draw_actor(center: Vector2, cycle: float) -> void:
 	if preview_kind == &"boss":
+		if attack_style == &"relentless_charge":
+			var dash_cycle := fposmod(cycle * 3.0, 1.0)
+			var dash_index := mini(2, int(cycle * 3.0))
+			var destination := Vector2(size.x * 0.79, size.y * 0.62 + float(dash_index - 1) * minf(38.0, size.y * 0.10))
+			center = center.lerp(destination, clampf((dash_cycle - 0.48) / 0.34, 0.0, 1.0))
 		var bounds: Rect2 = BossPaperPuppet.get_visual_bounds(preview_id)
-		var fit := minf(size.x * 0.46 / bounds.size.x, size.y * 0.66 / bounds.size.y)
+		var charging := attack_style == &"relentless_charge"
+		var fit := minf(size.x * (0.32 if charging else 0.46) / bounds.size.x, size.y * (0.48 if charging else 0.66) / bounds.size.y)
 		draw_set_transform(center, 0.0, Vector2.ONE * fit)
 		BossPaperPuppet.draw_puppet(self, preview_id, {
 			"time": _time, "intro": 1.0, "phase": 0,
@@ -246,6 +258,7 @@ func _draw_actor(center: Vector2, cycle: float) -> void:
 	var scale_value := (1.25 if preview_kind == &"boss" else 1.0) * (1.0 + breathe * 0.025)
 	draw_set_transform(center + Vector2(0.0, breathe * 3.0), breathe * 0.025, Vector2.ONE * scale_value)
 	match preview_id:
+		&"miasma_wraith": _draw_miasma_body()
 		&"cinder_mine": _draw_cinder_mine_body(cycle)
 		&"shutter_seraph": _draw_seraph_body(cycle)
 		&"paper_turret": _draw_turret_body(cycle)
@@ -413,6 +426,7 @@ func _infer_preview_kind(id: StringName) -> StringName:
 
 func _default_attack_style(id: StringName) -> StringName:
 	return {
+		&"miasma_wraith": &"poison_trail",
 		&"cinder_mine": &"anchored_blast",
 		&"shutter_seraph": &"exposure_barrage",
 		&"paper_turret": &"aimed_volley",
@@ -424,10 +438,75 @@ func _default_attack_style(id: StringName) -> StringName:
 		&"reef_crown_battery": &"tide_gap",
 		&"inverted_archivist": &"partitions",
 		&"origami_judge": &"shrinking_frame",
-		&"tide_loom_mother": &"woven_lanes",
-		&"torn_page_executioner": &"locked_dash",
+		&"tide_loom_mother": &"command_swarm",
+		&"torn_page_executioner": &"relentless_charge",
 		&"eclipse_twin_bells": &"paired_gaps",
 	}.get(id, &"radial")
+
+
+func _draw_miasma_body() -> void:
+	var paper := Color("a9b58c")
+	var mantle := PackedVector2Array([Vector2(0, -39), Vector2(31, -9), Vector2(23, 29), Vector2(9, 18), Vector2(0, 40), Vector2(-13, 20), Vector2(-27, 31), Vector2(-32, -7)])
+	draw_colored_polygon(mantle, Color("243a34"))
+	draw_polyline(PackedVector2Array(Array(mantle) + [mantle[0]]), paper, 2.5, true)
+	draw_line(Vector2(0, -33), Vector2(0, 30), Color(paper, 0.45), 1.5, true)
+	draw_colored_polygon(PackedVector2Array([Vector2(0, -24), Vector2(12, -6), Vector2(0, 5), Vector2(-12, -6)]), Color("101f23"))
+	draw_line(Vector2(-7, -8), Vector2(-2, -6), paper, 2.5, true)
+	draw_line(Vector2(2, -6), Vector2(7, -8), paper, 2.5, true)
+
+
+func _draw_poison_trail(origin: Vector2, cycle: float) -> void:
+	var ink := Color("a9b58c")
+	for index in 3:
+		var center := origin + Vector2(44.0 + index * 52.0, 44.0 - index * 18.0)
+		var warning := cycle < 0.24 + index * 0.13
+		var cloud_radius := 33.0
+		draw_circle(center, cloud_radius, Color(ink, 0.05 if warning else 0.12))
+		if warning:
+			for segment in 8:
+				var angle := segment * TAU / 8.0
+				draw_arc(center, cloud_radius, angle, angle + 0.50, 6, Color(ink, 0.75), 2.0, true)
+		else:
+			draw_arc(center, cloud_radius, 0.0, TAU, 24, ink, 2.4, true)
+			for ray in 3:
+				var direction := Vector2.from_angle(-PI * 0.5 + ray * TAU / 3.0)
+				draw_line(center + direction * 3.0, center + direction * 12.0, Color(ink, 0.65), 3.5, true)
+
+
+func _draw_command_swarm(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var command_ink := Color("baa784")
+	var aura_radius := minf(102.0, size.y * 0.29)
+	draw_circle(origin, aura_radius, Color(command_ink, 0.035))
+	draw_arc(origin, aura_radius, 0.0, TAU, 48, Color(command_ink, 0.48), 1.8, true)
+	for index in 3:
+		var center := origin + Vector2.from_angle(-0.85 + index * 0.82) * (aura_radius - 12.0)
+		draw_line(origin, center, Color(command_ink, 0.55), 1.7, true)
+		_draw_petal_enemy(center, 0.78)
+		# The fixed chevron denotes a buff even with animation disabled.
+		draw_polyline(PackedVector2Array([center + Vector2(-7, -24), center + Vector2(0, -30), center + Vector2(7, -24)]), command_ink, 2.2, true)
+		var aim := center.direction_to(target)
+		for shot in 3:
+			var flight := fposmod(cycle * 2.0 + shot * 0.27, 1.0)
+			_draw_projectile(center + aim * lerpf(22.0, center.distance_to(target), flight), aim.angle(), true)
+
+
+func _draw_relentless_charge(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var dash_cycle := fposmod(cycle * 3.0, 1.0)
+	var dash_index := mini(2, int(cycle * 3.0))
+	var destination := target + Vector2(0.0, float(dash_index - 1) * minf(38.0, size.y * 0.10))
+	var aim := origin.direction_to(destination)
+	var side := aim.orthogonal() * 19.0
+	var ink := Color("c3a788")
+	draw_line(origin, destination, Color("362d32"), 38.0, true)
+	draw_dashed_line(origin + side, destination + side, ink, 2.0, 10.0, true)
+	draw_dashed_line(origin - side, destination - side, ink, 2.0, 10.0, true)
+	for index in 3:
+		var x := size.x * 0.35 + float(index - 1) * 20.0
+		var active_mark := index == dash_index
+		draw_rect(Rect2(x - 5.0, 20.0, 10.0, 5.0), ink if active_mark else Color(ink, 0.25))
+	if dash_cycle < 0.48:
+		var tip := origin.lerp(destination, dash_cycle / 0.48)
+		draw_polyline(PackedVector2Array([tip - aim * 10.0 + side * 0.40, tip, tip - aim * 10.0 - side * 0.40]), ink, 2.3, true)
 
 
 func _draw_new_boss_attack(origin: Vector2, target: Vector2, cycle: float) -> void:

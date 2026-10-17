@@ -14,6 +14,21 @@ extends FoldlightRogueContentDefinition
 @export_range(0.0, 3.0, 0.05) var telegraph_seconds: float = 0.0
 @export_range(0.0, 3.0, 0.05) var recovery_seconds: float = 0.0
 @export var active_pattern_seconds: Dictionary = {}
+## Only the executioner's body-charge pattern reads these values.
+@export_range(1, 6, 1) var charge_chain_count: int = 3
+@export_range(0.35, 1.5, 0.05) var charge_chain_warning: float = 0.60
+@export_range(0.2, 0.8, 0.01) var charge_chain_duration: float = 0.34
+@export_range(300.0, 1200.0, 10.0) var charge_chain_distance: float = 720.0
+## Commander multipliers are copied to actor instances, never to Resources.
+@export_range(200.0, 1000.0, 10.0) var command_radius: float = 560.0
+
+
+func get_charge_settings(phase: int, intensity: int) -> Dictionary:
+	var tier := clampi(intensity, 0, 5)
+	return {"count": clampi(charge_chain_count + phase + tier / 2, 1, 6),
+		"warning": maxf(0.42, charge_chain_warning - phase * 0.035 - tier * 0.025),
+		"duration": maxf(0.24, charge_chain_duration - phase * 0.02 - tier * 0.012),
+		"distance": minf(980.0, charge_chain_distance + phase * 55.0 + tier * 30.0)}
 
 
 func validation_errors() -> Array[String]:

@@ -19,12 +19,12 @@ const MISSION_REWARD_LANES: Array[Dictionary] = [
 	{
 		"id": &"power",
 		"title": "火力",
-		"reward_ids": [&"surge_return", &"crosswind"],
+		"reward_ids": [&"surge_return", &"crosswind", &"dash_blast"],
 	},
 	{
 		"id": &"fold_mobility",
 		"title": "折域机动",
-		"reward_ids": [&"wide_fold", &"kinetic_paper"],
+		"reward_ids": [&"wide_fold", &"kinetic_paper", &"quiet_hinge"],
 	},
 	{
 		"id": &"sustain",
@@ -34,6 +34,16 @@ const MISSION_REWARD_LANES: Array[Dictionary] = [
 ]
 
 const MISSION_REWARDS: Array[Dictionary] = [
+	{
+		"id": &"quiet_hinge", "title": "静铰",
+		"description": "收纳释放后的冷却缩短 10%；每层相乘，最多 8 层。",
+		"max_stacks": 8, "modifiers": {"fold_cooldown_level": 1},
+	},
+	{
+		"id": &"dash_blast", "title": "震纸冲刺",
+		"description": "冲刺沿途与身边爆破清弹；首层伤害 10、半径 110。每层伤害 +10、半径 +10，最多 6 层。",
+		"max_stacks": 6, "modifiers": {"dash_blast_level": 1},
+	},
 	{
 		"id": &"surge_return",
 		"title": "潮返",
@@ -133,12 +143,12 @@ func record_kill_experience(amount: int) -> Array[int]:
 func get_experience_reward_options(level: int) -> Array[Dictionary]:
 	var options := get_mission_reward_options(maxi(0, level - 2))
 	for option: Dictionary in options:
-		option["next_level"] = int(experience_reward_levels.get(option["id"], 0)) + 1
+		option["next_level"] = _combined_reward_level(StringName(option["id"])) + 1
 	return options
 
 
 func apply_experience_reward(reward_id: StringName) -> Dictionary:
-	var reward := _mission_reward_by_id(reward_id)
+	var reward := _effective_reward(reward_id)
 	if reward.is_empty() or experience_claimed_levels >= experience_level - 1:
 		return {}
 	reward = _decorate_mission_reward(reward, _mission_lane_for_reward(reward_id))
@@ -146,7 +156,7 @@ func apply_experience_reward(reward_id: StringName) -> Dictionary:
 	for key: Variant in reward.get("modifiers", {}):
 		experience_modifiers[key] = float(experience_modifiers.get(key, 0.0)) + float(reward.modifiers[key])
 	experience_claimed_levels += 1
-	reward["level"] = int(experience_reward_levels[reward_id])
+	reward["level"] = _combined_reward_level(reward_id)
 	reward["total_modifiers"] = experience_modifiers.duplicate(true)
 	experience_changed.emit(get_experience_snapshot())
 	return reward
@@ -166,11 +176,11 @@ func get_experience_snapshot() -> Dictionary:
 func advance_survival(delta: float) -> void:
 	if config == null or delta <= 0.0:
 		return
+	var previous := int(get_enemy_snapshot().stage)
 	survival_seconds += delta
-	var previous := enemy_stage
 	while enemy_stage < config.enemy_stage_times.size() and survival_seconds >= config.enemy_stage_times[enemy_stage]:
 		enemy_stage += 1
-	if enemy_stage != previous:
+	if int(get_enemy_snapshot().stage) != previous:
 		enemy_evolution_changed.emit(get_enemy_snapshot())
 
 
@@ -187,22 +197,21 @@ func record_absorbed(projectile_count: int) -> void:
 
 func get_mission_reward_options(completion_count: int) -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
-	var reward_tier := posmod(maxi(0, completion_count), 2)
 	for lane: Dictionary in MISSION_REWARD_LANES:
 		var reward_ids := lane.get("reward_ids", []) as Array
-		if reward_tier >= reward_ids.size():
-			continue
-		var reward_id := StringName(reward_ids[reward_tier])
-		var option := _decorate_mission_reward(_mission_reward_by_id(reward_id), lane)
-		if option.is_empty():
-			continue
-		option["next_level"] = int(mission_reward_levels.get(reward_id, 0)) + 1
-		options.append(option)
+		for offset in reward_ids.size():
+			var reward_id := StringName(reward_ids[posmod(maxi(0, completion_count) + offset, reward_ids.size())])
+			var option := _decorate_mission_reward(_effective_reward(reward_id), lane)
+			if option.is_empty():
+				continue
+			option["next_level"] = _combined_reward_level(reward_id) + 1
+			options.append(option)
+			break
 	return options
 
 
 func apply_mission_reward(reward_id: StringName) -> Dictionary:
-	var reward := _mission_reward_by_id(reward_id)
+	var reward := _effective_reward(reward_id)
 	if reward.is_empty():
 		return {}
 	reward = _decorate_mission_reward(reward, _mission_lane_for_reward(reward_id))
@@ -211,7 +220,7 @@ func apply_mission_reward(reward_id: StringName) -> Dictionary:
 	for key: Variant in modifiers:
 		mission_modifiers[key] = float(mission_modifiers.get(key, 0.0)) + float(modifiers[key])
 	var result := reward.duplicate(true)
-	result["level"] = int(mission_reward_levels[reward_id])
+	result["level"] = _combined_reward_level(reward_id)
 	result["total_modifiers"] = mission_modifiers.duplicate(true)
 	mission_evolution_changed.emit(get_mission_snapshot())
 	return result
@@ -220,17 +229,24 @@ func apply_mission_reward(reward_id: StringName) -> Dictionary:
 func get_enemy_snapshot() -> Dictionary:
 	if config == null:
 		return {}
-	var pressure_stage := mini(10, maxi(enemy_stage, (experience_level - 1) / 2))
-	var stage_power := float(pressure_stage)
+	var time_stage := enemy_stage
+	if not config.enemy_stage_times.is_empty() and enemy_stage >= config.enemy_stage_times.size():
+		time_stage += maxi(0, floori((survival_seconds - config.enemy_stage_times[config.enemy_stage_times.size() - 1]) / 90.0))
+	var pressure_stage := maxi(time_stage, (experience_level - 1) / 2)
+	# More bodies keep arriving in deep runs without exponentially increasing
+	# every actor's HP and bullet multiplier beyond the established tenth stage.
+	var stage_power := float(mini(10, pressure_stage))
 	var next_time := -1.0
 	if enemy_stage < config.enemy_stage_times.size():
 		next_time = config.enemy_stage_times[enemy_stage]
+	elif not config.enemy_stage_times.is_empty():
+		next_time = config.enemy_stage_times[config.enemy_stage_times.size() - 1] + (time_stage - enemy_stage + 1) * 90.0
 	return {
 		"axis": &"time_and_experience",
 		"stage": pressure_stage,
-		"time_stage": enemy_stage,
+		"time_stage": time_stage,
 		"experience_level": experience_level,
-		"objective_tier": mini(8, enemy_stage / 2 + (experience_level - 1) / 3),
+		"objective_tier": mini(8, time_stage / 2 + (experience_level - 1) / 3),
 		"survival_seconds": survival_seconds,
 		"next_stage_at": next_time,
 		"health_multiplier": pow(config.health_growth_per_stage, stage_power),
@@ -238,8 +254,8 @@ func get_enemy_snapshot() -> Dictionary:
 		"wave_budget": mini(config.maximum_wave_budget, config.base_wave_budget + pressure_stage * 3),
 		"spawn_interval": maxf(config.minimum_spawn_interval, config.base_spawn_interval - stage_power * 0.36),
 		"captain_frequency": maxi(5 - pressure_stage / 2, 2),
-		"population_limit": mini(config.maximum_population_limit, config.base_population_limit + pressure_stage * 3),
-		"threat_limit": mini(config.maximum_threat_limit, config.base_threat_limit + pressure_stage * 9),
+		"population_limit": mini(config.maximum_population_limit, config.base_population_limit + pressure_stage * 4),
+		"threat_limit": mini(config.maximum_threat_limit, config.base_threat_limit + pressure_stage * 10),
 	}
 
 
@@ -294,6 +310,30 @@ func _mission_reward_by_id(reward_id: StringName) -> Dictionary:
 	return {}
 
 
+func _combined_reward_level(reward_id: StringName) -> int:
+	return int(mission_reward_levels.get(reward_id, 0)) + int(experience_reward_levels.get(reward_id, 0))
+
+
+func _effective_reward(reward_id: StringName) -> Dictionary:
+	var reward := _mission_reward_by_id(reward_id)
+	if reward.is_empty() or _combined_reward_level(reward_id) >= int(reward.get("max_stacks", 2147483647)):
+		return {}
+	if reward_id == &"wide_fold":
+		var absorb := get_player_snapshot().get("total_modifiers", {}) as Dictionary
+		var capacity_bonus := float(absorb.get("capture_capacity", 0.0)) + float(mission_modifiers.get("capture_capacity", 0.0)) + float(experience_modifiers.get("capture_capacity", 0.0))
+		var available := maxi(0, FoldlightFoldComponent.MAX_CAPACITY - FoldlightFoldComponent.BASE_CAPACITY - roundi(capacity_bonus))
+		var gain := mini(1, available)
+		reward.modifiers["capture_capacity"] = gain
+		reward["description"] = "折域半径 +7%%，收纳容量 +%d（上限 %d）。" % [gain, FoldlightFoldComponent.MAX_CAPACITY] if gain > 0 else "折域半径 +7%；收纳容量已满 96，不再增加。"
+	elif reward_id == &"dash_blast":
+		var next := _combined_reward_level(reward_id) + 1
+		reward["description"] = "冲刺沿途及身边爆破清弹，伤害 %d，半径 %d；每敌每次冲刺仅受击一次。%d/6 层。" % [next * 10, 100 + next * 10, next]
+	elif reward_id == &"quiet_hinge":
+		var next := _combined_reward_level(reward_id) + 1
+		reward["description"] = "收纳释放后的冷却再缩短 10%%，1.50 秒 → %.2f 秒。%d/8 层。" % [1.5 * pow(0.9, next), next]
+	return reward
+
+
 func _mission_lane_for_reward(reward_id: StringName) -> Dictionary:
 	for lane: Dictionary in MISSION_REWARD_LANES:
 		var reward_ids := lane.get("reward_ids", []) as Array
@@ -321,6 +361,8 @@ func _empty_modifier_snapshot() -> Dictionary:
 		"fold_move_speed_multiplier": 0.0,
 		"move_speed_multiplier": 0.0,
 		"dash_cooldown_multiplier": 0.0,
+		"fold_cooldown_level": 0.0,
+		"dash_blast_level": 0.0,
 		"max_health": 0.0,
 		"heal": 0.0,
 		"weapon_rate_multiplier": 0.0,

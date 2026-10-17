@@ -67,7 +67,7 @@ func _test_locked_casts(definition: FoldlightRogueBossDefinition) -> void:
 		state["zones_match"] = bool(state["zones_match"]) and Vector2(zone["position"]).is_equal_approx(Vector2(warning["target_position"])) and is_equal_approx(float(zone["radius"]), float(warning["zone_radius"]))
 	)
 	boss.minion_requested.connect(func(support: Dictionary) -> void:
-		state["support_bounded"] = bool(state["support_bounded"]) and int(support["total_maximum"]) <= 4
+		state["support_bounded"] = bool(state["support_bounded"]) and int(support["total_maximum"]) <= (6 if definition.content_id == &"tide_loom_mother" else 4)
 	)
 	for tick in 1800:
 		var target := BOUNDS.get_center() + Vector2.from_angle(float(tick) * 0.008) * 500.0
@@ -81,7 +81,7 @@ func _test_locked_casts(definition: FoldlightRogueBossDefinition) -> void:
 	_check(bool(state["origins_match"]) and bool(state["cast_stationary"]), name + ": moving body stops at the warned firing origin")
 	_check(bool(state["fan_matches"]), name + ": black-gold fan width and extra warning match its real volley")
 	_check(bool(state["zones_match"]), name + ": ink zones resolve at the warned position and radius")
-	_check(bool(state["support_bounded"]), name + ": support cannot exceed four concurrent helpers")
+	_check(bool(state["support_bounded"]), name + ": support stays within its authored helper cap")
 	boss.queue_free()
 
 

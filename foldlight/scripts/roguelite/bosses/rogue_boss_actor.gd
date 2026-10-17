@@ -1,6 +1,8 @@
 class_name FoldlightRogueBossActor
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 const HitReaction = preload("res://scripts/visuals/paper_hit_reaction.gd")
 const Puppet = preload("res://scripts/visuals/boss_paper_puppet.gd")
 const REMNANT = preload("res://scripts/visuals/boss_paper_remnant.gd")
@@ -50,6 +52,16 @@ var _attack_elapsed: float = 0.0
 var _cast_index: int = 0
 var _dash_end := Vector2.ZERO
 var _dash_active: bool = false
+var _intensity_tier: int = 0
+var _charge_settings: Dictionary = {}
+var _charge_stage: StringName = &""
+var _charge_left: int = 0
+var _charge_number: int = 0
+var _charge_clock: float = 0.0
+var _charge_warning_seconds: float = 0.0
+var _charge_sweep: Dictionary = {}
+var _loom_frenzy_remaining: float = 0.0
+var _command_targets := PackedVector2Array()
 
 @onready var phase_controller: FoldlightBossPhaseController = $PhaseController
 @onready var arena_controller: FoldlightBossArenaController = $ArenaController
@@ -62,7 +74,7 @@ func _ready() -> void:
 	phase_controller.telegraph_started.connect(_on_telegraph_started)
 	phase_controller.attack_ready.connect(_on_attack_ready)
 	phase_controller.stagger_started.connect(_on_stagger_started)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed: int = 330031, options: Dictionary = {}) -> void:
@@ -86,6 +98,9 @@ func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed
 		_room_bounds = bounds.intersection(local_arena)
 	_endless_roam = bool(options.get("endless_roam", false))
 	_arena_pressure = bool(options.get("arena_pressure", true))
+	_intensity_tier = clampi(int(options.get("intensity_tier", 0)), 0, 5)
+	_loom_frenzy_remaining = 0.0
+	_command_targets.clear()
 	_cancel_attack_plan()
 	_cast_index = 0
 	velocity = Vector2.ZERO
@@ -95,11 +110,11 @@ func configure(new_definition: FoldlightRogueBossDefinition, bounds: Rect2, seed
 	_attack_locked = false
 	_arena_damage_remaining = 0.0
 	global_position = _room_bounds.get_center()
-	phase_controller.configure(definition, float(options.get("intro_delay", 0.0)))
+	phase_controller.configure(definition, float(options.get("intro_delay", 0.0)), _intensity_tier)
 	arena_controller.configure(definition.arena_rule if definition != null else &"open_paper", _room_bounds)
 	arena_controller.set_pressure_suspended(not _arena_pressure)
 	arena_controller.visible = _arena_pressure
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, player_position: Vector2, hostile_time_scale: float = 1.0) -> void:
@@ -108,12 +123,18 @@ func advance_simulation(delta: float, player_position: Vector2, hostile_time_sca
 	_refresh_motion_setting()
 	_hit_reaction.advance(maxf(0.0, delta))
 	var safe_delta := maxf(0.0, delta) * clampf(hostile_time_scale, 0.1, 2.0)
+	_charge_sweep.clear()
+	_loom_frenzy_remaining = maxf(0.0, _loom_frenzy_remaining - safe_delta)
 	_visual_time += safe_delta
 	_recoil_remaining = maxf(0.0, _recoil_remaining - safe_delta)
 	_target_position = player_position
 	var previous_state := phase_controller.state
 	var previous_phase := phase_controller.phase_index
 	phase_controller.advance_simulation(safe_delta, health / maximum_health)
+	if previous_state == FoldlightBossPhaseController.State.ATTACK and phase_controller.state != FoldlightBossPhaseController.State.ATTACK and not _charge_stage.is_empty():
+		# A very long stalled frame can exhaust the controller's safety timeout.
+		# Never carry an unfinished charge into a later, different pattern.
+		_cancel_attack_plan()
 	# Phase transitions cancel old queued pulses before they can fire. New casts
 	# start at t=0 rather than consuming the entire current frame immediately.
 	if previous_state == FoldlightBossPhaseController.State.ATTACK and previous_phase == phase_controller.phase_index:
@@ -130,11 +151,21 @@ func advance_simulation(delta: float, player_position: Vector2, hostile_time_sca
 	if _dash_active and phase_controller.state == FoldlightBossPhaseController.State.ATTACK:
 		# A blocked dash stops against the wall instead of sliding sideways out
 		# of its warned corridor. Ordinary pursuit keeps the usual wall sliding.
-		move_and_collide(velocity * get_physics_process_delta_time())
+		var start := global_position
+		var old_mask := collision_mask
+		# The body may sweep through the player, so terrain collision cannot stop
+		# it just outside the smaller player hurt circle. Damage uses this exact
+		# travelled segment, never the full warned line beyond a wall.
+		collision_mask &= ~(1 << 0)
+		var collision := move_and_collide(velocity * maxf(safe_delta, 0.001))
+		collision_mask = old_mask
+		_charge_sweep = {"start": start, "end": global_position, "radius": 52.0}
+		if _charge_stage == &"dash" and (collision != null or _charge_clock >= float(_charge_settings.get("duration", 0.34))):
+			_finish_execution_charge()
 	else:
 		move_and_slide()
 	_clamp_to_active_arena()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func take_damage(amount: float, source: StringName = &"weapon", incoming_velocity: Vector2 = Vector2.ZERO) -> bool:
@@ -169,7 +200,7 @@ func take_damage(amount: float, source: StringName = &"weapon", incoming_velocit
 		_spawn_death_remnant()
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 
@@ -180,10 +211,41 @@ func set_support_buff(_attack_multiplier: float) -> void:
 func request_opening_support() -> void:
 	if definition != null and definition.content_id == &"inverted_archivist":
 		_request_archivist_support()
+	elif definition != null and definition.content_id == &"tide_loom_mother":
+		_request_loom_support()
 
 
 func get_combat_snapshot() -> Dictionary:
-	return {"id": actor_id, "position": global_position, "alive": health > 0.0, "defeated": health <= 0.0, "role": FoldlightRogueEnemyDefinition.EnemyRole.BOSS, "health": health, "maximum_health": maximum_health, "title": definition.title if definition != null else "", "phase": phase_controller.phase_index}
+	return {"id": actor_id, "position": global_position, "alive": health > 0.0, "defeated": health <= 0.0, "role": FoldlightRogueEnemyDefinition.EnemyRole.BOSS, "health": health, "maximum_health": maximum_health, "title": definition.title if definition != null else "", "phase": phase_controller.phase_index, "intensity_tier": _intensity_tier, "charge_stage": _charge_stage, "charge_number": _charge_number, "charge_remaining": _charge_left, "command_aura": get_command_aura_snapshot()}
+
+
+func get_contact_radius() -> float:
+	return 52.0 if definition != null and definition.content_id == &"torn_page_executioner" else 24.0
+
+
+func is_contact_dangerous() -> bool:
+	if definition != null and definition.content_id == &"torn_page_executioner":
+		return health > 0.0 and (_charge_stage == &"dash" or not _charge_sweep.is_empty())
+	return health > 0.0
+
+
+func get_contact_sweep() -> Dictionary:
+	return _charge_sweep.duplicate() if health > 0.0 else {}
+
+
+func get_command_aura_snapshot() -> Dictionary:
+	if definition == null or definition.content_id != &"tide_loom_mother" or health <= 0.0 or phase_controller.state in [FoldlightBossPhaseController.State.INTRO, FoldlightBossPhaseController.State.STAGGERED, FoldlightBossPhaseController.State.DEFEATED]:
+		return {}
+	var phase := phase_controller.phase_index
+	var frenzy := 1.0 if _loom_frenzy_remaining > 0.0 else 0.0
+	return {"source_id": actor_id, "position": global_position, "radius": minf(820.0, definition.command_radius + phase * 60.0 + _intensity_tier * 28.0),
+		"attack_interval_multiplier": maxf(0.38, 0.68 - phase * 0.06 - _intensity_tier * 0.025 - frenzy * 0.08),
+		"move_multiplier": minf(1.85, 1.25 + phase * 0.08 + _intensity_tier * 0.06 + frenzy * 0.12),
+		"projectile_speed_multiplier": minf(1.6, 1.15 + phase * 0.07 + _intensity_tier * 0.04 + frenzy * 0.06), "frenzy": frenzy > 0.0}
+
+
+func set_command_targets(points: PackedVector2Array) -> void:
+	_command_targets = points.slice(0, mini(points.size(), 12))
 
 
 func get_maximum_health() -> float:
@@ -216,7 +278,9 @@ func get_visual_pose() -> Dictionary:
 		"time": _visual_time if _motion_scale > 0.0 else 0.0,
 		"motion_scale": _motion_scale,
 		"intro": intro if _motion_scale > 0.0 else 1.0,
-		"charge": float(state["progress"]) if phase_controller.state == FoldlightBossPhaseController.State.TELEGRAPH else 0.0,
+		"charge": clampf(_charge_clock / maxf(0.01, _charge_warning_seconds), 0.0, 1.0) if _charge_stage == &"warning" else float(state["progress"]) if phase_controller.state == FoldlightBossPhaseController.State.TELEGRAPH else 0.0,
+		"charging": _charge_stage == &"dash",
+		"command_frenzy": _loom_frenzy_remaining > 0.0,
 		"recoil": pow(_recoil_remaining / RECOIL_SECONDS, 2.0),
 		"stagger": _stagger_pose,
 		"transition": float(state["transition"]),
@@ -255,8 +319,9 @@ func _update_movement(delta: float) -> void:
 		velocity = Vector2.ZERO
 	if phase_controller.state == FoldlightBossPhaseController.State.ATTACK:
 		if _dash_active:
-			var duration := definition.get_active_seconds(phase_controller.current_pattern)
-			var expected := _locked_attack_origin.lerp(_dash_end, clampf(_attack_elapsed / maxf(duration, 0.01), 0.0, 1.0))
+			var duration := float(_charge_settings.get("duration", definition.get_active_seconds(phase_controller.current_pattern)))
+			var elapsed := _charge_clock if _charge_stage == &"dash" else _attack_elapsed
+			var expected := _locked_attack_origin.lerp(_dash_end, clampf(elapsed / maxf(duration, 0.01), 0.0, 1.0))
 			velocity = (expected - global_position) / maxf(delta, 0.001)
 		else:
 			velocity = Vector2.ZERO
@@ -317,6 +382,9 @@ func _on_phase_changed(new_phase: int) -> void:
 		_request_reef_support()
 	elif definition.content_id == &"inverted_archivist":
 		_request_archivist_support()
+	elif definition.content_id == &"tide_loom_mother":
+		_loom_frenzy_remaining = 0.0
+		_request_loom_support()
 	_recoil_remaining = 0.0
 	phase_changed.emit(new_phase)
 
@@ -335,6 +403,13 @@ func _on_telegraph_started(pattern_id: StringName, duration: float) -> void:
 		warning["attack_lanes"] = _attack_plan["lanes"].duplicate(true)
 		warning["safe_gaps"] = _attack_plan["gaps"].duplicate(true)
 		warning["hold_seconds"] = definition.get_active_seconds(pattern_id)
+		if pattern_id == &"execution_dash":
+			_charge_settings = definition.get_charge_settings(phase_controller.phase_index, _intensity_tier)
+			_set_execution_lane()
+			warning["attack_lanes"] = _attack_plan["lanes"].duplicate(true)
+			warning["hold_seconds"] = float(_charge_settings.duration)
+			warning["charge_number"] = 1
+			warning["charge_total"] = int(_charge_settings.count)
 	telegraph_requested.emit(warning)
 
 
@@ -342,6 +417,7 @@ func _on_stagger_started(duration: float) -> void:
 	_cancel_attack_plan()
 	_attack_locked = false
 	_recoil_remaining = 0.0
+	_loom_frenzy_remaining = 0.0
 	_return_window_budget = maximum_health * definition.return_window_fraction
 	arena_controller.set_pressure_suspended(true)
 	stagger_started.emit(duration)
@@ -349,6 +425,18 @@ func _on_stagger_started(duration: float) -> void:
 
 func _on_attack_ready(pattern_id: StringName, telegraph_duration: float) -> void:
 	_recoil_remaining = RECOIL_SECONDS
+	if definition.content_id == &"tide_loom_mother":
+		_loom_frenzy_remaining = 3.0 + phase_controller.phase_index * 0.5 + _intensity_tier * 0.25
+		_request_loom_support()
+	if pattern_id == &"execution_dash" and definition.content_id == &"torn_page_executioner":
+		_charge_left = int(_charge_settings.get("count", 3))
+		_charge_number = 1
+		_charge_stage = &"dash"
+		_charge_clock = 0.0
+		_dash_active = true
+		_dash_end = _attack_plan.get("dash_end", _locked_attack_origin)
+		phase_controller.hold_active_pattern(12.0)
+		return
 	if definition.content_id in PatternGeometry.NEW_IDS:
 		_pending_volleys.assign(_attack_plan.get("volleys", []).duplicate(true))
 		_attack_elapsed = 0.0
@@ -371,6 +459,15 @@ func _on_attack_ready(pattern_id: StringName, telegraph_duration: float) -> void
 func _advance_attack_plan(delta: float) -> void:
 	if phase_controller.state != FoldlightBossPhaseController.State.ATTACK:
 		return
+	if not _charge_stage.is_empty():
+		# One boundary per step: no catch-up burst can consume a fresh warning.
+		_charge_clock += minf(maxf(delta, 0.0), 0.05)
+		if _charge_stage == &"warning" and _charge_clock >= _charge_warning_seconds:
+			_charge_stage = &"dash"
+			_charge_clock = 0.0
+			_dash_active = true
+			_recoil_remaining = RECOIL_SECONDS
+		return
 	_attack_elapsed += delta
 	# Plans contain at most eighteen bullets; no catch-up loop or recursive spawn.
 	while not _pending_volleys.is_empty() and float(_pending_volleys[0]["at"]) <= _attack_elapsed:
@@ -385,8 +482,74 @@ func _cancel_attack_plan() -> void:
 	_pending_volleys.clear()
 	_attack_elapsed = 0.0
 	_dash_active = false
+	_charge_stage = &""
+	_charge_left = 0
+	_charge_clock = 0.0
+	_charge_sweep.clear()
 	_attack_locked = false
 	velocity = Vector2.ZERO
+
+
+func _set_execution_lane() -> void:
+	var direction := _locked_attack_origin.direction_to(_locked_attack_target)
+	if direction.is_zero_approx(): direction = _visual_direction
+	var distance := clampf(_locked_attack_origin.distance_to(_locked_attack_target) + 140.0, 220.0, float(_charge_settings.get("distance", 720.0)))
+	_dash_end = (_locked_attack_origin + direction * distance).clamp(_legal_body_bounds().position, _legal_body_bounds().end)
+	_attack_plan["dash_end"] = _dash_end
+	_attack_plan["lanes"] = [{"origin": _locked_attack_origin, "end": _dash_end, "width": 128.0, "reflectable": false, "dash": true}]
+	_visual_direction = direction
+
+
+func _finish_execution_charge() -> void:
+	_dash_active = false
+	velocity = Vector2.ZERO
+	_charge_left -= 1
+	if _charge_left <= 0:
+		_charge_stage = &""
+		phase_controller.finish_active_pattern()
+		return
+	_charge_number += 1
+	_charge_stage = &"warning"
+	_charge_clock = 0.0
+	_locked_attack_origin = global_position
+	_locked_attack_target = _target_position
+	_charge_warning_seconds = float(_charge_settings.get("warning", 0.60))
+	# At close range give enough time to step sideways out of the body radius.
+	if global_position.distance_to(_target_position) < 180.0:
+		_charge_warning_seconds = maxf(0.68, _charge_warning_seconds)
+	_set_execution_lane()
+	telegraph_requested.emit({"pattern_id": &"execution_dash", "duration": _charge_warning_seconds, "hold_seconds": float(_charge_settings.get("duration", 0.34)),
+		"origin": global_position, "target_position": _locked_attack_target, "accent": definition.accent, "attack_lanes": _attack_plan["lanes"].duplicate(true), "safe_gaps": [],
+		"charge_number": _charge_number, "charge_total": int(_charge_settings.get("count", 3))})
+
+
+func _request_loom_support() -> void:
+	var count := mini(6, 3 + phase_controller.phase_index + _intensity_tier / 2)
+	var positions: Array[Vector2] = []
+	var legal := _legal_body_bounds()
+	for offset in [Vector2(-280,-210),Vector2(280,-210),Vector2(-300,190),Vector2(300,190),Vector2(-100,320),Vector2(100,-320)]:
+		positions.append((global_position + offset).clamp(legal.position, legal.end))
+	minion_requested.emit({"enemy_ids": [&"drifter", &"fan", &"ram"], "maximum": count, "total_maximum": count,
+		"positions": positions})
+
+
+func _draw_command_aura() -> void:
+	var aura := get_command_aura_snapshot()
+	if aura.is_empty(): return
+	var radius := float(aura.radius)
+	# Enemy power is coral/gold, never the mint used for safe passages. Eight
+	# edge notches expose the exact range without filling a crowded battlefield.
+	var tint := Color("ef907b") if not bool(aura.frenzy) else Color("ffb35d")
+	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 64, Color(tint, 0.36), 2.0, true)
+	for index in 8:
+		var direction := Vector2.from_angle(TAU * float(index) / 8.0)
+		var tangent := direction.orthogonal()
+		var edge := direction * radius
+		draw_polyline(PackedVector2Array([edge - tangent * 14.0, edge - direction * 14.0, edge + tangent * 14.0]), Color(tint, 0.8), 2.0, true)
+	for target in _command_targets:
+		var point := target - global_position
+		draw_dashed_line(point.normalized() * 130.0, point, Color(tint, 0.30), 1.5, 24.0, true)
+	draw_string(FoldlightTheme.body_font(), Vector2(-100, 172), "狂潮织域 · 敌群强化" if bool(aura.frenzy) else "织域 · 敌群强化", HORIZONTAL_ALIGNMENT_CENTER, 200, 20, tint)
 
 
 func _emit_reef_pattern(pattern_id: StringName, telegraph: float) -> void:
@@ -531,6 +694,7 @@ func _volley_snapshot(count: int, speed: float, spread: float, reflectable: bool
 func _draw() -> void:
 	if definition == null or health <= 0.0:
 		return
+	_draw_command_aura()
 	var pose := get_visual_pose()
 	var punch := _hit_reaction.punch * _motion_scale
 	var hit_offset := _hit_reaction.direction * punch * 4.5

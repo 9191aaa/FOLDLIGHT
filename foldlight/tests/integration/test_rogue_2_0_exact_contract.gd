@@ -65,13 +65,13 @@ func _run() -> void:
 	root.add_child(projectile)
 	projectile.configure({"hostile": true, "reflectable": true, "kind": 0, "style": &"hostile_petal"})
 	var petal_visual := projectile.get_visual_contract()
-	_check(StringName(petal_visual.get("version", &"")) == &"classic_2_0_exact" and is_equal_approx(float(petal_visual.get("length", 0.0)), 12.0), "hostile projectile geometry is the 2.0 twelve-by-six petal")
+	_check(StringName(petal_visual.get("version", &"")) == &"quiet_ink_3_18" and is_equal_approx(float(petal_visual.get("length", 0.0)), 12.0), "3.18 ink treatment retains the 2.0 twelve-by-six hostile petal")
 	projectile.configure({"hostile": true, "reflectable": false, "kind": 2, "style": &"paper_seal"})
 	var seal_visual := projectile.get_visual_contract()
 	_check(is_equal_approx(float(seal_visual.get("length", 0.0)), 18.0) and is_equal_approx(float(seal_visual.get("width", 0.0)), 8.0), "unreflectable seal restores the 2.0 black-gold silhouette")
 	projectile.configure({"hostile": false, "style": &"return_light"})
 	var return_visual := projectile.get_visual_contract()
-	_check(StringName(return_visual.get("motif", &"")) == &"gold_diamond_return" and is_equal_approx(float(return_visual.get("trail", 0.0)), 28.0), "return missile restores the 2.0 gold diamond and cyan trail")
+	_check(StringName(return_visual.get("motif", &"")) == &"gold_diamond_return" and is_equal_approx(float(return_visual.get("trail", 0.0)), 18.0), "returned gold diamond remains recognizable with a shorter low-contrast cyan trail")
 	projectile.queue_free()
 
 	await process_frame

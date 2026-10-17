@@ -25,6 +25,7 @@ const SUPPORTED_STAT_KEYS: Array[StringName] = [
 	&"full_release_damage_multiplier", &"full_release_cooldown_refund", &"dash_cooldown_multiplier", &"dash_charge_add",
 	&"dash_duration_add", &"dash_speed_multiplier", &"dash_trail_damage", &"dash_refund_on_release",
 	&"dash_refund_on_damage", &"dash_invulnerability_add", &"dash_weapon_haste", &"dash_weapon_haste_duration",
+	&"dash_blast_level",
 	&"body_size_multiplier", &"max_health_add", &"instant_heal", &"clear_heal_progress", &"fatal_guard_count",
 	&"move_speed_multiplier", &"region_shield_per_ten_glimmer", &"glimmer_gain_multiplier", &"ink_slow_multiplier",
 	&"damage_grace_add",

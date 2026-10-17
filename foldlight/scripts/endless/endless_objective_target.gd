@@ -3,6 +3,7 @@ extends StaticBody2D
 ## A real, stationary combat target. It shares projectile/AOE collision and
 ## damage feedback with enemies, but never deals contact damage or counts a kill.
 signal damage_reported(target_id: StringName, actual_damage: float)
+signal destroyed(target_id: StringName)
 signal defeated(actor: Node2D)
 
 const SharedTheme = preload("res://scripts/ui/foldlight_theme.gd")
@@ -96,6 +97,9 @@ func take_damage(amount: float) -> bool:
 		_defeat_emitted = true
 	damage_reported.emit(target_id, actual_damage)
 	if lethal:
+		# Health subtraction and accumulated task damage can differ by a final
+		# floating-point epsilon. Physical death is authoritative for completion.
+		destroyed.emit(target_id)
 		defeated.emit(self)
 	# Shared combat interprets this return value as defeat, not hit acceptance.
 	return lethal

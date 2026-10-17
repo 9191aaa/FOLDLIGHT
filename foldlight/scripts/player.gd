@@ -78,6 +78,10 @@ var _feedback_motion_scale: float = 1.0
 var _touch_movement: Vector2 = Vector2.ZERO
 var _touch_fold_held: bool = false
 var _touch_dash_buffer_timer: float = 0.0
+var _horizontal_input_reversed: bool = false
+var _dash_blast_serial: int = 0
+var _dash_blast_snapshot: Dictionary = {}
+var _dash_blast_path := PackedVector2Array()
 
 @onready var status_effects: FoldlightStatusEffects = $StatusEffects
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
@@ -160,7 +164,7 @@ func _physics_process(delta: float) -> void:
 			_fold_buffer_timer = 0.0
 			try_begin_fold()
 
-	var direction := Vector2.ZERO if manual_input_blocked else INPUT_CONTRACT.movement_vector(_touch_movement)
+	var direction := Vector2.ZERO if manual_input_blocked else transform_movement_input(INPUT_CONTRACT.movement_vector(_touch_movement))
 	if direction.length_squared() > 0.02:
 		_last_direction = direction.normalized()
 		var target_angle := _last_direction.angle() + PI * 0.5
@@ -183,6 +187,8 @@ func _physics_process(delta: float) -> void:
 			velocity = velocity.move_toward(Vector2.ZERO, FRICTION * delta)
 	move_and_slide()
 	global_position = global_position.clamp(play_bounds.position, play_bounds.end)
+	if dash_component.is_dashing():
+		_record_dash_blast_position()
 
 	if folding:
 		fold_time += delta
@@ -219,6 +225,9 @@ func _room_menu_owns_input() -> bool:
 
 func reset_player() -> void:
 	_cancel_touch_controls()
+	_horizontal_input_reversed = false
+	_dash_blast_snapshot.clear()
+	_dash_blast_path.clear()
 	global_position = Vector2(960.0, 650.0)
 	velocity = Vector2.ZERO
 	max_health = MAX_HEALTH
@@ -342,6 +351,9 @@ func _exit_tree() -> void:
 
 func configure_roguelite_combat(enabled: bool) -> void:
 	roguelite_combat = enabled
+	_horizontal_input_reversed = false
+	_dash_blast_snapshot.clear()
+	_dash_blast_path.clear()
 	scale = Vector2.ONE
 	fold_component.configure(enabled)
 	dash_component.configure(enabled)
@@ -442,6 +454,36 @@ func set_body_size_multiplier(multiplier: float) -> void:
 
 func get_fold_cooldown_remaining() -> float:
 	return fold_component.cooldown_remaining
+
+
+func set_horizontal_input_reversed(reversed: bool) -> void:
+	_horizontal_input_reversed = reversed
+
+
+func is_horizontal_input_reversed() -> bool:
+	return _horizontal_input_reversed
+
+
+func transform_movement_input(direction: Vector2) -> Vector2:
+	return Vector2(-direction.x, direction.y) if _horizontal_input_reversed else direction
+
+
+func get_dash_blast_snapshot() -> Dictionary:
+	if _dash_blast_snapshot.is_empty():
+		return {}
+	var snapshot := _dash_blast_snapshot.duplicate(true)
+	snapshot["path"] = _dash_blast_path.duplicate()
+	snapshot["end"] = global_position
+	return snapshot
+
+
+func _record_dash_blast_position() -> void:
+	if _dash_blast_snapshot.is_empty() or (not _dash_blast_path.is_empty() and _dash_blast_path[_dash_blast_path.size() - 1].is_equal_approx(global_position)):
+		return
+	if _dash_blast_path.size() < 64:
+		_dash_blast_path.append(global_position)
+	else:
+		_dash_blast_path[_dash_blast_path.size() - 1] = global_position
 
 
 func get_dash_cooldown_ratio() -> float:
@@ -712,11 +754,23 @@ func _set_physical_radius(radius: float) -> void:
 
 
 func _on_dash_component_started(direction: Vector2, duration: float) -> void:
+	_dash_blast_serial += 1
+	_dash_blast_snapshot.clear()
+	_dash_blast_path.clear()
+	var level := clampi(int(rogue_build_stats.get("dash_blast_level", 0)), 0, 6)
+	if level > 0:
+		_dash_blast_snapshot = {
+			"enabled": true, "origin": global_position, "dash_serial": _dash_blast_serial,
+			"radius": 110.0 + 10.0 * (level - 1), "damage": 10.0 * level,
+			"clear_projectiles": true, "level": level,
+		}
+		_record_dash_blast_position()
 	grant_invulnerability(dash_component.get_effective_invulnerability())
 	dash_started.emit(direction, duration)
 
 
 func _on_dash_component_ended() -> void:
+	_record_dash_blast_position()
 	dash_ended.emit()
 
 

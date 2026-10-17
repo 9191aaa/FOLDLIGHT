@@ -3,12 +3,12 @@
 [resource]
 script = ExtResource("1")
 content_id = &"razor_wake"
-title = "裁纸尾迹"
-description = "冲刺路径留下一道短暂伤害线。"
+title = "震纸冲刺"
+description = "冲刺结束时沿途及身边爆破清弹；每层伤害 +10，首层半径 110，后续每层 +10。最多 6 层。"
 accent = Color(1, 0.48, 0.38, 1)
 tags = Array[StringName]([&"offense", &"trail"])
 family = 2
 rarity = 1
-max_stacks = 3
-stat_modifiers = {"dash_trail_damage": 1}
+max_stacks = 6
+stat_modifiers = {"dash_blast_level": 1}
 

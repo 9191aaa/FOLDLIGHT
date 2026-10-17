@@ -84,6 +84,7 @@ func _role_title(role: FoldlightRogueEnemyDefinition.EnemyRole) -> String:
 
 func _enemy_attack_style(definition: FoldlightRogueEnemyDefinition) -> StringName:
 	match definition.content_id:
+		&"miasma_wraith": return &"poison_trail"
 		&"cinder_mine": return &"anchored_blast"
 		&"shutter_seraph": return &"exposure_barrage"
 		&"paper_turret": return &"aimed_volley"
@@ -122,9 +123,9 @@ func _boss_briefing(content_id: StringName) -> Dictionary:
 				"attack_style": &"shrinking_frame",
 			}
 		&"tide_loom_mother":
-			return {"rule": "织母会将纸梭排成平行织线，再交叉换向。青色箭头标出空隙，金黑细针无法收纳。", "counterplay": "看准空隙再横移；连续两轮织线沿同一预警发射，收纳普通弹后返光可打断后续攻击。", "attack_style": &"woven_lanes"}
+			return {"rule": "织母强化范围内的敌人：跑得更快、开火更密、弹速更高。越到后期，号令越凶。", "counterplay": "看清连向织母的丝线，拉开敌群再优先击破她；光环外的小怪会失去强化。", "attack_style": &"command_swarm"}
 		&"torn_page_executioner":
-			return {"rule": "行刑者先锁定金色通道，再沿通道冲刺；随后交替使用留缺口的纸环和不可收纳的金黑扇切。", "counterplay": "离开通道侧边，别沿着冲刺方向后退；趁收招空档收纳纸环，用返光打开破绽。", "attack_style": &"locked_dash"}
+			return {"rule": "行刑者会连续追身冲撞，每一冲都会重新瞄准。后期连冲更多、转身更快。", "counterplay": "看到通道后横向闪开，别沿通道后退；每次都重新找侧面，留冲刺应对下一撞。", "attack_style": &"relentless_charge"}
 		&"eclipse_twin_bells":
 			return {"rule": "左右纸铃会先后敲出弹环，每个铃口的青色扇区都是缺口；下一轮先响的铃会交换。", "counterplay": "先看两侧各自的缺口，不要只跟着第一圈走；普通铃弹可收纳，返光能打断尚未响起的第二铃。", "attack_style": &"paired_gaps"}
 	return {}

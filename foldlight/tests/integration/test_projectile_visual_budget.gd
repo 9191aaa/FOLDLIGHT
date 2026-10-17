@@ -35,7 +35,7 @@ func _run() -> void:
 			bullet.advance_simulation(1.0 / 60.0, time_scale)
 			motion_matches = motion_matches and bullet.velocity.is_equal_approx(expected_velocities[index]) and bullet.global_position.is_equal_approx(expected_positions[index])
 			var length := 18.0 if not bullet.reflectable else (12.0 if bullet.projectile_kind == 0 else 9.0)
-			var expected_tip := Vector2.from_angle(bullet.velocity.angle() + sin(bullet.age * 5.0) * 0.08) * length
+			var expected_tip := Vector2.from_angle(bullet.velocity.angle()) * length
 			var actual_tip := bullet.to_global(Vector2.RIGHT * length) - bullet.global_position
 			maximum_tip_error = maxf(maximum_tip_error, actual_tip.distance_to(expected_tip))
 			# Subtracting a small tip from a far world coordinate loses float32
@@ -45,7 +45,7 @@ func _run() -> void:
 		redraw_requests += int(bullet.get_visual_budget_snapshot()["redraw_requests"])
 		bullet.queue_free()
 	_check(motion_matches, "31,200 curved and slowed projectile steps retain exact world-space motion")
-	_check(outlines_match, "all retained hostile silhouettes reproduce the previous tip direction and sway")
+	_check(outlines_match, "all retained hostile silhouettes follow real velocity without cosmetic oscillation")
 	_check(redraw_requests == 260, "260 hostile bullets request geometry once, with no per-step rebuild")
 	print("FOLDLIGHT_PROJECTILE_REDRAW_BUDGET previous_requests=%d retained_requests=%d simulation_steps=%d" % [260 * 121, redraw_requests, 260 * 120])
 	print("FOLDLIGHT_PROJECTILE_MAXIMUM_TIP_ERROR_PX: %.6f" % maximum_tip_error)

@@ -37,30 +37,24 @@ func _test_schedule() -> void:
 	check(director.confirm_spawned([&"boss_a"]), "spawn acknowledgement activates one reserved encounter")
 	check(not director.report_defeated(&"unknown", 910.0), "unrelated deaths cannot complete an encounter")
 	check(director.report_defeated(&"boss_a", 910.0) and not director.report_defeated(&"boss_a", 910.0), "last boss grants one completion edge only")
-	check(director.advance(0.1, 50, 940.0).state == &"waiting", "new levels respect post-boss recovery")
-	check(director.advance(0.1, 50, 955.0).wave_index == 2, "the next encounter begins after recovery")
+	check(director.advance(0.1, 50, 923.0).state == &"waiting", "new levels respect the deep-run fourteen-second post-boss recovery")
+	check(director.advance(0.1, 50, 924.0).wave_index == 2, "the next encounter begins after recovery")
 	for step in 31:
-		director.advance(0.1, 50, 955.0)
-	director.confirm_spawned([&"boss_b"])
-	director.report_defeated(&"boss_b", 955.0)
-	director.advance(0.1, 50, 1135.0)
-	check(director.planned_boss_ids().size() == 2, "later progression enables two distinct simultaneous bosses")
-	for step in 31:
-		director.advance(0.1, 50, 1135.0)
-	check(director.confirm_spawned([&"boss_c", &"boss_d"]), "two boss identities activate as a single encounter")
-	check(not director.report_defeated(&"boss_c", 1135.0) and director.get_snapshot().active_count == 1, "first of two deaths keeps the encounter active")
-	check(director.report_defeated(&"boss_d", 1135.0), "only final death completes a multi-boss wave")
-	for wave in 2:
-		var time := 1315.0 + wave * 180.0
+		director.advance(0.1, 50, 924.0)
+	check(director.planned_boss_ids().size() == 2, "high-level second encounter enables two distinct simultaneous bosses")
+	check(director.confirm_spawned([&"boss_b", &"boss_c"]), "two boss identities activate as a single encounter")
+	check(not director.report_defeated(&"boss_b", 924.0) and director.get_snapshot().active_count == 1, "first of two deaths keeps the encounter active")
+	check(director.report_defeated(&"boss_c", 924.0), "only final death completes a multi-boss wave")
+	for wave in range(3, 8):
+		var time := 924.0 + (wave - 2) * 38.0
 		director.advance(0.1, 50, time)
 		for step in 31:
 			director.advance(0.1, 50, time)
 		var ids: Array[StringName] = []
 		for index in director.planned_boss_ids().size():
 			ids.append(StringName("late_%d_%d" % [wave, index]))
-		if wave == 1:
-			check(ids.size() == 3, "deep progression is capped at three bosses")
-		director.confirm_spawned(ids)
+		check(ids.size() == mini(wave, 6), "deep encounter %d grows predictably and caps at six bosses" % wave)
+		check(director.confirm_spawned(ids), "deep encounter acknowledges every reserved actor")
 		for identity in ids:
 			director.report_defeated(identity, time)
 	director.reset(317)

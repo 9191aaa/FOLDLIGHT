@@ -1,6 +1,8 @@
 class_name FoldlightRogueProjectile
 extends Node2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 var velocity: Vector2 = Vector2.ZERO
 var hostile: bool = false
 var reflectable: bool = true
@@ -19,6 +21,7 @@ var echo_chance: float = 0.0
 var execute_damage_multiplier: float = 1.0
 var is_echo: bool = false
 var high_contrast: bool = false
+var motion_reduced: bool = false
 var homing_target: Node2D
 var homing_strength: float = 0.0
 var homing_range: float = 1500.0
@@ -54,6 +57,12 @@ var _return_relay_pulse_remaining: float = 0.0
 var _visual_redraw_requests: int = 0
 
 const RETURN_RELAY_PULSE_DURATION: float = 0.24
+const HOSTILE_INK := Color("d6a397")
+const HOSTILE_SEAL_INK := Color("d2b27c")
+const FRIENDLY_INK := Color("8cbbb5")
+const RETURN_INK := Color("d8c48e")
+const OUTLINE_INK := Color("15252b")
+const MAX_RETURN_TRAIL_DISTANCE: float = 48.0
 
 
 func configure(snapshot: Dictionary) -> void:
@@ -112,6 +121,9 @@ func configure(snapshot: Dictionary) -> void:
 	_visual_redraw_requests = 0
 	var profile_manager := get_node_or_null("/root/ProfileManager")
 	high_contrast = bool(profile_manager.call("get_setting", &"high_contrast", false)) if profile_manager != null else false
+	motion_reduced = float(profile_manager.call("get_setting", &"screen_shake", 1.0)) <= 0.0 if profile_manager != null else false
+	# Threats remain above friendly fire even when several weapon arrays overlap.
+	z_index = 2 if hostile else 0
 	sync_visual_direction()
 	_queue_visual_redraw()
 
@@ -184,7 +196,7 @@ func sync_visual_direction() -> void:
 	# of outlines and PackedArrays on every physics tick. Simulation still uses
 	# world-space velocity/radius, exactly as before.
 	if _uses_rotating_hostile_visual():
-		rotation = velocity.angle() + sin(age * 5.0) * 0.08
+		rotation = velocity.angle()
 	elif not hostile and style in [&"crease_petal", &"needle_orbit", &"returning_gull", &"prism_fan", &"sun_thread"]:
 		rotation = velocity.angle() if launch_delay <= 0.0 else orbit_angle + PI * 0.5
 	else:
@@ -201,11 +213,35 @@ func _refresh_moving_visual() -> void:
 
 func _queue_visual_redraw() -> void:
 	_visual_redraw_requests += 1
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func get_visual_budget_snapshot() -> Dictionary:
-	return {"redraw_requests": _visual_redraw_requests, "cached_geometry": style != &"return_light"}
+	return {"redraw_requests": _visual_redraw_requests, "cached_geometry": style != &"return_light", "motion_reduced": motion_reduced}
+
+
+func set_visual_preferences(reduce_motion: bool, contrast: bool) -> void:
+	motion_reduced = reduce_motion
+	high_contrast = contrast
+	_queue_visual_redraw()
+
+
+func get_readability_snapshot() -> Dictionary:
+	return {"version": &"quiet_ink_3_18", "color": _readable_color(), "hit_radius": radius,
+		"hostile": hostile, "reflectable": reflectable, "has_dark_outline": true,
+		"high_contrast": high_contrast, "motion_reduced": motion_reduced,
+		"oscillating_rotation": false, "halo": false, "extra_trail_threads": 0,
+		"maximum_trail_distance": 0.0 if motion_reduced else MAX_RETURN_TRAIL_DISTANCE,
+		"maximum_trail_width": 2.4, "maximum_trail_alpha": 0.28,
+		"z_index": z_index}
+
+
+func _readable_color() -> Color:
+	if hostile:
+		if high_contrast:
+			return Color("efe1bd") if reflectable else Color("e4bd7f")
+		return HOSTILE_INK if reflectable else HOSTILE_SEAL_INK
+	return RETURN_INK if style == &"return_light" else FRIENDLY_INK
 
 
 func set_homing_target(target: Node2D) -> void:
@@ -339,54 +375,56 @@ func _advance_navigation_waypoint() -> void:
 
 
 func _draw() -> void:
-	var color := Color(1.0, 0.96, 0.80) if high_contrast and hostile and reflectable else projectile_color
-	if not hostile and automatic_weapon_id.is_empty():
-		color = Color(0.38, 0.96, 0.86)
+	var color := _readable_color()
 	if style == &"return_light":
 		_draw_classic_return_light()
 	elif style == &"sun_thread":
-		draw_line(Vector2(-27, 0), Vector2(21, 0), Color(color, 0.25), 8.0, true)
+		draw_line(Vector2(-24, 0), Vector2(21, 0), OUTLINE_INK, 5.0, true)
 		draw_line(Vector2(-24, 0), Vector2(21, 0), color, 3.2, true)
-		draw_line(Vector2(-9, 0), Vector2(19, 0), Color(1.0, 0.96, 0.77), 1.2, true)
 	elif style == &"tide_bell":
-		draw_circle(Vector2.ZERO, radius + 5.0, Color(color, 0.20))
+		draw_circle(Vector2.ZERO, radius, OUTLINE_INK)
 		draw_arc(Vector2.ZERO, radius, 0.0, TAU, 16, color, 3.0, true)
 	elif hostile:
 		_draw_classic_hostile(color)
 	elif style == &"needle_orbit":
-		draw_line(Vector2(-15, 0), Vector2(12, 0), Color(color, 0.26), 6.0, true)
+		draw_line(Vector2(-9, 0), Vector2(15, 0), OUTLINE_INK, 5.0, true)
 		draw_colored_polygon(PackedVector2Array([Vector2(15, 0), Vector2(-9, 3), Vector2(-5, 0), Vector2(-9, -3)]), color)
 	elif style == &"returning_gull":
+		draw_polyline(PackedVector2Array([Vector2(-13, -11), Vector2(8, 0), Vector2(-13, 11)]), OUTLINE_INK, 6.0, true)
 		draw_polyline(PackedVector2Array([Vector2(-13, -11), Vector2(8, 0), Vector2(-13, 11)]), color, 4.0, true)
-		draw_line(Vector2(-4, 0), Vector2(12, 0), Color(0.95, 1.0, 0.91), 2.0, true)
+		draw_line(Vector2(-4, 0), Vector2(12, 0), color, 2.0, true)
 	elif style == &"prism_fan":
-		draw_colored_polygon(PackedVector2Array([Vector2(13, 0), Vector2(-7, 6), Vector2(-3, 0), Vector2(-7, -6)]), color)
-		draw_line(Vector2(-2, 0), Vector2(8, 0), Color(1.0, 0.94, 1.0), 1.5, true)
+		var prism := PackedVector2Array([Vector2(13, 0), Vector2(-7, 6), Vector2(-3, 0), Vector2(-7, -6)])
+		draw_polyline(PackedVector2Array(Array(prism) + [prism[0]]), OUTLINE_INK, 3.0, true)
+		draw_colored_polygon(prism, color)
+		draw_line(Vector2(-2, 0), Vector2(8, 0), OUTLINE_INK, 1.5, true)
 	else:
 		var diamond := PackedVector2Array([Vector2(radius, 0), Vector2(0, radius * 0.65), Vector2(-radius, 0), Vector2(0, -radius * 0.65)])
+		draw_polyline(PackedVector2Array(Array(diamond) + [diamond[0]]), OUTLINE_INK, 3.0, true)
 		draw_colored_polygon(diamond, color)
 
 
 func get_visual_contract() -> Dictionary:
 	if style == &"return_light":
 		return {
-			"version": &"classic_2_0_exact",
+			"version": &"quiet_ink_3_18",
 			"motif": &"gold_diamond_return",
 			"length": 11.0,
 			"width": 5.0,
-			"trail": 28.0,
+			"trail": 18.0,
 			"trajectory_samples": 9,
-			"trajectory_animated": true,
+			"trajectory_animated": not motion_reduced,
+			"maximum_trajectory_length": MAX_RETURN_TRAIL_DISTANCE,
 		}
 	if hostile:
 		return {
-			"version": &"classic_2_0_exact",
+			"version": &"quiet_ink_3_18",
 			"motif": &"hostile_fold_petal",
 			"length": 18.0 if not reflectable else (12.0 if projectile_kind == 0 else 9.0),
 			"width": 8.0 if not reflectable else 6.0,
 			"reflectable": reflectable,
 		}
-	return {"version": &"roguelite_extension", "motif": style}
+	return {"version": &"quiet_ink_3_18", "motif": style}
 
 
 func _draw_classic_hostile(color: Color) -> void:
@@ -400,50 +438,57 @@ func _draw_classic_hostile(color: Color) -> void:
 		-forward * length * 0.72,
 		-side * width,
 	])
-	var stroke_color := Color(1.0, 0.50, 0.16, 0.98) if not reflectable else Color(color.r, color.g, color.b, 0.94)
-	draw_polyline(PackedVector2Array([petal[0], petal[1], petal[2], petal[3], petal[0]]), stroke_color, 2.4, true)
-	draw_line(-forward * 2.2, forward * 3.4, Color(0.06, 0.012, 0.025, 1.0) if not reflectable else Color(1.0, 0.82, 0.70, 0.96), 2.0, true)
+	var outline := PackedVector2Array([petal[0], petal[1], petal[2], petal[3], petal[0]])
+	draw_colored_polygon(petal, OUTLINE_INK)
+	draw_polyline(outline, OUTLINE_INK, 5.6, true)
+	draw_polyline(outline, color, 2.4, true)
+	draw_line(-forward * 2.2, forward * 3.4, Color(color, 0.92), 2.0, true)
 	if not reflectable:
-		draw_line(-side * 7.0, side * 7.0, Color(1.0, 0.66, 0.20, 0.98), 2.0, true)
-		draw_line(-forward * 13.0, -forward * 25.0, Color(0.94, 0.16, 0.18, 0.78), 2.0, true)
+		draw_line(-side * 7.0, side * 7.0, color, 2.0, true)
 	if not status_id.is_empty():
-		var status_mark_color := Color(0.46, 0.92, 0.92, 0.94) if status_id == &"wet_ink" else (Color(0.98, 0.48, 0.58, 0.94) if status_id == &"bound_crease" else Color(0.72, 0.54, 1.0, 0.94))
-		draw_line(-side * 5.0, side * 5.0, status_mark_color, 2.0, true)
+		# A short dark notch marks status shots without adding another neon hue.
+		draw_line(-side * 4.0, side * 4.0, OUTLINE_INK, 1.5, true)
 
 
 func _draw_classic_return_light() -> void:
 	var direction := velocity.normalized()
 	if direction.is_zero_approx():
 		direction = Vector2.RIGHT
-	_draw_return_trajectory(direction)
-	if _return_relay_pulse_remaining > 0.0:
+	if not motion_reduced:
+		_draw_return_trajectory(direction)
+	if not motion_reduced and _return_relay_pulse_remaining > 0.0:
 		var relay_progress := 1.0 - _return_relay_pulse_remaining / RETURN_RELAY_PULSE_DURATION
 		var relay_alpha := pow(1.0 - relay_progress, 1.35)
-		var relay_radius := lerpf(radius + 7.0, radius + 34.0, ease(relay_progress, -1.6))
-		draw_circle(Vector2.ZERO, relay_radius * 0.72, Color(1.0, 0.72, 0.25, relay_alpha * 0.12))
-		draw_arc(Vector2.ZERO, relay_radius, 0.0, TAU, 28, Color(1.0, 0.84, 0.42, relay_alpha * 0.94), lerpf(5.4, 1.8, relay_progress), true)
-	draw_line(-direction * 28.0, Vector2.ZERO, Color(0.32, 0.91, 0.85, 0.34), 5.0, true)
-	draw_circle(Vector2.ZERO, 16.0, Color(1.0, 0.71, 0.27, 0.06))
+		var relay_radius := lerpf(radius + 3.0, radius + 12.0, relay_progress)
+		draw_arc(Vector2.ZERO, relay_radius, 0.0, TAU, 16, Color(RETURN_INK, relay_alpha * 0.35), 1.5, true)
+	if not motion_reduced:
+		draw_line(-direction * 18.0, Vector2.ZERO, Color(FRIENDLY_INK, 0.20), 2.0, true)
 	var side := direction.rotated(PI * 0.5)
 	var diamond := PackedVector2Array([direction * 11.0, side * 5.0, -direction * 11.0, -side * 5.0])
-	draw_colored_polygon(diamond, Color(1.0, 0.78, 0.38, 0.96))
-	draw_circle(Vector2.ZERO, 2.0, Color.WHITE)
+	draw_polyline(PackedVector2Array(Array(diamond) + [diamond[0]]), OUTLINE_INK, 3.0, true)
+	draw_colored_polygon(diamond, RETURN_INK)
 
 
-func _draw_return_trajectory(direction: Vector2) -> void:
+func _draw_return_trajectory(_direction: Vector2) -> void:
 	if _trail_points.size() < 2:
 		return
 	var local_trail := PackedVector2Array()
 	for point in _trail_points:
 		local_trail.append(to_local(point))
+	var travelled := 0.0
 	for index in range(local_trail.size() - 1):
-		var progress := float(index) / float(maxi(1, local_trail.size() - 1))
-		var alpha := lerpf(0.52, 0.045, progress)
-		var relay_boost := 1.72 if _return_relay_pulse_remaining > 0.0 else 1.0
-		var width := lerpf(5.4, 1.2, progress) * relay_boost
-		var trail_color := Color(1.0, 0.78, 0.32, alpha * 1.18) if _return_relay_pulse_remaining > 0.0 else Color(0.32, 0.92, 0.84, alpha)
-		draw_line(local_trail[index], local_trail[index + 1], trail_color, width, true)
-	# Two offset gold threads make sharp route changes readable without adding nodes.
-	var side := direction.orthogonal()
-	draw_line(-direction * 18.0 + side * 3.0, -direction * 34.0 + side, Color(1.0, 0.72, 0.28, 0.42), 1.8, true)
-	draw_line(-direction * 18.0 - side * 3.0, -direction * 34.0 - side, Color(1.0, 0.72, 0.28, 0.28), 1.4, true)
+		var start := local_trail[index]
+		var finish := local_trail[index + 1]
+		var segment_length := start.distance_to(finish)
+		if segment_length <= 0.001:
+			continue
+		var available := MAX_RETURN_TRAIL_DISTANCE - travelled
+		if available <= 0.0:
+			break
+		if segment_length > available:
+			finish = start.lerp(finish, available / segment_length)
+		var progress := travelled / MAX_RETURN_TRAIL_DISTANCE
+		var alpha := lerpf(0.28, 0.04, progress)
+		var width := lerpf(2.4, 1.0, progress)
+		draw_line(start, finish, Color(FRIENDLY_INK, alpha), width, true)
+		travelled += minf(segment_length, available)

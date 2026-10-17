@@ -25,10 +25,12 @@ var _last_telegraph_duration: float = 0.9
 var _pending_phase: int = -1
 var _state_duration: float = 1.35
 var _transition_remaining: float = 0.0
+var intensity_tier: int = 0
 
 
-func configure(new_definition: FoldlightRogueBossDefinition, intro_delay: float = 0.0) -> void:
+func configure(new_definition: FoldlightRogueBossDefinition, intro_delay: float = 0.0, intensity: int = 0) -> void:
 	definition = new_definition
+	intensity_tier = clampi(intensity, 0, 5)
 	state = State.INTRO
 	phase_index = 0
 	current_pattern = &""
@@ -89,6 +91,19 @@ func mark_defeated() -> void:
 	_transition_remaining = 0.0
 
 
+func hold_active_pattern(seconds: float) -> void:
+	if state == State.ATTACK:
+		_remaining = clampf(seconds, 0.1, 12.0)
+		_state_duration = _remaining
+
+
+func finish_active_pattern() -> void:
+	if state == State.ATTACK:
+		state = State.RECOVERY
+		_remaining = _recovery_seconds()
+		_state_duration = _remaining
+
+
 func get_state_snapshot() -> Dictionary:
 	return {"state": state, "phase": phase_index, "pattern_id": current_pattern, "remaining": maxf(0.0, _remaining), "pending_phase": _pending_phase}
 
@@ -141,6 +156,8 @@ func _begin_telegraph() -> void:
 	_last_telegraph_duration = float(TELEGRAPH_SECONDS[mini(phase_index, 2)])
 	if definition.telegraph_seconds > 0.0:
 		_last_telegraph_duration = definition.telegraph_seconds
+	if definition.content_id == &"torn_page_executioner" and current_pattern == &"execution_dash":
+		_last_telegraph_duration = maxf(0.62, definition.telegraph_seconds - phase_index * 0.05 - intensity_tier * 0.025)
 	if current_pattern in [&"black_lane", &"margin_cut", &"unreflectable_cut", &"shrinking_frame"]:
 		_last_telegraph_duration += BLACK_GOLD_WARNING_BONUS
 	state = State.TELEGRAPH

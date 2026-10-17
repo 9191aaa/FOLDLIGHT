@@ -7,6 +7,7 @@ const FIRST_LEVEL := 8
 const WARNING_SECONDS := 3.0
 const MINIMUM_RECOVERY := 45.0
 const TIMED_ENCOUNTER_INTERVAL := 180.0
+const MAX_BOSSES := 6
 const BOSS_IDS: Array[StringName] = [
 	&"reef_crown_battery", &"tide_loom_mother", &"inverted_archivist",
 	&"torn_page_executioner", &"origami_judge", &"eclipse_twin_bells",
@@ -42,17 +43,17 @@ func advance(delta: float, level: int, combat_seconds: float) -> Dictionary:
 	_clock = maxf(_clock, combat_seconds)
 	if _state == &"waiting":
 		var earned := _level >= _next_level
-		var timed := _wave > 0 and _clock - _last_clear >= TIMED_ENCOUNTER_INTERVAL
-		if (earned or timed) and _clock - _last_clear >= MINIMUM_RECOVERY:
+		var timed := _wave > 0 and _clock - _last_clear >= encounter_interval()
+		if (earned or timed) and _clock - _last_clear >= recovery_interval():
 			_wave += 1
 			_plan.clear()
-			var count := 1
-			if _wave >= 3 and (_level >= 16 or _clock >= 720.0):
-				count = 2
-			if _wave >= 5 and (_level >= 24 or _clock >= 1440.0):
-				count = 3
+			var level_count := 1 + maxi(0, int((_level - FIRST_LEVEL) / 6))
+			var time_count := 1 + maxi(0, int((_clock - 480.0) / 360.0))
+			# The first encounter always teaches one boss. Later growth opens all
+			# six identities; a coprime stride prevents duplicate pairs at 4–6.
+			var count := mini(MAX_BOSSES, mini(_wave, maxi(level_count, time_count)))
 			for index in count:
-				_plan.append(BOSS_IDS[posmod(_seed + (_wave - 1) * 5 + index * 2, BOSS_IDS.size())])
+				_plan.append(BOSS_IDS[posmod(_seed + (_wave - 1) * 5 + index * 5, BOSS_IDS.size())])
 			_state = &"warning"
 			_warning = WARNING_SECONDS
 	elif _state == &"warning" and is_finite(delta) and delta > 0.0:
@@ -82,7 +83,8 @@ func confirm_spawned(actor_ids: Array[StringName]) -> bool:
 			return false
 		_alive[identity] = true
 	_state = &"active"
-	_next_level = maxi(_next_level + 4, _level + 3)
+	var level_step := 4 if _level < 16 else (3 if _level < 28 else 2)
+	_next_level = maxi(_next_level + level_step, _level + level_step)
 	return true
 
 
@@ -103,8 +105,22 @@ func get_snapshot() -> Dictionary:
 	return {
 		"state": _state, "next_level": _next_level, "warning_remaining": _warning,
 		"wave_index": _wave, "active_count": _alive.size(), "warning_count": _plan.size() if _state in [&"warning", &"ready"] else 0,
-		"capacity": 3, "difficulty_tier": mini(10, maxi(int(_clock / 75.0), int((_level - 1) / 2))),
+		"capacity": MAX_BOSSES, "difficulty_tier": maxi(int(_clock / 75.0), int((_level - 1) / 2)),
+		"intensity_tier": intensity_tier(), "encounter_interval": encounter_interval(),
 		"title": "多首领来袭" if _plan.size() > 1 else "首领来袭",
-		"recovery_remaining": maxf(0.0, MINIMUM_RECOVERY - (_clock - _last_clear)),
+		"recovery_remaining": maxf(0.0, recovery_interval() - (_clock - _last_clear)),
 	}
+
+
+func encounter_interval() -> float:
+	var depth := maxf(float(_level - FIRST_LEVEL), maxf(0.0, _clock - 480.0) / 55.0)
+	return maxf(38.0, TIMED_ENCOUNTER_INTERVAL - depth * 5.5)
+
+
+func recovery_interval() -> float:
+	return maxf(14.0, MINIMUM_RECOVERY - maxf(0.0, float(_level - FIRST_LEVEL)) * 1.25)
+
+
+func intensity_tier() -> int:
+	return clampi(maxi(int((_level - FIRST_LEVEL) / 6), int((_clock - 480.0) / 360.0)), 0, 5)
 

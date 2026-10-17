@@ -54,7 +54,7 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 
 	_check(_option_ids(first_a) == EXPECTED_FIRST_IDS, "first growth reward (task 2) is exactly surge_return / wide_fold / steady_lantern")
 	_check(_option_ids(second_a) == EXPECTED_SECOND_IDS, "second growth reward (task 4) is exactly crosswind / kinetic_paper / clear_current")
-	_check(_option_ids(wrapped) == EXPECTED_FIRST_IDS, "third growth reward (task 6) wraps exactly back to the first tier")
+	_check(_option_ids(wrapped) == [&"dash_blast", &"quiet_hinge", &"steady_lantern"], "third growth reward (task 6) adds dash blast and shorter Fold cooldown while preserving sustain")
 	_check(var_to_str(first_a) == var_to_str(first_b) and var_to_str(second_a) == var_to_str(second_b), "repeated reward-option calls are deterministic")
 	_check(_option_lane_ids(first_a) == EXPECTED_LANE_IDS and _option_lane_ids(second_a) == EXPECTED_LANE_IDS, "both tiers preserve power / fold_mobility / sustain lane order")
 	_check(_all_unique(_option_ids(first_a)) and _all_unique(_option_ids(second_a)), "each completion offers three unique reward routes")
@@ -64,7 +64,7 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 	_check(_all_next_level(first_a, 1) and _all_next_level(second_a, 1), "fresh reward cards all advertise next_level 1")
 
 	var applied := slice.controller.evolution.apply_mission_reward(&"surge_return")
-	var leveled_wrap := slice.controller.evolution.get_mission_reward_options(2)
+	var leveled_wrap := slice.controller.evolution.get_mission_reward_options(6)
 	_check(int(applied.get("level", 0)) == 1, "claim result reports the granted reward level")
 	_check(_next_level_for(leveled_wrap, &"surge_return") == 2, "a repeated surge_return card advertises next_level 2")
 	_check(_next_level_for(leveled_wrap, &"wide_fold") == 1 and _next_level_for(leveled_wrap, &"steady_lantern") == 1, "unclaimed lanes remain at next_level 1")

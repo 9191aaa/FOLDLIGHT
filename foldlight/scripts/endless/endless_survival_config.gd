@@ -18,10 +18,10 @@ extends Resource
 @export_range(1.0, 4.0, 0.05) var projectile_growth_per_stage: float = 1.12
 
 @export_group("Population Budget")
-@export_range(4, 48, 1) var base_population_limit: int = 24
-@export_range(4, 48, 1) var maximum_population_limit: int = 48
-@export_range(4, 120, 1) var base_threat_limit: int = 32
-@export_range(4, 120, 1) var maximum_threat_limit: int = 104
+@export_range(4, 80, 1) var base_population_limit: int = 28
+@export_range(4, 80, 1) var maximum_population_limit: int = 80
+@export_range(4, 160, 1) var base_threat_limit: int = 32
+@export_range(4, 160, 1) var maximum_threat_limit: int = 160
 @export_range(320.0, 1200.0, 10.0) var spawn_safe_distance: float = 620.0
 @export_range(800.0, 1800.0, 10.0) var spawn_local_radius: float = 1250.0
 @export_range(0.5, 1.0, 0.05) var breathing_wave_ratio: float = 0.75

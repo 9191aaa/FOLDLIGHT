@@ -1,4 +1,8 @@
-# FOLDLIGHT / 折光 3.17.0
+# FOLDLIGHT / 折光 3.18.0
+
+3.18 加入连冲行刑者、敌群强化织母、深期最多六首领与围猎范围；增加普通敌群密度、冲刺爆破、静铰冷却成长、瘴纸游魂和左右倒转区，收纳容量上限提高至 96，火力旗按真实死亡完成领奖。两模式继续共用核心战斗与操作，详见 [深期战斗与首领特性](docs/DEEP_CHAOS_3_18.md)。
+
+高密度战斗的实测结果、性能定位和手机布局验证见 [3.18 性能报告](docs/COMBAT_PERFORMANCE_3_18.md)。
 
 3.17 放缓升级、提高后期任务与增援压力，8 级起遭遇首领，后期最多三只。新增三位首领共用于迷航和无尽，扩展三张地图并加入护送纸舟、附近毒潮和预警轰炸；见 [无尽扩展](docs/ENDLESS_EXPANSION_3_17.md)。
 
@@ -51,4 +55,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\run_godot_local.
 
 重构回归通过 `tools/check_refactor.ps1 -GodotPath <引擎路径>` 启动，每个测试使用独立用户数据目录。Windows 预览导出使用独立的 `FOLDLIGHT Refactor Preview` 存档目录。
 
-版本：3.17.0 · Windows x86-64 / Android 7+ / Web · Godot 4.6.3
+版本：3.18.0 · Windows x86-64 / Android 7+ / Web · Godot 4.6.3

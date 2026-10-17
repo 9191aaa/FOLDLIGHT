@@ -200,12 +200,28 @@ class MapSurface extends Control:
 				canvas.draw_line(point-Vector2(5,0),point+Vector2(5,0),color,2,true)
 				canvas.draw_line(point-Vector2(0,5),point+Vector2(0,5),color,2,true)
 		var bosses: Array = snapshot.get("bosses", [])
-		for index in mini(3, bosses.size()):
+		var lockdown: Dictionary = snapshot.get("boss_lockdown", {})
+		if StringName(lockdown.get("state", &"idle")) in [&"warning", &"active"]:
+			var center := project(lockdown.get("position", bounds.get_center()))
+			var radius := float(lockdown.get("radius", 1800)) * chart.size.x / bounds.size.x
+			canvas.draw_arc(center, radius, 0, TAU, 48, Palette.INK, 5, true)
+			canvas.draw_arc(center, radius, 0, TAU, 48, Palette.DANGER, 2, true)
+		for index in mini(6, bosses.size()):
 			var boss: Dictionary = bosses[index]
 			if bool(boss.get("defeated", false)) or float(boss.get("health",0)) <= 0: continue
 			var point := project(boss.get("position",bounds.get_center()))
 			canvas.draw_circle(point,12,Palette.INK)
 			canvas.draw_colored_polygon(PackedVector2Array([point+Vector2(-9,6),point+Vector2(-11,-6),point+Vector2(-4,-2),point+Vector2(0,-10),point+Vector2(4,-2),point+Vector2(11,-6),point+Vector2(9,6)]),Palette.DANGER)
+		var inversion: Dictionary = snapshot.get("inversion", {})
+		if StringName(inversion.get("state", &"rest")) in [&"warning", &"active"]:
+			var point := project(inversion.get("position", bounds.get_center()))
+			var radius := maxf(5, float(inversion.get("radius", 330)) * chart.size.x / bounds.size.x)
+			var color := Color(0.63, 0.52, 0.73)
+			canvas.draw_circle(point, radius, Color(color, 0.22))
+			canvas.draw_arc(point, radius, 0, TAU, 20, color, 2, true)
+			canvas.draw_line(point - Vector2(7, 0), point + Vector2(7, 0), color, 2, true)
+			canvas.draw_line(point + Vector2(-7, 0), point + Vector2(-3, -4), color, 2, true)
+			canvas.draw_line(point + Vector2(7, 0), point + Vector2(3, 4), color, 2, true)
 		var danger: Dictionary = snapshot.get("danger", {})
 		if StringName(danger.get("state", &"safe")) in [&"warning", &"closed"] and danger.get("safe_position") is Vector2:
 			var safe := project(danger["safe_position"])
@@ -336,6 +352,8 @@ func get_navigation_snapshot() -> Dictionary:
 		"instruction_text": _task_instruction.text if _task_instruction else "", "objective_feedback": _objective_feedback.duplicate(true),
 		"time_text": _task_time.text if _task_time else "", "danger_text": _danger.text if _danger else "",
 		"bombardment": _snapshot.get("bombardment", {}).duplicate(true),
+		"inversion": _snapshot.get("inversion", {}).duplicate(true),
+		"boss_lockdown": _snapshot.get("boss_lockdown", {}).duplicate(true),
 		"escort": objective.duplicate(true) if StringName(objective.get("kind", &"")) == &"escort" else {},
 		"indicator_kind": _indicator_kind, "indicator_mode": _indicator_kind, "indicator_direction": _indicator_direction, "indicator_position": _indicator_point,
 		"player_map_position": _map.project(_snapshot.get("player_position", _map.bounds.position)) if _map and not _snapshot.is_empty() else Vector2.ZERO}
@@ -476,6 +494,30 @@ func _refresh_task() -> void:
 		var alert := "轰炸 %.1f秒 · 离开橙色十字落点" % maxf(0,float(bombardment.get("warning_remaining",0))) if bombardment_state == &"warning" else "轰炸落下 · 避开橙色十字区域"
 		_danger.text = _danger.text + "\n" + alert if _danger.visible else alert
 		_danger.visible = true
+	var inversion: Dictionary = _snapshot.get("inversion", {})
+	var inversion_state := StringName(inversion.get("state", &"rest"))
+	if inversion_state in [&"warning", &"active"]:
+		var reversal_hint := "反向区 %.1f秒后生效 · 避开紫色箭纹" % maxf(0, float(inversion.get("remaining", 0))) if inversion_state == &"warning" else ("左右已反转 · 离开紫区恢复" if bool(inversion.get("inside", false)) else "紫色箭纹区内左右反转")
+		var other_alerts: Array[String] = []
+		if danger_state == &"closed": other_alerts.append("此处已关闭，正在扣血")
+		elif danger_state == &"warning": other_alerts.append("毒潮 %.0f秒后关闭" % float(danger.get("seconds_remaining", 0)))
+		elif global_warning: other_alerts.append("毒潮封区预警")
+		if bombardment_state in [&"warning", &"impact"]:
+			other_alerts.append("轰炸 %.1f秒" % float(bombardment.get("warning_remaining", 0)) if bombardment_state == &"warning" else "轰炸落下")
+		_danger.text = reversal_hint + ("\n" + " · ".join(other_alerts) if not other_alerts.is_empty() else "")
+		_danger.visible = true
+		_danger.add_theme_color_override("font_color", Color(0.80, 0.70, 0.88))
+	var lockdown: Dictionary = _snapshot.get("boss_lockdown", {})
+	if StringName(lockdown.get("state", &"idle")) in [&"warning", &"active"] and bool(lockdown.get("outside", false)):
+		var alert := "围猎 %d秒后封圈 · 沿红色方向返回" % ceili(float(lockdown.get("remaining", 0))) if StringName(lockdown.get("state")) == &"warning" else "围猎圈外 · %.1f秒后扣血 · 返回圈内" % float(lockdown.get("seconds_until_damage", 0))
+		var secondary := PackedStringArray()
+		if danger_state == &"closed": secondary.append("此处毒潮扣血")
+		elif danger_state == &"warning": secondary.append("此处即将封区")
+		if bombardment_state in [&"warning", &"impact"]: secondary.append("避开轰炸十字")
+		if bool(inversion.get("inside", false)): secondary.append("左右已反转")
+		_danger.text = alert + ("\n" + " · ".join(secondary) if not secondary.is_empty() else "")
+		_danger.visible = true
+		_danger.add_theme_color_override("font_color", Palette.DANGER)
 
 func _refresh_indicator() -> void:
 	_indicator_kind = &""
@@ -485,7 +527,12 @@ func _refresh_indicator() -> void:
 	var target := player
 	var danger: Dictionary = _snapshot.get("danger", {})
 	var objective: Dictionary = _snapshot.get("objective", {})
-	if StringName(danger.get("state", &"safe")) in [&"warning", &"closed"] and danger.get("safe_position") is Vector2:
+	var lockdown: Dictionary = _snapshot.get("boss_lockdown", {})
+	if bool(lockdown.get("outside", false)) and lockdown.get("safe_position") is Vector2:
+		target = lockdown["safe_position"]
+		_indicator_kind = &"boss_lockdown"
+		_indicator_color = Palette.DANGER
+	elif StringName(danger.get("state", &"safe")) in [&"warning", &"closed"] and danger.get("safe_position") is Vector2:
 		target = danger["safe_position"]
 		_indicator_kind = &"safe"
 		_indicator_color = Palette.FOLD
@@ -512,6 +559,7 @@ func _refresh_indicator() -> void:
 	# The adapter may provide the first safe-path waypoint around a wall, rather
 	# than the final refuge. Describe that direction without promising immunity.
 	var target_title := "护送纸舟" if StringName(objective.get("kind", &"")) == &"escort" else "任务目标"
+	if _indicator_kind == &"boss_lockdown": target_title = "返回围猎圈"
 	_indicator_text.text = "%s · 距离 %d" % ["撤离航点" if _indicator_kind == &"safe" else target_title, roundi(delta.length())]
 	_indicator_text.position = _indicator_point + Vector2(-160, 34)
 	if _mobile: _indicator_text.position.x = clampf(_indicator_text.position.x, 600, 1000)

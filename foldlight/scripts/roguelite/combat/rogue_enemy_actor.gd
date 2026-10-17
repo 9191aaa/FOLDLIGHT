@@ -1,6 +1,8 @@
 class_name FoldlightRogueEnemyActor
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
 const HitReaction = preload("res://scripts/visuals/paper_hit_reaction.gd")
 
@@ -32,6 +34,11 @@ var action_state: ActionState = ActionState.APPROACH
 var target_position: Vector2 = Vector2.ZERO
 var locked_direction: Vector2 = Vector2.RIGHT
 var support_attack_multiplier: float = 1.0
+var command_move_multiplier: float = 1.0
+var command_projectile_speed_multiplier: float = 1.0
+var _command_attack_multiplier: float = 1.0
+var _bell_attack_multiplier: float = 1.0
+var _applied_command_move: float = 1.0
 var classic_archetype: StringName = &"drifter"
 var arena_center: Vector2 = Vector2(960.0, 535.0)
 
@@ -59,7 +66,7 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 0) | (1 << 2) | (1 << 3)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: StringName) -> void:
@@ -67,6 +74,12 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	actor_id = new_actor_id
 	classic_archetype = _resolve_classic_archetype(definition.content_id if definition != null else &"drifter")
 	health = definition.base_health if definition != null else 1.0
+	support_attack_multiplier = 1.0
+	command_move_multiplier = 1.0
+	command_projectile_speed_multiplier = 1.0
+	_command_attack_multiplier = 1.0
+	_bell_attack_multiplier = 1.0
+	_applied_command_move = 1.0
 	_hit_reaction.reset()
 	_flash = 0.0
 	_capture_flash = 0.0
@@ -86,13 +99,16 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	if collision != null and collision.shape is CircleShape2D:
 		collision.shape = collision.shape.duplicate()
 		(collision.shape as CircleShape2D).radius = get_contact_radius()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, new_target_position: Vector2, hostile_time_scale: float = 1.0) -> void:
 	if definition == null or health <= 0.0:
 		return
 	var safe_delta := maxf(0.0, delta) * clampf(hostile_time_scale, 0.1, 2.0)
+	# Restore the velocity used by the classic steering equations. Multiplying
+	# the previous already-buffed velocity every tick would grow without bound.
+	velocity /= _applied_command_move
 	target_position = new_target_position
 	_age += safe_delta
 	_hit_reaction.advance(maxf(0.0, delta))
@@ -117,8 +133,10 @@ func advance_simulation(delta: float, new_target_position: Vector2, hostile_time
 			_advance_rewinder(safe_delta)
 		_:
 			_advance_drifter(safe_delta)
+	velocity *= command_move_multiplier
+	_applied_command_move = command_move_multiplier
 	move_and_slide()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func take_damage(amount: float, source: StringName = &"weapon", incoming_velocity: Vector2 = Vector2.ZERO) -> bool:
@@ -136,7 +154,7 @@ func take_damage(amount: float, source: StringName = &"weapon", incoming_velocit
 	if health <= 0.0:
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 
@@ -151,8 +169,39 @@ func get_hit_feedback_snapshot() -> Dictionary:
 
 
 func set_support_buff(attack_multiplier: float) -> void:
-	support_attack_multiplier = clampf(attack_multiplier, 0.55, 1.0)
-	queue_redraw()
+	_bell_attack_multiplier = clampf(attack_multiplier, 0.55, 1.0)
+	_refresh_attack_multiplier()
+	RenderRedraw.request(self)
+
+
+func set_command_buff(snapshot: Dictionary) -> void:
+	command_move_multiplier = clampf(float(snapshot.get("move_multiplier", 1.0)), 1.0, 1.85)
+	command_projectile_speed_multiplier = clampf(float(snapshot.get("projectile_speed_multiplier", 1.0)), 1.0, 1.6)
+	_command_attack_multiplier = clampf(float(snapshot.get("attack_interval_multiplier", 1.0)), 0.38, 1.0)
+	_refresh_attack_multiplier()
+
+
+func _refresh_attack_multiplier() -> void:
+	var next := minf(_bell_attack_multiplier, _command_attack_multiplier)
+	if is_equal_approx(next, support_attack_multiplier): return
+	var ratio := next / support_attack_multiplier
+	_attack_remaining *= ratio
+	if (classic_archetype == &"ram" and action_state == ActionState.APPROACH) or (classic_archetype == &"rewinder" and rewind_state == RewindState.ROAM):
+		_state_remaining *= ratio
+	support_attack_multiplier = next
+
+
+func get_command_buff_snapshot() -> Dictionary:
+	return {"move_multiplier": command_move_multiplier, "projectile_speed_multiplier": command_projectile_speed_multiplier, "attack_interval_multiplier": _command_attack_multiplier}
+
+
+func _emit_command_attack(snapshot: Dictionary) -> void:
+	if command_projectile_speed_multiplier > 1.0:
+		snapshot = snapshot.duplicate(true)
+		snapshot["speed"] = float(snapshot.get("speed", 160.0)) * command_projectile_speed_multiplier
+		for projectile: Dictionary in snapshot.get("projectiles", []):
+			projectile["speed"] = float(projectile.get("speed", 160.0)) * command_projectile_speed_multiplier
+	attack_requested.emit(snapshot)
 
 
 func get_combat_snapshot() -> Dictionary:
@@ -170,6 +219,7 @@ func get_combat_snapshot() -> Dictionary:
 		"records_rewind_path": classic_archetype == &"rewinder",
 		"contact_dangerous": is_contact_dangerous(),
 		"visual_version": CLASSIC_VISUAL_VERSION,
+		"command_buff": get_command_buff_snapshot(),
 	}
 
 
@@ -211,7 +261,7 @@ func capture_return_light() -> bool:
 	stored_light = mini(18, stored_light + 1)
 	_capture_flash = 0.72
 	_flash = maxf(_capture_flash, _hit_reaction.flash)
-	queue_redraw()
+	RenderRedraw.request(self)
 	return true
 
 
@@ -482,7 +532,7 @@ func _emit_classic_aimed(shots: Array[Dictionary], color: Color, reflectable: bo
 			"speed": float(shot.get("speed", 160.0)),
 			"curve": float(shot.get("curve", 0.0)),
 		})
-	attack_requested.emit({
+	_emit_command_attack({
 		"origin": global_position,
 		"direction": Vector2.from_angle(base_angle),
 		"projectile_count": absolute_shots.size(),
@@ -509,7 +559,7 @@ func _emit_classic_absolute(shots: Array[Dictionary], color: Color, reflectable:
 			"speed": float(shot.get("speed", 160.0)),
 			"curve": float(shot.get("curve", 0.0)),
 		})
-	attack_requested.emit({
+	_emit_command_attack({
 		"origin": global_position,
 		"direction": absolute_shots[0].get("direction", Vector2.DOWN) if not absolute_shots.is_empty() else Vector2.DOWN,
 		"projectile_count": absolute_shots.size(),

@@ -250,7 +250,10 @@ func report_flag_damage(flag_id: StringName, damage: float) -> bool:
 func report_flag_destroyed(flag_id: StringName = &"") -> bool:
 	if not _matches_target(&"destroy_flag", flag_id):
 		return false
-	return report_flag_damage(flag_id, float(current["required"]) - float(current["progress"]))
+	# The physical target emits this only once after actual lethal damage.
+	# Never infer death by adding the last fraction to an independent sum.
+	_complete_current()
+	return true
 
 
 func update_target_position(target_id: StringName, position: Vector2) -> bool:

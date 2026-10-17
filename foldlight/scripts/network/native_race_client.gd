@@ -10,7 +10,7 @@ signal page_state_changed(state: Dictionary)
 signal room_left
 signal busy_changed(busy: bool)
 
-const RULES_VERSION := "endless_race_v8"
+const RULES_VERSION := "endless_race_v9"
 const DEFAULT_ENDPOINT := "https://foldlight-paper-sea.briny-note-8241.chatgpt.site"
 const SETTINGS_FILE := "user://race_connection.cfg"
 const POLL_SECONDS := 1.0

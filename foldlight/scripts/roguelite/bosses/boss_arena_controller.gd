@@ -1,6 +1,8 @@
 class_name FoldlightBossArenaController
 extends Node2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 enum TideState { REST, TELEGRAPH, SURGE }
 
 const TIDE_TELEGRAPH_DURATION: float = 1.4
@@ -47,7 +49,7 @@ func configure(new_rule_id: StringName, bounds: Rect2) -> void:
 	_player_position = bounds.get_center()
 	modulate.a = 1.0
 	_update_rule()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func set_phase(new_phase_index: int) -> void:
@@ -61,13 +63,13 @@ func set_phase(new_phase_index: int) -> void:
 		pulse_radius = 0.0
 		pulse_progress = 0.0
 	_update_rule()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func set_pressure_suspended(suspended: bool) -> void:
 	_pressure_suspended = suspended
 	modulate.a = 0.46 if suspended else 1.0
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance_simulation(delta: float, player_position: Vector2) -> void:
@@ -79,11 +81,11 @@ func advance_simulation(delta: float, player_position: Vector2) -> void:
 	elapsed += safe_delta
 	if rule_id == &"reef_tide_pulse":
 		_advance_tide(safe_delta)
-		queue_redraw()
+		RenderRedraw.request(self)
 		return
 	lane_angle = fmod(elapsed * (0.22 + float(phase_index) * 0.07), TAU)
 	_update_rule()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func is_player_safe(player_position: Vector2) -> bool:
