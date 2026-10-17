@@ -13,6 +13,7 @@ func apply(ui: Node, enabled: bool) -> void:
 		_original.clear()
 		return
 	var top := safe_top(ui)
+	var insets := safe_insets(ui)
 	_enlarge(ui.interface)
 	for kind: StringName in ui._screens:
 		var screen: Control = ui._screens[kind]
@@ -24,6 +25,9 @@ func apply(ui: Node, enabled: bool) -> void:
 				elif kind == &"settings": sides = Vector4(100, top, 100, 36)
 				elif kind == &"route": sides = Vector4(50, top, 50, 30)
 				elif kind == &"title": sides = Vector4(96, top, 96, 32)
+				sides.x = maxf(sides.x, insets.x + 28.0)
+				sides.z = maxf(sides.z, insets.z + 28.0)
+				sides.w = maxf(sides.w, insets.w + 24.0)
 				_margin(child, sides)
 	_reward(ui)
 	_title(ui)
@@ -40,14 +44,20 @@ func apply(ui: Node, enabled: bool) -> void:
 	_prop(ui._mechanic_panel, &"position", Vector2(-1420, top + 200))
 	_prop(ui._mechanic_panel, &"size", Vector2(920, 150))
 	ui._mobile_hud.position.y = top - 130.0
+	ui._mobile_hud.apply_safe_area(insets)
 	_tutorial(ui, top)
 
 static func safe_top(ui: Node) -> float:
+	# The room strip belongs to live competition, while menu/reward layouts
+	# need their full height on phones with a large top safe inset.
+	var race: bool = ui.get("_hud_context") is Dictionary and bool(ui._hud_context.get("race", false)) and ui.get("screen_kind") == &"hud"
+	return maxf(150.0, safe_insets(ui).y + (156.0 if race else 24.0))
+
+static func safe_insets(ui: Node) -> Vector4:
 	var touch := ui.get_node_or_null("/root/TouchControls")
 	if touch != null and touch.has_method("get_layout_snapshot"):
-		var insets: Vector4 = touch.get_layout_snapshot().get("safe_insets", Vector4.ZERO)
-		return maxf(150.0, insets.y + 24.0)
-	return 150.0
+		return touch.get_layout_snapshot().get("safe_insets", Vector4.ZERO)
+	return Vector4.ZERO
 
 func _enlarge(node: Node) -> void:
 	if node is Label or node is Button:

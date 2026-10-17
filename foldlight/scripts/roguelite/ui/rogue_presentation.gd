@@ -46,6 +46,7 @@ var _desktop_hud: Control
 var _settings_grid: GridContainer
 var _settings_minus: Array[Button] = []
 var _touch_safe_top: float = -1.0
+var _touch_safe_insets: Vector4 = Vector4.ZERO
 var _navigation_overlay: Control
 
 var screen_kind: StringName = &"title"
@@ -179,11 +180,13 @@ func set_touch_layout(enabled: bool) -> void:
 		_navigation_overlay.set_touch_layout(enabled, MOBILE_LAYOUT.safe_top(self))
 	_refresh_input_hint()
 	_touch_safe_top = MOBILE_LAYOUT.safe_top(self) if enabled else -1.0
+	_touch_safe_insets = MOBILE_LAYOUT.safe_insets(self) if enabled else Vector4.ZERO
 
 
 func _on_touch_layout_changed() -> void:
-	if _touch_layout and not is_equal_approx(_touch_safe_top, MOBILE_LAYOUT.safe_top(self)):
+	if _touch_layout and (not is_equal_approx(_touch_safe_top, MOBILE_LAYOUT.safe_top(self)) or not _touch_safe_insets.is_equal_approx(MOBILE_LAYOUT.safe_insets(self))):
 		_touch_safe_top = MOBILE_LAYOUT.safe_top(self)
+		_touch_safe_insets = MOBILE_LAYOUT.safe_insets(self)
 		_mobile_layout.apply(self, true)
 		if is_instance_valid(_navigation_overlay):
 			_navigation_overlay.set_touch_layout(true, _touch_safe_top)
@@ -223,7 +226,9 @@ func _collect_touch_buttons(node: Node, result: Array[Dictionary]) -> void:
 func _sync_touch_context() -> void:
 	var touch := get_node_or_null("/root/TouchControls")
 	if touch != null:
-		touch.set_context(self, _hud_player, visible and screen_kind == &"hud")
+		var race_bridge := get_node_or_null("/root/WebRaceBridge")
+		var room_overlay: bool = race_bridge != null and race_bridge.is_lobby_open()
+		touch.set_context(self, _hud_player, visible and screen_kind == &"hud" and not room_overlay)
 
 
 func _exit_tree() -> void:
@@ -246,6 +251,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if not is_inside_tree(): return
+	var race_bridge := get_node_or_null("/root/WebRaceBridge")
+	if race_bridge != null and race_bridge.is_lobby_open(): return
 	# Raw touches allow a second finger to pause while the first holds the stick.
 	# It remains observable by the entry guards; no synthetic combat key is sent.
 	if _touch_layout and screen_kind == &"hud" and event is InputEventScreenTouch and event.pressed and not event.canceled and _mobile_hud.pause_button.is_visible_in_tree():
@@ -263,6 +271,8 @@ func _input(event: InputEvent) -> void:
 func _handle_menu_input(event: InputEvent) -> void:
 	if not is_inside_tree() or not visible or not event.is_pressed() or event.is_echo():
 		return
+	var race_bridge := get_node_or_null("/root/WebRaceBridge")
+	if race_bridge != null and race_bridge.is_lobby_open(): return
 	var viewport := get_viewport()
 	if not is_instance_valid(viewport) or not viewport.is_inside_tree():
 		return
@@ -331,6 +341,7 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 	_hud_region.text = "%s  /  %s" % [region_title, _category_title(StringName(room_node.get("category", &"combat")))]
 	_hud_room.text = _t(&"ROGUE_HUD_ROOM", "房间 %d  ·  微光 %d") % [int(snapshot.get("room_count", 0)) + 1, int(snapshot.get("glimmer", 0))]
 	_hud_context = context
+	_on_touch_layout_changed()
 	if context.has("region_text"):
 		_hud_region.text = str(context["region_text"])
 	if context.has("voyage_text"):
@@ -1474,6 +1485,7 @@ func _show_only(kind: StringName) -> void:
 		_leave_input_guard.cancel()
 		_leave_action_locked = true
 	screen_kind = kind
+	_on_touch_layout_changed()
 	_sync_touch_context()
 	if is_instance_valid(_navigation_overlay):
 		_navigation_overlay.set_hud_visible(kind == &"hud")

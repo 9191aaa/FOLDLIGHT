@@ -46,6 +46,7 @@ const ENEMIES: Array[FoldlightRogueEnemyDefinition] = [
 	preload("res://resources/roguelite/enemies/brood_lantern.tres"),
 	preload("res://resources/roguelite/enemies/shear_scribe.tres"),
 	preload("res://resources/roguelite/enemies/shutter_seraph.tres"),
+	preload("res://resources/roguelite/enemies/cinder_mine.tres"),
 ]
 
 const ENCOUNTERS: Array[FoldlightRogueEncounterDefinition] = [

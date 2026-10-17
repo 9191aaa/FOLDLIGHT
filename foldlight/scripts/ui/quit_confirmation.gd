@@ -64,6 +64,17 @@ func _ready() -> void:
 	_input_guard = INPUT_GUARD.new()
 	add_child(_input_guard)
 	_input_guard.state_changed.connect(_update_gate)
+	var touch := get_node_or_null("/root/TouchControls")
+	if touch != null and touch.is_touch_mode():
+		panel.custom_minimum_size = Vector2(900, 380)
+		heading.add_theme_font_size_override("font_size", 42)
+		body.text = "退出将关闭游戏。"
+		body.add_theme_font_size_override("font_size", 34)
+		hint.text = "点留在纸海继续游戏"
+		hint.add_theme_font_size_override("font_size", 32)
+		for button: Button in [_cancel_button, _quit_button]:
+			button.custom_minimum_size = Vector2(390, 120)
+			button.add_theme_font_size_override("font_size", 36)
 	hide()
 
 

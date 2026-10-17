@@ -44,6 +44,20 @@ func _run() -> void:
 	_press(ui, &"fold")
 	_check(_actions.back() == &"endless", "endless remains a selectable secondary mode")
 	_press(ui, &"move_down")
+	selected = root.gui_get_focus_owner() as Button
+	_check(selected != null and selected.name == "FriendsButton", "controller navigation includes the native friend lobby beside endless")
+	_press(ui, &"fold")
+	var race_bridge := root.get_node("WebRaceBridge")
+	_check(race_bridge.is_lobby_open() and _actions.back() == &"endless", "friend action opens the shared lobby without starting solo or replaying teaching")
+	var previous_actions := _actions.size()
+	_press(ui, &"fold")
+	_check(_actions.size() == previous_actions, "open lobby owns confirmation instead of forwarding it to the underlying title")
+	var back := InputEventAction.new()
+	back.action = &"ui_cancel"
+	back.pressed = true
+	race_bridge.native_lobby._input(back)
+	_check(not race_bridge.is_lobby_open() and root.gui_get_focus_owner() == selected, "controller back closes the empty lobby and restores the friend action focus")
+	_press(ui, &"move_down")
 	_press(ui, &"fold")
 	_check(_actions.back() == &"tutorial", "replay teaching emits its own request")
 

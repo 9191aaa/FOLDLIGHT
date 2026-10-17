@@ -38,6 +38,23 @@ func _ready() -> void:
 	pause_button.focus_mode = Control.FOCUS_NONE
 	pause_button.pressed.connect(func() -> void: pause_requested.emit())
 	add_child(pause_button)
+	apply_safe_area(Vector4.ZERO)
+
+func apply_safe_area(insets: Vector4) -> void:
+	if health == null: return
+	var left := 44.0 + insets.x
+	var right := 44.0 + insets.z
+	var width := get_viewport_rect().size.x
+	for node: Control in [health, health_bar, fold, focus_bar, charge_bar]:
+		node.position.x = left
+	pause_button.position.x = width - right - 120.0
+	status.position.x = pause_button.position.x - 376.0
+	status.size.x = 340.0
+	voyage.position.x = left + 376.0
+	voyage.size.x = maxf(200.0, status.position.x - voyage.position.x - 32.0)
+	for node: Control in [boss, boss_bar, objective]:
+		node.position.x = left + 576.0
+		node.size.x = maxf(300.0, pause_button.position.x - node.position.x - 44.0)
 
 func update_from(source: Node) -> void:
 	for child in get_children(): child.show()
@@ -46,7 +63,9 @@ func update_from(source: Node) -> void:
 	health_bar.max_value = source._hud_health_bar.max_value
 	health_bar.value = source._hud_health_bar.value
 	voyage.text = source._hud_region.text + "  ·  " + source._hud_room.text
-	status.text = source._hud_status.text
+	# The first line reports current pressure; the secondary evolution count
+	# belongs to the result screen and must not spill under the task panel.
+	status.text = source._hud_status.text.get_slice("\n", 0)
 	fold.text = source._hud_fold.text.replace("折域  ·  ", "").replace("折域回折  ", "回折 ")
 	focus_bar.value = source._hud_focus_bar.value
 	charge_bar.value = source._hud_charge_bar.value

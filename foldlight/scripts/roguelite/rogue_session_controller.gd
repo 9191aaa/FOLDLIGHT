@@ -384,6 +384,8 @@ func _encounter_plan(room_node: Dictionary) -> Dictionary:
 	var staged_enemy_ids := _enemy_ids_for_room(current_region_definition.content_id, depth, category)
 	if not staged_enemy_ids.is_empty():
 		definition.enemy_ids = staged_enemy_ids
+	if run_controller.run_state.current_region > 0 and depth >= 2 and category in [&"combat", &"elite", &"event"]:
+		definition.enemy_ids.append(&"cinder_mine")
 	var has_barrage_elite := category == &"elite" and run_controller.run_state.current_region > 0
 	if has_barrage_elite:
 		definition.enemy_ids.append(&"shutter_seraph")

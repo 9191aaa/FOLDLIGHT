@@ -1,4 +1,4 @@
-# FOLDLIGHT / 折光 3.10.0-dev
+# FOLDLIGHT / 折光 3.11.0
 
 当前为纸海统一重构预览：保留「迷航」与「无尽挑战」，移除三章十二航故事模式。两模式直接复用玩家操作和同一套 HUD、奖励卡、暂停、设置与结算组件；好友生存继续可用。运行、验证和架构说明见 [仓库 README](../README.md) 和 [重构记录](docs/godot-prompter/plans/unified_refactor.md)。
 
@@ -10,7 +10,7 @@
 
 ## 启动
 
-发行包中运行 `FOLDLIGHT.exe`。项目环境也可运行 `run_foldlight.ps1`。
+Windows 发行包运行 `FOLDLIGHT.exe`；Android 安装带发布签名的 APK。项目环境也可运行 `run_foldlight.ps1`。手机使用专门的触控界面，房间与操作说明见 [跨平台竞赛](docs/NATIVE_RACE.md)。
 
 首次选择“开始迷航 · 操作教学”，会在真实房间中教授移动冲刺、折域返光和自动武器／主动道具。
 
@@ -44,4 +44,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\run_godot_local.
 
 重构回归通过 `tools/check_refactor.ps1 -GodotPath <引擎路径>` 启动，每个测试使用独立用户数据目录。Windows 预览导出使用独立的 `FOLDLIGHT Refactor Preview` 存档目录。
 
-版本：3.10.0-dev · Windows x86-64 · Godot 4.6.3
+版本：3.11.0 · Windows x86-64 / Android 7+ / Web · Godot 4.6.3

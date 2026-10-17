@@ -19,6 +19,7 @@ const MAX_PROJECTILES: int = 260
 const HIT_VFX_BUDGET_MAX: float = 8.0
 const HIT_VFX_REFILL_PER_SECOND: float = 18.0
 const HIT_VFX_MAX_BURSTS: int = 18
+const MAX_ACTIVE_FLASHES: int = 24
 const HIT_VFX_DURATION: float = 0.22
 const RETURN_NAV_CELL_SIZE: float = 52.0
 const RETURN_NAV_CLEARANCE: float = 18.0
@@ -610,6 +611,7 @@ func _resolve_projectile_terrain(projectile: FoldlightRogueProjectile, delta: fl
 				tangent = -tangent
 			projectile.velocity = tangent * projectile.velocity.length()
 			projectile.global_position = piece.global_position + radial * (minf(piece.piece_size.x, piece.piece_size.y) * 0.5 + projectile.radius + 6.0)
+			projectile.sync_visual_direction()
 			projectile.set_meta("terrain_grace", 0.16)
 			return false
 		return true
@@ -787,6 +789,8 @@ func _spawn_enemy_from_entry(entry: Dictionary, counts_for_room: bool) -> Node2D
 		actor.connect("player_pressure_requested", _on_player_pressure_requested)
 	if actor.has_signal("volley_requested"):
 		actor.connect("volley_requested", spawn_hostile_volley)
+	if actor.has_signal("blast_requested"):
+		actor.connect("blast_requested", _on_enemy_blast_requested)
 	if actor.has_signal("zone_requested"):
 		actor.connect("zone_requested", _on_zone_requested)
 	if actor.has_signal("spawn_requested"):
@@ -802,6 +806,17 @@ func _spawn_enemy_from_entry(entry: Dictionary, counts_for_room: bool) -> Node2D
 	enemies.append(actor)
 	enemy_spawned.emit(actor, entry.duplicate(true))
 	return actor
+
+
+func _on_enemy_blast_requested(snapshot: Dictionary) -> void:
+	if not active or not is_instance_valid(player) or _boss_aftermath_active:
+		return
+	var origin := Vector2(snapshot.get("origin", Vector2.ZERO))
+	var radius := clampf(float(snapshot.get("radius", 160.0)), 0.0, 240.0)
+	_add_active_flash(origin, Color("f17665"), radius, 0.38)
+	if origin.distance_to(player.global_position) <= radius + player.get_hit_radius():
+		# Reuse shields, dash invulnerability, mercy frames and one-heart damage.
+		_try_hit_player(player.global_position - origin)
 
 
 func _on_player_pressure_requested(snapshot: Dictionary) -> void:
@@ -1140,6 +1155,10 @@ func _clear_denial_zones() -> int:
 
 
 func _add_active_flash(position_value: Vector2, color: Color, maximum_radius: float, duration: float) -> void:
+	# Flashes are cosmetic; dense captures may replace the oldest ring without
+	# affecting a projectile, collision, score, or warning telegraph.
+	if _active_flashes.size() >= MAX_ACTIVE_FLASHES:
+		_active_flashes.pop_front()
 	_active_flashes.append({"position": position_value, "color": color, "radius": maximum_radius, "duration": maxf(0.1, duration), "remaining": maxf(0.1, duration)})
 	queue_redraw()
 

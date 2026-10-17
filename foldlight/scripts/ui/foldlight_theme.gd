@@ -62,7 +62,7 @@ static func build() -> Theme:
 static func body_font() -> Font:
 	# Browsers cannot enumerate or load installed system fonts. Ship Chinese
 	# glyphs with the game while retaining the existing native desktop face.
-	if OS.has_feature("web"):
+	if OS.has_feature("web") or OS.has_feature("mobile"):
 		return WEB_FONT
 	var body := SystemFont.new()
 	body.font_names = PackedStringArray(["Segoe UI", "Microsoft YaHei UI", "Noto Sans CJK SC"])
@@ -70,7 +70,7 @@ static func body_font() -> Font:
 
 
 static func display_font() -> Font:
-	if OS.has_feature("web"):
+	if OS.has_feature("web") or OS.has_feature("mobile"):
 		return WEB_FONT
 	var face := SystemFont.new()
 	face.font_names = PackedStringArray(["Bahnschrift", "Aptos Display", "Segoe UI"])

@@ -272,6 +272,9 @@ func _process(delta: float) -> void:
 
 
 func _poll_host() -> void:
+	if _native_touch:
+		_refresh_native_safe_area()
+		return
 	if not OS.has_feature("web"):
 		return
 	var raw: Variant = JavaScriptBridge.eval(WEB_STATE_SCRIPT, true)
@@ -288,6 +291,29 @@ func _poll_host() -> void:
 				_inspect_callback = JavaScriptBridge.create_callback(_on_inspection_request)
 				bridge.setInspector(_inspect_callback)
 			_bridge_subscribed = true
+
+
+## The display safe rectangle is in physical pixels. Remove the letterbox
+## before converting to the fixed design viewport, so a notch inside a black
+## side bar does not needlessly compress every HUD and touch control.
+static func native_safe_insets(window_size: Vector2, viewport_size: Vector2, safe_rect: Rect2) -> Vector4:
+	if window_size.x <= 0.0 or window_size.y <= 0.0 or viewport_size.x <= 0.0 or viewport_size.y <= 0.0 or not safe_rect.has_area():
+		return Vector4.ZERO
+	var scale_factor := minf(window_size.x / viewport_size.x, window_size.y / viewport_size.y)
+	var content := Rect2((window_size - viewport_size * scale_factor) * 0.5, viewport_size * scale_factor)
+	var safe := content.intersection(safe_rect)
+	if not safe.has_area():
+		return Vector4.ZERO
+	return Vector4(maxf(0.0, safe.position.x - content.position.x), maxf(0.0, safe.position.y - content.position.y), maxf(0.0, content.end.x - safe.end.x), maxf(0.0, content.end.y - safe.end.y)) / scale_factor
+
+
+func _refresh_native_safe_area() -> void:
+	var physical_safe := Rect2(DisplayServer.get_display_safe_area())
+	physical_safe.position -= Vector2(DisplayServer.window_get_position())
+	var next := native_safe_insets(Vector2(DisplayServer.window_get_size()), get_viewport().get_visible_rect().size, physical_safe)
+	if not _safe_insets.is_equal_approx(next):
+		_safe_insets = next
+		layout_changed.emit()
 
 
 func _on_host_callback(arguments: Array) -> void:

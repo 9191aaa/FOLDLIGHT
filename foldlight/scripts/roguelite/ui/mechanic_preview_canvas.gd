@@ -77,6 +77,8 @@ func _draw() -> void:
 
 func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 	match attack_style:
+		&"anchored_blast":
+			_draw_anchored_blast(origin, cycle)
 		&"exposure_barrage":
 			_draw_exposure_barrage(origin, target, cycle)
 		&"aimed_volley", &"line_volley":
@@ -99,6 +101,17 @@ func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 			_draw_shrinking_frame(origin, target, cycle)
 		_:
 			_draw_radial(origin, cycle)
+
+
+func _draw_anchored_blast(origin: Vector2, cycle: float) -> void:
+	var charge := clampf(cycle / 0.78, 0.0, 1.0)
+	var danger := Color("f17665")
+	draw_circle(origin, 83.0, Color(danger, 0.09))
+	draw_arc(origin, 83.0, 0, TAU, 48, Color(danger, 0.78), 2.0, true)
+	draw_arc(origin, 77.0, -PI * 0.5, -PI * 0.5 + TAU * charge, 48, accent, 4.0, true)
+	if cycle >= 0.78:
+		var blast := (cycle - 0.78) / 0.22
+		draw_arc(origin, lerpf(24.0, 83.0, blast), 0, TAU, 48, Color(danger, 1.0 - blast), 8.0, true)
 
 
 func _draw_aimed_volley(origin: Vector2, target: Vector2, cycle: float) -> void:
@@ -231,6 +244,7 @@ func _draw_actor(center: Vector2, cycle: float) -> void:
 	var scale_value := (1.25 if preview_kind == &"boss" else 1.0) * (1.0 + breathe * 0.025)
 	draw_set_transform(center + Vector2(0.0, breathe * 3.0), breathe * 0.025, Vector2.ONE * scale_value)
 	match preview_id:
+		&"cinder_mine": _draw_cinder_mine_body(cycle)
 		&"shutter_seraph": _draw_seraph_body(cycle)
 		&"paper_turret": _draw_turret_body(cycle)
 		&"brood_lantern": _draw_lantern_body()
@@ -240,6 +254,20 @@ func _draw_actor(center: Vector2, cycle: float) -> void:
 		&"shear_scribe": _draw_scribe_body()
 		_: _draw_generic_body()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_cinder_mine_body(cycle: float) -> void:
+	for side in [-1.0, 1.0]:
+		var fin := PackedVector2Array([Vector2(side * 15, -21), Vector2(side * 40, -6), Vector2(side * 25, 27), Vector2(side * 9, 14)])
+		draw_colored_polygon(fin, Color("503b3e"))
+		draw_polyline(PackedVector2Array(Array(fin) + [fin[0]]), accent, 2.0, true)
+	var body := PackedVector2Array([Vector2(0, -34), Vector2(24, 0), Vector2(0, 35), Vector2(-24, 0)])
+	draw_colored_polygon(body, Color("382f3b"))
+	draw_polyline(PackedVector2Array(Array(body) + [body[0]]), accent, 2.5, true)
+	draw_colored_polygon(PackedVector2Array([Vector2(0, -14), Vector2(9, 1), Vector2(0, 16), Vector2(-9, 1)]), Color("f17665"))
+	for index in 3:
+		var live := cycle < 0.78 * float(3 - index) / 3.0
+		draw_line(Vector2(-9 + index * 9, -41), Vector2(-9 + index * 9, -35), accent if live else Color("55454b"), 3.0, true)
 
 
 func _draw_turret_body(cycle: float) -> void:
@@ -383,6 +411,7 @@ func _infer_preview_kind(id: StringName) -> StringName:
 
 func _default_attack_style(id: StringName) -> StringName:
 	return {
+		&"cinder_mine": &"anchored_blast",
 		&"shutter_seraph": &"exposure_barrage",
 		&"paper_turret": &"aimed_volley",
 		&"brood_lantern": &"summon",

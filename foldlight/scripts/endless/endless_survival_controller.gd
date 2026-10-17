@@ -23,10 +23,13 @@ const THREAT_COSTS := {
 	&"mirror": 5,
 	&"rewinder": 6,
 	&"shutter_seraph": 6,
+	&"cinder_mine": 3,
 }
 
 const BARRAGE_ELITE_START_SECONDS := 105.0
 const BARRAGE_ELITE_WAVE_INTERVAL := 4
+const BOMBER_START_SECONDS := 150.0
+const BOMBER_WAVE_INTERVAL := 3
 const MAP_PATHS := [
 	"res://resources/endless/maps/folded_delta.tres",
 	"res://resources/endless/maps/inverted_canals.tres",
@@ -290,6 +293,17 @@ func _emit_next_wave() -> Dictionary:
 			"is_elite": true,
 		})
 		budget -= 6
+	if evolution.survival_seconds >= BOMBER_START_SECONDS and wave_sequence % BOMBER_WAVE_INTERVAL == 0 and budget >= 3:
+		entries.append({
+			"enemy_id": &"cinder_mine",
+			"spawn_role": &"melee",
+			"position": map_runtime.select_spawn_point(&"melee", wave_sequence * 17 + 67, _last_player_position),
+			"health_multiplier": enemy_state.get("health_multiplier", 1.0),
+			"projectile_multiplier": 1.0,
+			"endless_stage": enemy_state.get("stage", 0),
+			"is_captain": false,
+		})
+		budget -= 3
 	var unlocked_count := mini(config.classic_enemy_ids.size(), 2 + int(enemy_state.get("stage", 0)))
 	var guard := 0
 	while budget > 0 and guard < 64:

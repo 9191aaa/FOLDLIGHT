@@ -62,8 +62,14 @@ func build(button_factory: Callable) -> void:
 	primary_button = _action(button_factory, "开始迷航", &"new_run", "PrimaryButton", 84)
 	actions.add_child(primary_button)
 	var endless := _action(button_factory, "无尽挑战", &"endless", "FoldlightMenuButton", 66)
-	_add_caption(endless, "生存与进化")
-	actions.add_child(endless)
+	var multiplayer_row := HBoxContainer.new()
+	multiplayer_row.add_theme_constant_override("separation", 12)
+	actions.add_child(multiplayer_row)
+	endless.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	multiplayer_row.add_child(endless)
+	var friends := _action(button_factory, "好友联机", &"friends", "FoldlightMenuButton", 66)
+	friends.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	multiplayer_row.add_child(friends)
 	tutorial_button = _action(button_factory, "操作教学 · 重温", &"prologue", "FoldlightMenuButton", 58)
 	actions.add_child(tutorial_button)
 	_space(20)
@@ -86,7 +92,7 @@ func build(button_factory: Callable) -> void:
 	_space(12)
 	input_label = _label(INPUT_CONTRACT.menu_hint(), 17, Color(Palette.MUTED, 0.78))
 	_content.add_child(input_label)
-	focus_buttons = [continue_button, primary_button, endless, tutorial_button, settings, quit]
+	focus_buttons = [continue_button, primary_button, endless, friends, tutorial_button, settings, quit]
 	_quit_confirmation = QUIT_CONFIRMATION.new()
 	_quit_confirmation.name = "QuitConfirmation"
 	add_child(_quit_confirmation)
@@ -140,6 +146,9 @@ func _request_action(action: StringName) -> void:
 		return
 	if action == &"quit":
 		request_quit()
+	elif action == &"friends":
+		var bridge := get_node_or_null("/root/WebRaceBridge")
+		if bridge != null: bridge.show_native_lobby()
 	else:
 		action_requested.emit(action)
 

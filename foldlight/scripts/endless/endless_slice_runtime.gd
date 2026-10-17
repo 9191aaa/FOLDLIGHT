@@ -37,6 +37,7 @@ var _capture_sfx_cooldown: float = 0.0
 var _kill_shake_cooldown: float = 0.0
 var _return_kick_cooldown: float = 0.0
 var _barrage_elite_introduced: bool = false
+var _bomber_introduced: bool = false
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
@@ -102,7 +103,7 @@ func prepare_web_race(bridge: Node) -> bool:
 	_set_combat_suspended(true)
 	presentation.show_result({
 		"title": "好友无尽 · 等待出发",
-		"body": "双方准备完成后，由网页统一倒计时。\n同一种子、相同基础机体；按有效战斗时间比较。",
+		"body": "双方准备完成后，统一倒计时。\n同一种子、相同基础机体；按有效战斗时间比较。",
 		"accent": FoldlightTheme.FOLD,
 		"allow_retry": false, "allow_title": false,
 	})
@@ -134,7 +135,7 @@ func stop_web_race(reason: String) -> void:
 	_modal_options.clear()
 	presentation.show_result({
 		"title": "灯火熄灭" if reason == "player_defeated" else "好友对局已结束",
-		"body": "有效航行 %s · 击破 %d\n请在网页房间查看成绩。本局不能重新开始。" % [_format_time(controller.evolution.survival_seconds), controller.defeated_total],
+		"body": "有效航行 %s · 击破 %d\n请在联机房间查看成绩。本局不能重新开始。" % [_format_time(controller.evolution.survival_seconds), controller.defeated_total],
 		"allow_retry": false, "allow_title": false,
 	})
 
@@ -175,6 +176,7 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	_kill_shake_cooldown = 0.0
 	_return_kick_cooldown = 0.0
 	_barrage_elite_introduced = false
+	_bomber_introduced = false
 	player.set_debug_invincible(false)
 	controller.map_runtime.build_physics_walls = false
 	controller.map_runtime.draw_cover_visuals = false
@@ -263,7 +265,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _pause_game() -> void:
 	if _web_race_bridge != null:
-		presentation.show_notice("好友竞赛", "不能手动暂停；奖励选择不计时。弃赛请使用网页房间。")
+		if _web_race_bridge.has_method("is_native_session") and _web_race_bridge.is_native_session():
+			_web_race_bridge.request_native_leave()
+		else:
+			presentation.show_notice("好友竞赛", "不能手动暂停；奖励选择不计时。弃赛请使用网页房间。")
 		return
 	if run_ended or not _modal_kind.is_empty() or not controller.active:
 		return
@@ -356,9 +361,12 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 		return
 	var directed: Array[Dictionary] = []
 	var has_barrage_elite := false
+	var bomber_count := 0
 	for enemy in combat_runtime.enemies:
 		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.definition.content_id == &"shutter_seraph":
 			has_barrage_elite = true
+		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.definition.content_id == &"cinder_mine":
+			bomber_count += 1
 	var entries_variant: Variant = request.get("entries", [])
 	if entries_variant is Array:
 		for entry_variant: Variant in entries_variant:
@@ -378,6 +386,13 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 				if not _barrage_elite_introduced:
 					_barrage_elite_introduced = true
 					presentation.show_notice("精英 · 暴雨折翼", "闭翼时无敌；张翼扫射时核心暴露。收纳弹幕，趁它开火返光！")
+			if StringName(entry.get("enemy_id", &"")) == &"cinder_mine":
+				if bomber_count >= 2:
+					continue
+				bomber_count += 1
+				if not _bomber_introduced:
+					_bomber_introduced = true
+					presentation.show_notice("烬火纸雷 · 定点自爆", "红圈亮起后有 1.5 秒离圈；冲刺避开或提前击破，不会殉爆。")
 			entry["spawn_position"] = Vector2(entry.get("position", Vector2.ZERO))
 			directed.append(entry)
 	var spawned := combat_runtime.spawn_directed_wave(directed)

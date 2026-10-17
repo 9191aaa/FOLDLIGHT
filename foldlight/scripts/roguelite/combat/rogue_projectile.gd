@@ -42,6 +42,7 @@ var _trail_clock: float = 0.0
 var _trail_points: Array[Vector2] = []
 var _previous_global_position: Vector2 = Vector2.ZERO
 var _return_relay_pulse_remaining: float = 0.0
+var _visual_redraw_requests: int = 0
 
 const RETURN_RELAY_PULSE_DURATION: float = 0.24
 
@@ -88,9 +89,11 @@ func configure(snapshot: Dictionary) -> void:
 		global_position = orbit_anchor.global_position + Vector2.from_angle(orbit_angle) * orbit_radius
 	_previous_global_position = global_position
 	_trail_points.clear()
+	_visual_redraw_requests = 0
 	var profile_manager := get_node_or_null("/root/ProfileManager")
 	high_contrast = bool(profile_manager.call("get_setting", &"high_contrast", false)) if profile_manager != null else false
-	queue_redraw()
+	sync_visual_direction()
+	_queue_visual_redraw()
 
 
 func advance_simulation(delta: float, time_scale: float = 1.0) -> bool:
@@ -107,7 +110,7 @@ func advance_simulation(delta: float, time_scale: float = 1.0) -> bool:
 			global_position = orbit_anchor.global_position + Vector2.from_angle(orbit_angle) * orbit_radius
 		movement_step -= orbit_step
 		if movement_step <= 0.0:
-			queue_redraw()
+			_refresh_moving_visual()
 			return lifetime <= 0.0
 	_previous_global_position = global_position
 	if homing_strength > 0.0 and is_instance_valid(homing_target):
@@ -132,8 +135,37 @@ func advance_simulation(delta: float, time_scale: float = 1.0) -> bool:
 		_trail_points.push_front(global_position)
 		if _trail_points.size() > 9:
 			_trail_points.pop_back()
-	queue_redraw()
+	_refresh_moving_visual()
 	return lifetime <= 0.0
+
+
+func _uses_rotating_hostile_visual() -> bool:
+	return hostile and style != &"return_light" and style != &"sun_thread" and style != &"tide_bell"
+
+
+func sync_visual_direction() -> void:
+	# Hostile paper shapes never change after configuration. Let the canvas
+	# transform rotate their retained commands, rather than rebuilding hundreds
+	# of outlines and PackedArrays on every physics tick. Simulation still uses
+	# world-space velocity/radius, exactly as before.
+	rotation = velocity.angle() + sin(age * 5.0) * 0.08 if _uses_rotating_hostile_visual() else 0.0
+
+
+func _refresh_moving_visual() -> void:
+	sync_visual_direction()
+	# Only returned light has a changing trail/relay pulse. Other friendly
+	# silhouettes and hostile outlines are static geometry moved by Node2D.
+	if style == &"return_light":
+		_queue_visual_redraw()
+
+
+func _queue_visual_redraw() -> void:
+	_visual_redraw_requests += 1
+	queue_redraw()
+
+
+func get_visual_budget_snapshot() -> Dictionary:
+	return {"redraw_requests": _visual_redraw_requests, "cached_geometry": style != &"return_light"}
 
 
 func set_homing_target(target: Node2D) -> void:
@@ -194,7 +226,7 @@ func activate_return_relay(target: Node2D, waypoints: PackedVector2Array) -> boo
 	var required_lifetime := relay_distance / relay_speed + 0.75
 	lifetime = maxf(lifetime, clampf(required_lifetime, 0.8, 5.6))
 	_trail_clock = 0.0
-	queue_redraw()
+	_queue_visual_redraw()
 	return true
 
 
@@ -224,7 +256,7 @@ func recover_from_solid(obstacle_center: Vector2) -> void:
 		tangent = -tangent
 	velocity = (tangent * 0.72 + escape_direction * 0.28).normalized() * maxf(1.0, velocity.length())
 	request_navigation_refresh()
-	queue_redraw()
+	_queue_visual_redraw()
 
 
 func has_valid_homing_target() -> bool:
@@ -300,9 +332,8 @@ func get_visual_contract() -> Dictionary:
 
 
 func _draw_classic_hostile(color: Color) -> void:
-	var angle := velocity.angle() + sin(age * 5.0) * 0.08
-	var forward := Vector2.from_angle(angle)
-	var side := forward.rotated(PI * 0.5)
+	var forward := Vector2.RIGHT
+	var side := Vector2.DOWN
 	var length := 18.0 if not reflectable else (12.0 if projectile_kind == 0 else 9.0)
 	var width := 8.0 if not reflectable else 6.0
 	var petal := PackedVector2Array([

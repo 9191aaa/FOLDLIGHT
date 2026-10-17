@@ -8,7 +8,8 @@ config_version=5
 config/name="FOLDLIGHT · 折光"
 config/name.pixel_demo="FOLDLIGHT · 像素战斗 Demo"
 config/description="在纸海收纳弹幕，再让光返航。以迷航为核心的弹幕折返肉鸽。"
-config/version="3.10.0-dev"
+config/version="3.11.0"
+config/quit_on_go_back=false
 config/use_custom_user_dir.refactor_preview=true
 config/custom_user_dir_name.refactor_preview="FOLDLIGHT Refactor Preview"
 config/icon="res://assets/branding/foldlight_icon_512.png"
@@ -42,6 +43,7 @@ window/size/resizable.pixel_demo=false
 window/stretch/mode="viewport"
 window/stretch/aspect="keep"
 window/stretch/scale_mode.pixel_demo="integer"
+window/handheld/orientation=0
 
 [input]
 
@@ -141,6 +143,7 @@ open_tutorial={
 [gui]
 
 theme/custom_font.web="res://assets/fonts/FoldlightSansSC.woff2"
+theme/custom_font.mobile="res://assets/fonts/FoldlightSansSC.woff2"
 
 [internationalization]
 
@@ -161,4 +164,5 @@ locale/fallback="zh_CN"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/canvas_textures/default_texture_filter=1
+textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.0353, 0.098, 0.1373, 1)

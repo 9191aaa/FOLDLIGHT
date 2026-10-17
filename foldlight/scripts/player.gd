@@ -103,7 +103,7 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	last_input_device = INPUT_CONTRACT.device_for_event(event, last_input_device)
 
-	if not play_enabled:
+	if not play_enabled or _room_menu_owns_input():
 		return
 	if roguelite_combat and event.is_action_pressed(&"dash") and not event.is_echo():
 		_dash_buffer_timer = 0.14
@@ -132,6 +132,18 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		_dash_buffer_timer = 0.0
 		return
+	var manual_input_blocked := _room_menu_owns_input()
+	if manual_input_blocked:
+		# Competitive room menus own every input device but never pause combat.
+		# Retire held/buffered actions without returning stored light or granting
+		# immunity. Existing dash motion, cooldowns and automatic weapons continue.
+		_touch_movement = Vector2.ZERO
+		_touch_fold_held = false
+		_touch_dash_buffer_timer = 0.0
+		_dash_buffer_timer = 0.0
+		_fold_buffer_timer = 0.0
+		folding = false
+		fold_time = 0.0
 	simulate_combat_cooldowns(delta)
 	if _hit_stop_timer > 0.0:
 		_hit_stop_timer = maxf(0.0, _hit_stop_timer - delta)
@@ -148,7 +160,7 @@ func _physics_process(delta: float) -> void:
 			_fold_buffer_timer = 0.0
 			try_begin_fold()
 
-	var direction := INPUT_CONTRACT.movement_vector(_touch_movement)
+	var direction := Vector2.ZERO if manual_input_blocked else INPUT_CONTRACT.movement_vector(_touch_movement)
 	if direction.length_squared() > 0.02:
 		_last_direction = direction.normalized()
 		var target_angle := _last_direction.angle() + PI * 0.5
@@ -196,6 +208,13 @@ func _process(delta: float) -> void:
 	while not _trail.is_empty() and float(_trail.back().life) <= 0.0:
 		_trail.pop_back()
 	queue_redraw()
+
+
+func _room_menu_owns_input() -> bool:
+	if not is_inside_tree():
+		return false
+	var race_bridge := get_node_or_null("/root/WebRaceBridge")
+	return race_bridge != null and race_bridge.is_lobby_open()
 
 
 func reset_player() -> void:
@@ -268,13 +287,13 @@ func cancel_fold() -> void:
 ## Touch is a separate device source. Canceling it never releases a keyboard
 ## or controller action and never turns a lost contact into returned light.
 func set_touch_movement(direction: Vector2) -> void:
-	_touch_movement = direction.limit_length(1.0) if play_enabled else Vector2.ZERO
+	_touch_movement = direction.limit_length(1.0) if play_enabled and not _room_menu_owns_input() else Vector2.ZERO
 	if not _touch_movement.is_zero_approx():
 		last_input_device = &"touch"
 
 
 func set_touch_fold_pressed(pressed: bool) -> void:
-	if not play_enabled or _touch_fold_held == pressed:
+	if not play_enabled or _room_menu_owns_input() or _touch_fold_held == pressed:
 		return
 	_touch_fold_held = pressed
 	last_input_device = &"touch"
@@ -288,13 +307,13 @@ func set_touch_fold_pressed(pressed: bool) -> void:
 
 
 func request_touch_dash() -> void:
-	if play_enabled and roguelite_combat:
+	if play_enabled and roguelite_combat and not _room_menu_owns_input():
 		last_input_device = &"touch"
 		_touch_dash_buffer_timer = 0.14
 
 
 func request_touch_active_item() -> void:
-	if play_enabled and roguelite_combat:
+	if play_enabled and roguelite_combat and not _room_menu_owns_input():
 		last_input_device = &"touch"
 		request_active_item()
 
@@ -372,20 +391,20 @@ func apply_roguelite_stats(stats: Dictionary) -> Dictionary:
 
 
 func try_begin_fold() -> bool:
-	if not play_enabled or fold_temporarily_locked or folding or focus <= 0.035 or not fold_component.can_begin() or dash_component.is_dashing():
+	if not play_enabled or _room_menu_owns_input() or fold_temporarily_locked or folding or focus <= 0.035 or not fold_component.can_begin() or dash_component.is_dashing():
 		return false
 	return _begin_fold()
 
 
 func release_fold_action() -> bool:
-	if not folding:
+	if not folding or _room_menu_owns_input():
 		return false
 	_release_fold(false)
 	return true
 
 
 func request_dash(requested_direction: Vector2 = Vector2.ZERO) -> bool:
-	if not roguelite_combat or not play_enabled:
+	if not roguelite_combat or not play_enabled or _room_menu_owns_input():
 		return false
 	if folding and captured > 0:
 		return false
@@ -396,7 +415,7 @@ func request_dash(requested_direction: Vector2 = Vector2.ZERO) -> bool:
 
 
 func request_active_item() -> bool:
-	if not roguelite_combat or not play_enabled:
+	if not roguelite_combat or not play_enabled or _room_menu_owns_input():
 		return false
 	return active_item_slot.request_use()
 

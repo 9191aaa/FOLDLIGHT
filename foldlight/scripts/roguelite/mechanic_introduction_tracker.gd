@@ -9,7 +9,7 @@ var _introduced_ids: Array[StringName] = []
 func request_introduction(definition: FoldlightRogueEnemyDefinition) -> Dictionary:
 	if definition == null or _introduced_ids.has(definition.content_id):
 		return {}
-	if not definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.TURRET, FoldlightRogueEnemyDefinition.EnemyRole.BUFFER, FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE]:
+	if definition.content_id != &"cinder_mine" and not definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.TURRET, FoldlightRogueEnemyDefinition.EnemyRole.BUFFER, FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE]:
 		return {}
 	_introduced_ids.append(definition.content_id)
 	var snapshot := {
@@ -84,6 +84,7 @@ func _role_title(role: FoldlightRogueEnemyDefinition.EnemyRole) -> String:
 
 func _enemy_attack_style(definition: FoldlightRogueEnemyDefinition) -> StringName:
 	match definition.content_id:
+		&"cinder_mine": return &"anchored_blast"
 		&"shutter_seraph": return &"exposure_barrage"
 		&"paper_turret": return &"aimed_volley"
 		&"brood_lantern": return &"summon"

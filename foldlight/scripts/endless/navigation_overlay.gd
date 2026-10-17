@@ -304,9 +304,16 @@ func _layout() -> void:
 		_map.position = Vector2(600, _safe_top + 362) if _expanded else Vector2(44, _safe_top + 170)
 		_map.size = Vector2(720, 380) if _expanded else Vector2(360, maxf(120, minf(200, 560 - _map.position.y)))
 		_task.position = Vector2(560, _safe_top + 64)
-		_task.size = Vector2(1150, 200)
-		_danger.position = Vector2(560, _safe_top + 274)
+		_task.size = Vector2(1150, 148)
+		_danger.position = Vector2(560, _safe_top + 222)
 		_danger.size = Vector2(1150, 76)
+		var touch := get_node_or_null("/root/TouchControls")
+		var insets: Vector4 = touch.get_layout_snapshot().get("safe_insets", Vector4.ZERO) if touch != null else Vector4.ZERO
+		if not _expanded: _map.position.x += insets.x
+		_task.position.x = maxf(560.0, insets.x + 416.0)
+		_task.size.x = minf(1150.0, get_viewport_rect().size.x - insets.z - 44.0 - _task.position.x)
+		_danger.position.x = _task.position.x
+		_danger.size.x = _task.size.x
 	else:
 		_map.position = Vector2(700, 240) if _expanded else Vector2(1510, 150)
 		_map.size = Vector2(1130, 600) if _expanded else Vector2(366, 245)
@@ -317,19 +324,21 @@ func _layout() -> void:
 	_danger.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_danger.max_lines_visible = 2
 	var width := _task.size.x
-	_task_title.position = Vector2(16, 10)
+	_task_title.position = Vector2(16, 6 if _mobile else 10)
 	_task_title.size = Vector2(width - 166, 44)
-	_task_time.position = Vector2(width - 154, 10)
+	_task_time.position = Vector2(width - 154, 6 if _mobile else 10)
 	_task_time.size = Vector2(138, 44)
-	_task_instruction.position = Vector2(16, 58)
-	_task_instruction.size = Vector2(width - 32, 78 if _mobile else 62)
-	_task_progress.position = Vector2(16, 140 if _mobile else 130)
+	_task_instruction.position = Vector2(16, 48 if _mobile else 58)
+	_task_instruction.size = Vector2(width - 32, 40 if _mobile else 62)
+	_task_instruction.max_lines_visible = 1 if _mobile else 2
+	_task_progress.position = Vector2(16, 90 if _mobile else 130)
 	_task_progress.size = Vector2(width - 32, 40)
 	_task_bar.position = Vector2(16, _task.size.y - 16)
 	_task_bar.size = Vector2(width - 32, 7)
 	for label in [_task_title, _task_time, _task_instruction, _task_progress, _danger, _indicator_text]:
 		label.add_theme_font_size_override("font_size", 32 if _mobile else (26 if label in [_task_title, _danger, _indicator_text] else 21))
 	if not _snapshot.is_empty():
+		_refresh_task()
 		_map.configure(_snapshot, _mobile, _expanded)
 		_refresh_indicator()
 	queue_redraw()
@@ -345,6 +354,14 @@ func _refresh_task() -> void:
 	_task_title.add_theme_color_override("font_color", Palette.DANGER if state == &"failed" else (Palette.FOLD if state == &"completed" else Palette.GOLD))
 	_task_time.text = "%d 秒" % ceili(maxf(0, float(objective.get("time_remaining", 0)))) if state == &"active" else "已完成" if state == &"completed" else "未达成" if state == &"failed" else "准备中"
 	_task_instruction.text = str(objective.get("instruction", "留意下一道任务指引。"))
+	if _mobile and state == &"active":
+		match StringName(objective.get("kind", &"")):
+			&"capture_point": _task_instruction.text = "金色圈内持续驻守；离圈进度缓慢回退。"
+			&"defeat_captain": _task_instruction.text = "沿金色指引击破金冠队长；普通敌人不计。"
+			&"destroy_flag": _task_instruction.text = "靠近红金火力旗，用自动攻击或返光摧毁。"
+			&"relay_route": _task_instruction.text = "依次抵达三个信标，每站驻留 1.2 秒。"
+			&"capture_storm": _task_instruction.text = "青圈内按住收纳 12 发敌弹；圈外不计。"
+			&"clear_swarm": _task_instruction.text = "任意海域击破 10 名敌人；火力旗不计。"
 	var progress := maxf(0, float(objective.get("progress", 0)))
 	var required := maxf(0.001, float(objective.get("required", 1)))
 	_task_progress.text = str(objective.get("progress_text", "%s / %s" % [String.num(progress, 1), String.num(required, 1)]))

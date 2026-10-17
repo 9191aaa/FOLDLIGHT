@@ -8,7 +8,7 @@ signal report_sent(payload: Dictionary)
 signal phase_changed(phase: StringName)
 
 const PROTOCOL: int = 1
-const RULES_VERSION: String = "endless_race_v2"
+const RULES_VERSION: String = "endless_race_v3"
 const ENDLESS_SCENE: String = "res://scenes/endless/endless_survival_slice.tscn"
 const REPORT_INTERVAL: float = 1.0
 const STATE_INTERVAL: float = 0.25
@@ -26,6 +26,9 @@ var _report_clock: float = 0.0
 var _state_clock: float = 0.0
 var _local_attempts: Dictionary = {}
 var _boot_error: String = ""
+var native_client: Node
+var native_lobby: CanvasLayer
+var _native_session := false
 
 
 func _ready() -> void:
@@ -34,6 +37,20 @@ func _ready() -> void:
 	var race_value: Variant = boot.get("config", {})
 	var race_config: Dictionary = race_value if race_value is Dictionary else {"invalid": true}
 	configure_session(race_config, bool(boot.get("solo", false)), int(boot.get("seed", _solo_seed)))
+	if name == "WebRaceBridge" and not _race_requested:
+		native_client = preload("res://scripts/network/native_race_client.gd").new()
+		add_child(native_client)
+		native_client.match_prepared.connect(_start_native_match)
+		native_client.page_state_changed.connect(accept_page_state)
+		native_client.room_left.connect(_leave_native_match)
+		ready_sent.connect(func(payload: Dictionary) -> void:
+			if _native_session: native_client.runtime_ready(payload))
+		report_sent.connect(func(payload: Dictionary) -> void:
+			if _native_session: native_client.submit_report(payload))
+		native_lobby = preload("res://scripts/network/native_race_lobby.gd").new()
+		native_lobby.bridge = self
+		native_lobby.client = native_client
+		add_child(native_lobby)
 	if _web_session:
 		call_deferred("_open_endless")
 
@@ -58,6 +75,48 @@ func is_web_session() -> bool:
 
 func is_race_session() -> bool:
 	return _race_requested
+
+
+func is_native_session() -> bool:
+	return _native_session
+
+
+func show_native_lobby() -> void:
+	if native_lobby != null: native_lobby.open()
+
+
+func is_lobby_open() -> bool:
+	return native_lobby != null and native_lobby.captures_menu_input()
+
+
+func request_native_leave() -> void:
+	if _native_session and native_lobby != null: native_lobby.request_leave_confirmation()
+
+
+func _start_native_match(value: Dictionary) -> void:
+	if not configure_session(value):
+		native_client._set_error("本局不能重新开始，请离开后创建新房间。")
+		return
+	_native_session = true
+	call_deferred("_open_endless")
+
+
+func _leave_native_match() -> void:
+	if not _native_session: return
+	_native_session = false
+	_runtime = null
+	_ready_sent = false
+	_race_requested = false
+	_web_session = false
+	_sequence = 0
+	_report_clock = 0.0
+	_state_clock = 0.0
+	config = {}
+	last_report = {}
+	_boot_error = ""
+	phase = &"disabled"
+	phase_changed.emit(phase)
+	get_tree().change_scene_to_file.call_deferred("res://scenes/main.tscn")
 
 
 func get_run_seed() -> int:
@@ -87,7 +146,7 @@ func _process(delta: float) -> void:
 	_state_clock -= delta
 	if _state_clock <= 0.0:
 		_state_clock = STATE_INTERVAL
-		accept_page_state(_read_page_state())
+		if not _native_session: accept_page_state(_read_page_state())
 	if phase == &"terminal":
 		return
 	_report_clock -= delta
@@ -204,7 +263,7 @@ func _parse_dictionary(text: Variant) -> Dictionary:
 
 
 func _send_browser(method: StringName, payload: Dictionary) -> void:
-	if not OS.has_feature("web") or method not in [&"ready", &"report"]:
+	if _native_session or not OS.has_feature("web") or method not in [&"ready", &"report"]:
 		return
 	# Encode the JSON payload as a JavaScript string literal; never interpolate
 	# room or player identifiers into executable source.
