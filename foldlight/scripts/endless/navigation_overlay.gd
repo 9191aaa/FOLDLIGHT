@@ -3,6 +3,7 @@ extends Control
 ## Read-only projection of the endless adapter's authoritative world snapshot.
 ## No independent clock: pause, rewards and race waiting freeze with the source.
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
+const REWARD_FEEDBACK = preload("res://scripts/roguelite/ui/reward_feedback_text.gd")
 
 class MapGeometry extends Control:
 	var walls: Array[PackedVector2Array] = []
@@ -183,6 +184,7 @@ class MapSurface extends Control:
 		canvas.draw_circle(player, 6, Palette.PAPER)
 
 var _snapshot: Dictionary = {}
+var _objective_feedback: Dictionary = {}
 var _mobile := false
 var _safe_top := 150.0
 var _expanded := false
@@ -262,6 +264,11 @@ func set_touch_layout(enabled: bool, safe_top: float = 150.0) -> void:
 	_safe_top = maxf(0, safe_top)
 	if is_node_ready(): _layout()
 
+func set_objective_feedback(value: Dictionary) -> void:
+	if _objective_feedback == value: return
+	_objective_feedback = value.duplicate(true)
+	if is_node_ready() and not _snapshot.is_empty(): _refresh_task()
+
 func set_hud_visible(enabled: bool) -> void:
 	_hud_visible = enabled
 	visible = enabled and not _snapshot.is_empty()
@@ -284,6 +291,7 @@ func get_navigation_snapshot() -> Dictionary:
 		"chart_rect": _map.chart if _map else Rect2(), "geometry_rebuilds": _map.rebuild_count if _map else 0,
 		"wall_count": _map.geometry.walls.size() if _map and _map.geometry else 0,
 		"task_title": _task_title.text if _task_title else "", "progress_text": _task_progress.text if _task_progress else "",
+		"instruction_text": _task_instruction.text if _task_instruction else "", "objective_feedback": _objective_feedback.duplicate(true),
 		"time_text": _task_time.text if _task_time else "", "danger_text": _danger.text if _danger else "",
 		"indicator_kind": _indicator_kind, "indicator_mode": _indicator_kind, "indicator_direction": _indicator_direction, "indicator_position": _indicator_point,
 		"player_map_position": _map.project(_snapshot.get("player_position", _map.bounds.position)) if _map and not _snapshot.is_empty() else Vector2.ZERO}
@@ -348,8 +356,8 @@ func _refresh_task() -> void:
 	var objective: Dictionary = _snapshot.get("objective", {})
 	var state := StringName(objective.get("status", &"active"))
 	var prefix := "任务"
-	if state == &"completed": prefix = "完成"
-	elif state == &"failed": prefix = "未达成"
+	if state == &"completed": prefix = "任务完成"
+	elif state == &"failed": prefix = "任务超时"
 	elif state == &"intermission": prefix = "下一任务"
 	_task_title.text = "%s · %s" % [prefix, str(objective.get("title", "准备中"))]
 	_task_title.add_theme_color_override("font_color", Palette.DANGER if state == &"failed" else (Palette.FOLD if state == &"completed" else Palette.GOLD))
@@ -366,7 +374,7 @@ func _refresh_task() -> void:
 	var progress := maxf(0, float(objective.get("progress", 0)))
 	var required := maxf(0.001, float(objective.get("required", 1)))
 	_task_progress.text = str(objective.get("progress_text", "%s / %s" % [String.num(progress, 1), String.num(required, 1)]))
-	if _mobile:
+	if _mobile and state == &"active":
 		# Keep full progress in the shared snapshot; only the mobile heading gets
 		# a short count so the facility has more room beneath the two-line HUD.
 		var compact := "%d/%d" % [int(progress), int(required)]
@@ -376,6 +384,23 @@ func _refresh_task() -> void:
 			&"destroy_flag": compact = "%.0f/%.0f" % [progress, required]
 		_task_title.text += "  " + compact
 	_task_bar.value = clampf(progress / required, 0, 1) * 100
+	if state in [&"failed", &"completed", &"intermission"]:
+		var next_seconds := ceili(maxf(0, float(objective.get("intermission_remaining", 0))))
+		_task_time.text = "%d 秒" % next_seconds if next_seconds > 0 else "准备中"
+		var next_hint := "%d 秒后出现新目标" % next_seconds if next_seconds > 0 else "新目标准备中"
+		_task_instruction.text = ("本次无奖励 · " if state == &"failed" else "继续航行 · ") + next_hint
+		_task_progress.text = "无需操作，下一任务自动出现。"
+	var feedback_source := StringName(_objective_feedback.get("source", &""))
+	if feedback_source in [&"mission", &"kill_level"]:
+		var mission := feedback_source == &"mission"
+		_task_title.text = "任务完成 · %s" % str(_objective_feedback.get("title", objective.get("title", ""))) if mission else "击破升级 · Lv.%d" % maxi(1, int(_objective_feedback.get("level", 1)))
+		_task_title.add_theme_color_override("font_color", Palette.FOLD if mission else Palette.GOLD)
+		_task_time.text = "待领奖" if mission else "待强化"
+		_task_instruction.text = "任务补给即将展开" if mission else "成长奖励即将展开"
+		var heal_hint := REWARD_FEEDBACK.heal_on_claim(_objective_feedback)
+		if not heal_hint.is_empty(): _task_instruction.text += " · " + heal_hint
+		_task_progress.text = "选择一项任务奖励，继续航行。" if mission else "当前任务保留，选择强化后继续。"
+		if mission: _task_bar.value = 100.0
 	var danger: Dictionary = _snapshot.get("danger", {})
 	var danger_state := StringName(danger.get("state", &"safe"))
 	var global_warning := false

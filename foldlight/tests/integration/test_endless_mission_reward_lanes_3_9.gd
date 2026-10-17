@@ -71,7 +71,9 @@ func _test_rotation_determinism_and_card_copy(slice: FoldlightEndlessSliceRuntim
 
 	slice.start_slice(39002)
 	first_a = slice.controller.evolution.get_mission_reward_options(0)
-	slice._on_mission_reward_offered(first_a, {"title": "航路校验"})
+	# The presentation now pulls persisted entitlements; an isolated signal is
+	# intentionally not enough to invent a claimable reward.
+	slice.controller._on_objective_completed({"completion_count": 2, "title": "航路校验"})
 	# Finish the visible facility unfold before inspecting or choosing cards.
 	for transition_step in 6:
 		slice._advance_reward_completion(0.1)
@@ -127,7 +129,7 @@ func _test_steady_lantern_effect(slice: FoldlightEndlessSliceRuntime) -> void:
 	var isolation := _capture_isolation_snapshot(slice)
 	_check(await _offer_and_choose(slice, 0, &"steady_lantern"), "steady_lantern can be chosen from the sustain lane")
 	_check(slice.player.max_health == maximum_before + 1, "steady_lantern raises the real maximum health by one")
-	_check(slice.player.health == health_before + 1, "steady_lantern immediately heals one real health")
+	_check(slice.player.health == mini(slice.player.max_health, health_before + 2), "steady_lantern heals one health plus the task's one-time recovery")
 	_check(_isolation_unchanged(slice, isolation), "steady_lantern does not advance waves, absorption, or Profile")
 
 

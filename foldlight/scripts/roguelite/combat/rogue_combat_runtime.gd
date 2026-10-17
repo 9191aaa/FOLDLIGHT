@@ -27,6 +27,8 @@ const RETURN_NAV_CELL_SIZE: float = 52.0
 const RETURN_NAV_CLEARANCE: float = 18.0
 const RETURN_NAV_CACHE_LIMIT: int = 256
 const RETURN_NAV_TARGET_LIMIT: int = 10
+const ENEMY_QUERY_CELL: float = 160.0
+const PROJECTILE_RADIUS_LIMIT: float = 22.0
 
 var active: bool = false
 var room: FoldlightRoomRuntime
@@ -66,6 +68,9 @@ var _return_route_cache: Dictionary = {}
 var _return_nav_queries: int = 0
 var _return_nav_cache_hits: int = 0
 var _return_nav_rebuilds: int = 0
+var _collision_index_active: bool = false
+var _collision_index_dirty: bool = true
+var _enemy_collision_cells: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 
 
@@ -168,6 +173,8 @@ func get_glimmer_gain_multiplier() -> float:
 
 
 func clear_combat() -> void:
+	_enemy_collision_cells.clear()
+	_collision_index_dirty = true
 	last_boss_defeat.clear()
 	_boss_aftermath_active = false
 	_clear_transient_nodes()
@@ -348,6 +355,7 @@ func register_objective_target(actor: Node2D, entry: Dictionary = {}) -> bool:
 	actor.set_meta("directed_spawn_entry", metadata)
 	actor.connect("defeated", _on_enemy_defeated)
 	enemies.append(actor)
+	_collision_index_dirty = true
 	if actor.has_method("set_simulation_active"):
 		actor.call("set_simulation_active", active)
 	enemy_spawned.emit(actor, metadata.duplicate(true))
@@ -380,6 +388,32 @@ func spawn_directed_wave(entries: Array[Dictionary]) -> Array[Node2D]:
 		if actor != null:
 			spawned.append(actor)
 	return spawned
+
+
+## Retiring distant endless actors is population maintenance, never a kill.
+## Campaign encounter quota, captains, bosses and task fixtures are protected.
+func retire_directed_enemy(actor: Node2D, allow_expired_captain: bool = false) -> bool:
+	if not is_instance_valid(actor) or actor.is_queued_for_deletion() or not enemies.has(actor):
+		return false
+	if actor is FoldlightRogueBossActor or bool(actor.get_meta("counts_for_room", true)):
+		return false
+	var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+	if entry.is_empty() or bool(entry.get("is_objective_target", false)):
+		return false
+	if bool(entry.get("is_captain", false)) and not allow_expired_captain:
+		return false
+	enemies.erase(actor)
+	_collision_index_dirty = true
+	if actor.is_connected("defeated", _on_enemy_defeated):
+		actor.disconnect("defeated", _on_enemy_defeated)
+	if actor.has_method("set_simulation_active"):
+		actor.call("set_simulation_active", false)
+	actor.hide()
+	actor.queue_free()
+	# Tethers are references by actor ID; rebuild their buffs immediately.
+	_support_refresh = 0.0
+	_update_support_links(0.0)
+	return true
 
 
 func damage_all_enemies(amount: float) -> void:
@@ -508,6 +542,15 @@ func _update_support_links(delta: float) -> void:
 
 
 func _update_projectiles(delta: float) -> void:
+	# Enemy movement has finished for this fixed step. Build a broad phase once
+	# for all friendly bullets, retaining actor order and exact shape checks.
+	_collision_index_active = true
+	_collision_index_dirty = true
+	_advance_projectiles(delta)
+	_collision_index_active = false
+
+
+func _advance_projectiles(delta: float) -> void:
 	var was_active := active
 	for projectile in projectiles.duplicate():
 		if was_active and not active:
@@ -582,6 +625,10 @@ func _update_terrain_effects(delta: float) -> void:
 		if is_instance_valid(enemy):
 			enemy.set_meta("thorn_cooldown", maxf(0.0, float(enemy.get_meta("thorn_cooldown", 0.0)) - delta))
 	for piece in room.get_terrain_pieces():
+		# Solid cover and sun/ink effects never act on enemies. In particular a
+		# large all-wall endless arena must not scan every enemy for every wall.
+		if piece.kind in [FoldlightRogueTerrainDefinition.TerrainKind.PAPER_WALL, FoldlightRogueTerrainDefinition.TerrainKind.REFRACTION_PILLAR]:
+			continue
 		var player_inside := piece.contains_world_point(player.global_position)
 		if piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.INK_POOL and player_inside and _terrain_cleanse_remaining <= 0.0:
 			player.apply_status(&"wet_ink", 0.28)
@@ -593,7 +640,9 @@ func _update_terrain_effects(delta: float) -> void:
 		elif piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.THORN_PAPER and player_inside and _terrain_cleanse_remaining <= 0.0 and _terrain_hurt_remaining <= 0.0:
 			_try_hit_player(-player.velocity)
 			_terrain_hurt_remaining = 0.9
-		for enemy in enemies:
+		if not piece.kind in [FoldlightRogueTerrainDefinition.TerrainKind.CURRENT_LANE, FoldlightRogueTerrainDefinition.TerrainKind.THORN_PAPER]:
+			continue
+		for enemy in enemies.duplicate():
 			if not is_instance_valid(enemy) or not enemy is CharacterBody2D or not piece.contains_world_point((enemy as Node2D).global_position):
 				continue
 			if piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.CURRENT_LANE:
@@ -613,7 +662,9 @@ func _resolve_projectile_terrain(projectile: FoldlightRogueProjectile, delta: fl
 	projectile.set_meta("terrain_grace", grace)
 	if grace > 0.0:
 		return false
-	for piece in room.get_terrain_pieces():
+	for piece: FoldlightTerrainPiece in room.get_terrain_candidates(projectile.global_position):
+		if not is_instance_valid(piece) or piece.is_queued_for_deletion():
+			continue
 		if piece.kind == FoldlightRogueTerrainDefinition.TerrainKind.SUN_PATCH and not projectile.hostile and piece.contains_world_point(projectile.global_position):
 			var accelerated_speed := minf(1500.0, projectile.velocity.length() * (1.0 + 0.75 * delta))
 			projectile.velocity = projectile.velocity.normalized() * accelerated_speed
@@ -647,7 +698,7 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 	if not projectile.can_hit_actor():
 		return
 	var was_active := active
-	for enemy in enemies.duplicate():
+	for enemy: Node2D in _projectile_enemy_candidates(projectile):
 		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or not enemy.has_method("take_damage"):
 			continue
 		var actor_id := StringName(enemy.get("actor_id"))
@@ -719,7 +770,42 @@ func _projectile_overlaps_actor(projectile: FoldlightRogueProjectile, actor: Nod
 	if collision == null or collision.disabled or not collision.shape is CircleShape2D:
 		return false
 	var radius := (collision.shape as CircleShape2D).radius * absf(collision.global_scale.x)
-	return projectile.global_position.distance_to(collision.global_position) <= projectile.radius + radius
+	var combined_radius := projectile.radius + radius
+	return projectile.global_position.distance_squared_to(collision.global_position) <= combined_radius * combined_radius
+
+
+func _projectile_enemy_candidates(projectile: FoldlightRogueProjectile) -> Array:
+	if not _collision_index_active or _collision_index_dirty:
+		_rebuild_enemy_collision_index()
+	# Public fields may be set directly by diagnostics or future projectiles.
+	# Out-of-contract radii safely fall back to the full exact collision pass.
+	if projectile.radius > PROJECTILE_RADIUS_LIMIT:
+		return enemies.duplicate()
+	return _enemy_collision_cells.get(_enemy_cell(projectile.global_position), [])
+
+
+func _enemy_cell(point: Vector2) -> Vector2i:
+	return Vector2i(floori(point.x / ENEMY_QUERY_CELL), floori(point.y / ENEMY_QUERY_CELL))
+
+
+func _rebuild_enemy_collision_index() -> void:
+	_enemy_collision_cells.clear()
+	_collision_index_dirty = false
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion():
+			continue
+		var collision := enemy.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		if collision == null or collision.disabled or not collision.shape is CircleShape2D:
+			continue
+		var radius := (collision.shape as CircleShape2D).radius * absf(collision.global_scale.x) + PROJECTILE_RADIUS_LIMIT
+		var first := _enemy_cell(collision.global_position - Vector2.ONE * radius)
+		var last := _enemy_cell(collision.global_position + Vector2.ONE * radius)
+		for y in range(first.y, last.y + 1):
+			for x in range(first.x, last.x + 1):
+				var cell := Vector2i(x, y)
+				if not _enemy_collision_cells.has(cell):
+					_enemy_collision_cells[cell] = []
+				(_enemy_collision_cells[cell] as Array).append(enemy)
 
 
 func _try_activate_return_chain(projectile: FoldlightRogueProjectile) -> bool:
@@ -848,6 +934,7 @@ func _spawn_enemy_from_entry(entry: Dictionary, counts_for_room: bool) -> Node2D
 		actor.set("health", scaled_health)
 		actor.set_meta("directed_maximum_health", scaled_health)
 	enemies.append(actor)
+	_collision_index_dirty = true
 	enemy_spawned.emit(actor, entry.duplicate(true))
 	return actor
 
@@ -903,6 +990,7 @@ func _spawn_boss_actor(definition: FoldlightRogueBossDefinition, entry: Dictiona
 	boss.phase_changed.connect(_on_boss_attack_cancelled)
 	boss.set_meta("counts_for_room", counts_for_room)
 	enemies.append(boss)
+	_collision_index_dirty = true
 	enemy_spawned.emit(boss, entry.duplicate(true))
 	return boss
 
@@ -955,6 +1043,8 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 	var directed_entry_variant: Variant = actor.get_meta("directed_spawn_entry", {})
 	var directed_entry := (directed_entry_variant as Dictionary).duplicate(true) if directed_entry_variant is Dictionary else {}
 	directed_entry["actor_id"] = StringName(actor.get("actor_id"))
+	directed_entry["defeat_reason"] = StringName(actor.get_meta("defeat_reason", &"damage"))
+	directed_entry["grants_kill_credit"] = bool(actor.get_meta("grants_kill_credit", true))
 	enemies.erase(actor)
 	enemy_defeated.emit(enemy_id)
 	enemy_defeated_detailed.emit(enemy_id, directed_entry)

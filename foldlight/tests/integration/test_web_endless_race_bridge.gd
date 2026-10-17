@@ -38,7 +38,9 @@ func _run() -> void:
 	_check(slice.player.max_health == FoldlightPlayer.MAX_HEALTH and slice.player.get_capture_capacity() == 8 and is_equal_approx(slice.player.fold_radius_multiplier, 1.0), "maxed local profile cannot improve the race's default body")
 	_check(slice.player.weapon_mount.definitions.size() == 1 and slice.player.weapon_mount.definitions[0].content_id == &"crease_lantern" and slice.player.active_item_slot.definition.content_id == &"paper_burst", "race starts with the common basic weapon and active item")
 	_check(slice.presentation is FoldlightRoguePresentation, "friend race uses the same presentation as the main voyage")
-	var first_spawn_positions := _enemy_positions(slice)
+	var first_spawn_positions := _prepared_spawn_positions(slice)
+	slice._advance_spawn_queue(1.0)
+	_check(not first_spawn_positions.is_empty() and slice.combat_runtime.enemies.is_empty(), "prepared race retains the initial arrival positions while waiting keeps its warning queue frozen")
 	bridge.accept_page_state({"phase": "running", "mayStart": false})
 	_check(bridge.phase == &"waiting" and not slice.player.play_enabled, "a running room without this instance's start admission cannot start combat")
 	bridge.accept_page_state({"phase": "running", "mayStart": true})
@@ -54,8 +56,13 @@ func _run() -> void:
 	pause_event.pressed = true
 	slice._unhandled_input(pause_event)
 	_check(slice._modal_kind.is_empty() and slice.combat_runtime.active and slice.player.play_enabled, "competition Escape cannot pause combat for an advantage")
-	var enemy := slice.combat_runtime.enemies[0]
-	enemy.call("take_damage", 100000.0)
+	# Admission starts the warning clock; only its completed staged arrival may
+	# be used as a real enemy target. Do not depend on 12 frames lasting 0.65 s.
+	for warning_step in 12:
+		slice._advance_spawn_queue(0.1)
+	_check(not slice.combat_runtime.enemies.is_empty(), "admitted combat completes the first warning and creates real shared enemies")
+	if not slice.combat_runtime.enemies.is_empty():
+		slice.combat_runtime.enemies[0].call("take_damage", 100000.0)
 	bridge._process(1.01)
 	_check(bridge.last_report.kills == 1 and slice.controller.defeated_total == 1, "real enemy death immediately contributes to the next report")
 	var before_repeat := slice.controller.evolution.survival_seconds
@@ -92,7 +99,7 @@ func _run() -> void:
 	var refreshed := _create_fixture("first", durable_attempts)
 	var refreshed_bridge: RecordingBridge = refreshed.bridge
 	var refreshed_slice: FoldlightEndlessSliceRuntime = refreshed.slice
-	_check(_enemy_positions(refreshed_slice) == first_spawn_positions, "independent same-seed browser instances receive the same initial wave positions")
+	_check(_prepared_spawn_positions(refreshed_slice) == first_spawn_positions, "independent same-seed browser instances receive the same initial wave positions")
 	refreshed_bridge.accept_page_state({"phase": "running", "mayStart": true})
 	_check(refreshed_bridge.last_report.status == "abandoned" and refreshed_bridge.last_report.reason == "attempt_already_started" and not refreshed_slice.player.play_enabled, "a durable started marker blocks a refreshed page from reopening the attempt")
 	refreshed_slice.queue_free()
@@ -162,13 +169,13 @@ func _create_fixture(id: String, durable_attempts: Dictionary = {}) -> Dictionar
 
 
 func _config(id: String) -> Dictionary:
-	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v6"}
+	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v7"}
 
 
-func _enemy_positions(slice: FoldlightEndlessSliceRuntime) -> Array[Vector2]:
+func _prepared_spawn_positions(slice: FoldlightEndlessSliceRuntime) -> Array[Vector2]:
 	var result: Array[Vector2] = []
-	for enemy in slice.combat_runtime.enemies:
-		result.append(enemy.global_position)
+	for pending: Dictionary in slice._pending_spawns:
+		result.append(Vector2(pending.spawn_position))
 	return result
 
 
@@ -186,7 +193,7 @@ func _valid_reports(messages: Array[Dictionary]) -> bool:
 		if message.method != &"report":
 			continue
 		var payload: Dictionary = JSON.parse_string(message.json)
-		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v6":
+		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v7":
 			return false
 		if int(payload.seq) <= sequence or int(payload.survivalMs) < elapsed or int(payload.kills) < 0:
 			return false

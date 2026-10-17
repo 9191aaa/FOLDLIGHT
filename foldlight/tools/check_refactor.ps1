@@ -41,6 +41,10 @@ try {
     $results += Invoke-Check 'import' @('--editor', '--import', '--quit')
     if (-not $results[0].Passed) { throw 'Godot import failed; see build/refactor-checks/import.errors.log.' }
     $testNames = @(
+        'test_endless_growth_3_16',
+        'test_endless_flow_3_16',
+        'test_endless_growth_ui_3_16',
+        'test_combat_spatial_queries_3_16',
         'test_active_collection_3_15',
         'test_active_collection_flow_3_15',
         'test_active_collection_ui',

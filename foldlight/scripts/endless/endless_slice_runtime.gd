@@ -9,7 +9,11 @@ extends Node2D
 signal title_requested
 
 const DASH_COOLDOWN := 2.0
-const MAX_LIVE_ENEMIES := 84
+const MAX_LIVE_ENEMIES := 36
+const SPAWN_WARNING_SECONDS := 0.65
+const SPAWNS_PER_STEP := 2
+const DISTANT_RETIRE_DISTANCE := 1800.0
+const DISTANT_RETIRE_SECONDS := 12.0
 const BASE_RETURN_DAMAGE := 2.8
 const BASE_RETURN_SPEED := 610.0
 const OBJECTIVE_COMPLETE_SECONDS: float = 0.5
@@ -47,6 +51,12 @@ var _fold_task_id: StringName = &""
 var _fold_release_serial: int = 0
 var _pending_fold_release_serial: int = 0
 var _application_suspended: bool = false
+var _reward_token: String = ""
+var _reward_context: Dictionary = {}
+var _defeat_serial: int = 0
+var _pending_spawns: Array[Dictionary] = []
+var _distant_enemy_age: Dictionary = {}
+var _population_clock: float = 0.0
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
@@ -140,6 +150,7 @@ func begin_web_race() -> void:
 
 func stop_web_race(reason: String) -> void:
 	_cancel_reward_entry()
+	_clear_pending_spawns()
 	run_ended = true
 	player.set_play_enabled(false)
 	combat_runtime.set_active(false)
@@ -178,6 +189,10 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	if _web_race_bridge != null and _race_prepared:
 		return {"errors": ["race_attempt_cannot_restart"]}
 	_cancel_reward_entry()
+	_clear_pending_spawns()
+	_distant_enemy_age.clear()
+	_defeat_serial = 0
+	_population_clock = 0.0
 	if controller.active:
 		controller.exit_mode(&"restart")
 	world.deactivate()
@@ -228,6 +243,7 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	player.active_item_slot.restore_collection(snapshot)
 	_refresh_active_inventory()
 	_refresh_combined_modifiers()
+	_report_population()
 	controller.force_next_wave()
 	_restore_survival_music()
 	_refresh_hud()
@@ -237,6 +253,11 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 func _physics_process(delta: float) -> void:
 	if run_ended or not _modal_kind.is_empty() or not controller.active:
 		return
+	_population_clock -= delta
+	if _population_clock <= 0.0:
+		_retire_distant_enemies(0.5)
+		_population_clock = 0.5
+	_report_population()
 	controller.advance_simulation(delta, player.global_position)
 	# Completing a mission synchronously opens a reward modal. Do not apply
 	# environmental damage after that modal has suspended combat this frame.
@@ -260,7 +281,9 @@ func _process(delta: float) -> void:
 	_capture_sfx_cooldown = maxf(0.0, _capture_sfx_cooldown - delta)
 	_kill_shake_cooldown = maxf(0.0, _kill_shake_cooldown - delta)
 	_return_kick_cooldown = maxf(0.0, _return_kick_cooldown - delta)
+	_try_present_pending_reward()
 	_advance_reward_completion(delta)
+	_advance_spawn_queue(delta)
 
 
 func _notification(what: int) -> void:
@@ -285,7 +308,7 @@ func _advance_reward_completion(delta: float) -> void:
 		_reward_completion_remaining = 0.0
 		_modal_kind = &"reward"
 		_refresh_active_inventory()
-		presentation.show_reward(_reward_card_choices(), _reward_objective_title)
+		presentation.show_reward(_reward_card_choices(), _reward_objective_title, _reward_ui_metadata())
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -340,6 +363,7 @@ func _resume_game() -> void:
 		_set_combat_suspended(false)
 	else:
 		audio_director.set_music_context(&"reward")
+	_try_present_pending_reward()
 	_refresh_hud()
 
 
@@ -389,6 +413,7 @@ func _return_to_title() -> void:
 	if not is_inside_tree() or is_queued_for_deletion() or _transitioning_to_title:
 		return
 	_cancel_reward_entry()
+	_clear_pending_spawns()
 	if _web_race_bridge != null:
 		_web_race_bridge.call("finish_local", &"abandoned", "abandoned")
 		return
@@ -413,7 +438,8 @@ func _complete_title_transition() -> void:
 
 
 func _on_enemy_wave_requested(request: Dictionary) -> void:
-	var open_slots := maxi(0, MAX_LIVE_ENEMIES - combat_runtime.enemies.size())
+	var limit := int(controller.evolution.get_enemy_snapshot().get("population_limit", MAX_LIVE_ENEMIES))
+	var open_slots := maxi(0, mini(MAX_LIVE_ENEMIES, limit) - combat_runtime.enemies.size() - _pending_spawns.size())
 	if open_slots <= 0:
 		return
 	var directed: Array[Dictionary] = []
@@ -424,6 +450,11 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 			has_barrage_elite = true
 		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.definition.content_id == &"cinder_mine":
 			bomber_count += 1
+	for pending in _pending_spawns:
+		var pending_id := StringName(pending.get("enemy_id", &""))
+		has_barrage_elite = has_barrage_elite or pending_id == &"shutter_seraph"
+		if pending_id == &"cinder_mine":
+			bomber_count += 1
 	var entries_variant: Variant = request.get("entries", [])
 	if entries_variant is Array:
 		for entry_variant: Variant in entries_variant:
@@ -432,9 +463,16 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 			if not entry_variant is Dictionary:
 				continue
 			var entry := (entry_variant as Dictionary).duplicate(true)
+			if bool(entry.get("is_captain", false)) and _has_pending_captain(StringName(entry.get("captain_id", &""))):
+				continue
 			# Keep the final actor slot available for a task captain. Its ID is
 			# acknowledged only after the shared factory actually creates it.
 			if not bool(entry.get("is_captain", false)) and directed.size() >= maxi(0, open_slots - 1):
+				continue
+			entry["spawn_position"] = Vector2(entry.get("position", Vector2.ZERO))
+			if bool(entry.get("is_captain", false)):
+				_relocate_crowded_captain(entry)
+			if not _spawn_position_is_safe(entry):
 				continue
 			if StringName(entry.get("enemy_id", &"")) == &"shutter_seraph":
 				if has_barrage_elite:
@@ -450,13 +488,135 @@ func _on_enemy_wave_requested(request: Dictionary) -> void:
 				if not _bomber_introduced:
 					_bomber_introduced = true
 					presentation.show_notice("烬火纸雷 · 定点自爆", "红圈亮起后有 1.5 秒离圈；冲刺避开或提前击破，不会殉爆。")
-			entry["spawn_position"] = Vector2(entry.get("position", Vector2.ZERO))
 			directed.append(entry)
-	var spawned := combat_runtime.spawn_directed_wave(directed)
-	for actor: Node2D in spawned:
+	_queue_directed_spawns(directed)
+	_report_population()
+
+
+func _has_pending_captain(identity: StringName) -> bool:
+	return _pending_spawns.any(func(entry: Dictionary) -> bool: return bool(entry.get("is_captain", false)) and StringName(entry.get("captain_id", &"")) == identity)
+
+
+func _spawn_position_is_safe(entry: Dictionary) -> bool:
+	var point := Vector2(entry.get("spawn_position", entry.get("position", Vector2.ZERO)))
+	if not point.is_finite() or controller.map_runtime.is_point_blocked(point, 40.0) or controller.zones.is_point_reserved(point, 40.0):
+		return false
+	# Authored task captains have a fixed, marked site; ordinary reinforcements
+	# must stay clear even when the player walks into their warning during entry.
+	var clearance := 180.0 if bool(entry.get("is_captain", false)) else (360.0 if entry.has("objective_support") else controller.config.spawn_safe_distance)
+	return point.distance_squared_to(player.global_position) >= clearance * clearance
+
+
+func _relocate_crowded_captain(entry: Dictionary) -> void:
+	if _spawn_position_is_safe(entry):
+		return
+	var origin := Vector2(entry["spawn_position"])
+	for index in 24:
+		var angle := TAU * float(posmod(controller.run_seed + index, 24)) / 24.0
+		entry["spawn_position"] = origin + Vector2.from_angle(angle) * 360.0
+		if _spawn_position_is_safe(entry):
+			return
+	entry["spawn_position"] = origin
+
+
+func _queue_directed_spawns(entries: Array[Dictionary]) -> void:
+	for source in entries:
+		if _pending_spawns.size() + combat_runtime.enemies.size() >= MAX_LIVE_ENEMIES:
+			break
+		var entry := source.duplicate(true)
+		entry["remaining"] = SPAWN_WARNING_SECONDS
+		var marker := FoldlightSpawnTelegraph.new()
+		world.room_runtime.add_child(marker)
+		marker.configure(entry, SPAWN_WARNING_SECONDS)
+		marker.use_external_clock()
+		marker.set_simulation_active(_modal_kind.is_empty())
+		entry["marker"] = weakref(marker)
+		_pending_spawns.append(entry)
+
+
+func _clear_pending_spawns() -> void:
+	for entry in _pending_spawns:
+		_release_spawn_marker(entry)
+	_pending_spawns.clear()
+
+
+func _release_spawn_marker(entry: Dictionary) -> void:
+	var reference: Variant = entry.get("marker")
+	var marker: Node = reference.get_ref() if reference is WeakRef else null
+	if is_instance_valid(marker) and not marker.is_queued_for_deletion():
+		marker.queue_free()
+
+
+func _advance_spawn_queue(delta: float) -> void:
+	if run_ended or not _modal_kind.is_empty() or not combat_runtime.active or not is_finite(delta) or delta <= 0.0:
+		return
+	if _application_suspended or (_touch_controls != null and bool(_touch_controls.call("is_host_suspended"))):
+		return
+	# Advance once per rendered frame, so catch-up physics and a background
+	# return cannot consume an entire warning before the player sees it.
+	var warning_step := minf(delta, 0.1)
+	for entry in _pending_spawns:
+		entry["remaining"] = maxf(0.0, float(entry["remaining"]) - warning_step)
+		var reference: Variant = entry.get("marker")
+		var marker: Node = reference.get_ref() if reference is WeakRef else null
+		if is_instance_valid(marker) and not marker.is_queued_for_deletion():
+			marker.set_warning_remaining(float(entry["remaining"]))
+	var issued := 0
+	while not _pending_spawns.is_empty() and float(_pending_spawns[0]["remaining"]) <= 0.0 and issued < SPAWNS_PER_STEP:
+		var entry: Dictionary = _pending_spawns.pop_front()
+		_release_spawn_marker(entry)
+		var objective := controller.objectives.get_snapshot()
+		if bool(entry.get("is_captain", false)) and (not bool(objective.get("target_active", false)) or StringName(objective.get("target_id", &"")) != StringName(entry.get("captain_id", &""))):
+			continue
+		if entry.has("objective_support") and (not bool(objective.get("target_active", false)) or StringName(objective.get("id", &"")) != StringName(entry["objective_support"])):
+			continue
+		if not _spawn_position_is_safe(entry):
+			continue
+		entry.erase("marker")
+		entry.erase("remaining")
+		var batch: Array[Dictionary] = [entry]
+		var spawned := combat_runtime.spawn_directed_wave(batch)
+		issued += spawned.size()
+		for actor: Node2D in spawned:
+			if bool(entry.get("is_captain", false)):
+				controller.confirm_captain_spawned(StringName(entry.get("captain_id", &"")))
+
+
+func _report_population() -> void:
+	var alive := 0
+	var threat := 0
+	for actor: Node2D in combat_runtime.enemies:
+		if not is_instance_valid(actor) or actor.is_queued_for_deletion() or float(actor.get("health")) <= 0.0:
+			continue
+		alive += 1
+		var definition: Variant = actor.get("definition")
 		var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
-		if bool(entry.get("is_captain", false)):
-			controller.confirm_captain_spawned(StringName(entry.get("captain_id", &"")))
+		var fallback := int(definition.threat_cost) if definition != null else 1
+		threat += 6 if bool(entry.get("is_captain", false)) else int(entry.get("threat_cost", fallback))
+	var pending_threat := 0
+	for entry in _pending_spawns:
+		pending_threat += 6 if bool(entry.get("is_captain", false)) else int(entry.get("threat_cost", controller.THREAT_COSTS.get(StringName(entry.get("enemy_id", &"drifter")), 1)))
+	controller.report_population({"alive_count": alive, "pending_count": _pending_spawns.size(), "threat_total": threat, "pending_threat": pending_threat})
+
+
+func _retire_distant_enemies(delta: float) -> void:
+	var retained: Dictionary = {}
+	var objective := controller.objectives.get_snapshot()
+	for actor: Node2D in combat_runtime.enemies.duplicate():
+		if not is_instance_valid(actor) or actor.is_queued_for_deletion():
+			continue
+		var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+		if bool(entry.get("is_captain", false)) or bool(entry.get("is_objective_target", false)) or (entry.has("objective_support") and StringName(entry["objective_support"]) == StringName(objective.get("id", &"")) and bool(objective.get("target_active", false))):
+			continue
+		if actor.global_position.distance_squared_to(player.global_position) <= DISTANT_RETIRE_DISTANCE * DISTANT_RETIRE_DISTANCE:
+			continue
+		var identity := actor.get_instance_id()
+		var age := float(_distant_enemy_age.get(identity, 0.0)) + delta
+		if age >= DISTANT_RETIRE_SECONDS:
+			combat_runtime.retire_directed_enemy(actor)
+		else:
+			retained[identity] = age
+	_distant_enemy_age = retained
 
 
 func _on_projectile_captured(captured_count: int, _position: Vector2) -> void:
@@ -467,10 +627,13 @@ func _on_projectile_captured(captured_count: int, _position: Vector2) -> void:
 
 
 func _on_enemy_defeated_detailed(enemy_id: StringName, entry: Dictionary) -> void:
-	if bool(entry.get("is_objective_target", false)):
+	if bool(entry.get("is_objective_target", false)) or not bool(entry.get("grants_kill_credit", true)):
 		return
 	var report := entry.duplicate(true)
 	report["enemy_id"] = enemy_id
+	_defeat_serial += 1
+	report["defeat_serial"] = _defeat_serial
+	report["defeat_reason"] = &"player"
 	controller.report_enemy_defeated(report)
 	if _kill_shake_cooldown <= 0.0:
 		var shake := 0.34 if bool(entry.get("is_captain", false)) else 0.16
@@ -547,18 +710,37 @@ func _on_player_evolution_changed(_snapshot: Dictionary) -> void:
 	_refresh_combined_modifiers()
 
 
-func _on_mission_reward_offered(options: Array[Dictionary], objective_snapshot: Dictionary) -> void:
-	if run_ended or _transitioning_to_title or options.is_empty() or not controller.active or not _modal_kind.is_empty():
+func _on_mission_reward_offered(_options: Array[Dictionary], _objective_snapshot: Dictionary) -> void:
+	_try_present_pending_reward()
+
+
+func _try_present_pending_reward() -> void:
+	if run_ended or _transitioning_to_title or not controller.active or not _modal_kind.is_empty():
+		return
+	var pending := controller.peek_pending_reward()
+	if pending.is_empty():
+		return
+	var options: Array[Dictionary] = []
+	for option: Dictionary in pending.get("options", []):
+		options.append(option.duplicate(true))
+	if options.is_empty():
 		return
 	_modal_kind = &"objective_complete"
-	_modal_options = options.duplicate(true)
+	_modal_options = options
+	_reward_token = String(pending.get("reward_token", ""))
+	_reward_context = pending.duplicate(true)
 	_claiming_reward = false
 	_reward_completion_remaining = OBJECTIVE_COMPLETE_SECONDS
-	_reward_objective_title = str(objective_snapshot.get("title", "系统任务"))
+	_reward_objective_title = str(pending.get("title", "航行补给"))
 	_set_combat_suspended(true)
 	presentation.show_hud()
 	_refresh_hud()
 	audio_director.set_music_context(&"reward")
+	audio_director.play_sfx(&"ui", 1.18, -8.0)
+
+
+func _reward_ui_metadata() -> Dictionary:
+	return {"source": _reward_context.get("source", &"mission"), "title": _reward_objective_title, "level": _reward_context.get("level", 1), "heal_on_claim": _reward_context.get("heal_on_claim", 0), "current_health": player.health, "max_health": player.max_health}
 
 
 func _reward_card_choices() -> Array[Dictionary]:
@@ -567,7 +749,7 @@ func _reward_card_choices() -> Array[Dictionary]:
 		var choice := option.duplicate(true)
 		choice["content_id"] = StringName(option.get("id", &""))
 		if StringName(option.get("choice_kind", &"")) not in [&"weapon", &"active"]:
-			choice["display_rarity"] = "%s · 任务进化" % str(option.get("lane_title", "成长"))
+			choice["display_rarity"] = "%s · %s" % [str(option.get("lane_title", "成长")), "击破升级" if StringName(_reward_context.get("source", &"mission")) == &"kill_level" else "任务强化"]
 			choice["display_level"] = "刻印  Lv.%d · 本局累积" % int(option.get("next_level", 1))
 			choice["accent"] = FoldlightTheme.GOLD if StringName(option.get("lane_id", &"")) == &"sustain" else FoldlightTheme.FOLD
 		choices.append(choice)
@@ -585,13 +767,18 @@ func _on_mission_reward_claimed(reward: Dictionary) -> void:
 	_refresh_combined_modifiers()
 	var reward_modifiers_variant: Variant = reward.get("modifiers", {})
 	var reward_modifiers := reward_modifiers_variant as Dictionary if reward_modifiers_variant is Dictionary else {}
-	player.health = mini(player.max_health, health_before + int(round(float(reward_modifiers.get("heal", 0.0)))))
+	var healing := int(round(float(reward_modifiers.get("heal", 0.0)))) + int(reward.get("heal_on_claim", 0))
+	player.health = mini(player.max_health, health_before + healing)
+	var actual_heal := maxi(0, player.health - health_before)
 	var title := "已获得【%s】%s  Lv.%d" % [
 		String(reward.get("lane_title", "成长")),
 		String(reward.get("title", "进化")),
 		int(reward.get("level", 1)),
 	]
-	presentation.show_notice(title, str(reward.get("description", "")))
+	var detail := str(reward.get("description", ""))
+	if healing > 0:
+		detail += "\n回复生命 +%d" % actual_heal if actual_heal > 0 else "\n生命已满"
+	presentation.show_notice(title, detail)
 
 
 func _on_reward_chosen(reward_id: StringName) -> void:
@@ -607,16 +794,20 @@ func _on_reward_chosen(reward_id: StringName) -> void:
 	# Shared cards guard entry, wait for input release and finish confirmation
 	# before emitting. Lock again here before synchronous controller signals.
 	_claiming_reward = true
-	if controller.claim_mission_reward(reward_id).is_empty():
+	if controller.claim_pending_reward(_reward_token, reward_id).is_empty():
 		_claiming_reward = false
-		presentation.show_reward(_reward_card_choices(), "系统任务")
+		presentation.show_reward(_reward_card_choices(), _reward_objective_title, _reward_ui_metadata())
 		return
 	if run_ended or _modal_kind != &"reward":
 		return
 	_modal_kind = &""
 	_modal_options.clear()
+	_reward_token = ""
+	_reward_context.clear()
 	presentation.show_hud()
-	_set_combat_suspended(false)
+	_try_present_pending_reward()
+	if _modal_kind.is_empty():
+		_set_combat_suspended(false)
 	_refresh_hud()
 
 
@@ -624,6 +815,8 @@ func _cancel_reward_entry() -> void:
 	_claiming_reward = true
 	_reward_completion_remaining = 0.0
 	_reward_objective_title = ""
+	_reward_token = ""
+	_reward_context.clear()
 	_paused_modal_kind = &""
 	_fold_task_id = &""
 	_pending_fold_release_serial = 0
@@ -648,6 +841,7 @@ func _on_active_relic_selected(item_id: StringName) -> void:
 
 func _finish_run(reason: StringName = &"player_defeated") -> void:
 	_cancel_reward_entry()
+	_clear_pending_spawns()
 	if run_ended:
 		return
 	run_ended = true
@@ -708,6 +902,7 @@ func _refresh_combined_modifiers() -> void:
 	var axes: Array[Dictionary] = [
 		controller.evolution.get_player_snapshot().get("total_modifiers", {}) as Dictionary,
 		controller.evolution.get_mission_snapshot().get("total_modifiers", {}) as Dictionary,
+		controller.evolution.get_experience_snapshot().get("total_modifiers", {}) as Dictionary,
 	]
 	for axis in axes:
 		for key: Variant in axis:
@@ -746,8 +941,22 @@ func _on_objective_started(objective: Dictionary) -> void:
 		_objective_target = target
 
 
-func _on_objective_failed(_objective: Dictionary) -> void:
+func _on_objective_failed(objective: Dictionary) -> void:
 	_retire_objective_target()
+	var identity := StringName(objective.get("id", &""))
+	var captain_id := StringName(objective.get("target_id", &""))
+	for index in range(_pending_spawns.size() - 1, -1, -1):
+		var entry: Dictionary = _pending_spawns[index]
+		if (bool(entry.get("is_captain", false)) and StringName(entry.get("captain_id", &"")) == captain_id) or (entry.has("objective_support") and StringName(entry["objective_support"]) == identity):
+			_release_spawn_marker(entry)
+			_pending_spawns.remove_at(index)
+	for actor: Node2D in combat_runtime.enemies.duplicate():
+		if not is_instance_valid(actor) or actor.is_queued_for_deletion():
+			continue
+		var entry: Dictionary = actor.get_meta("directed_spawn_entry", {})
+		if bool(entry.get("is_captain", false)) and StringName(entry.get("captain_id", &"")) == captain_id:
+			combat_runtime.retire_directed_enemy(actor, true)
+	_report_population()
 	if not run_ended:
 		presentation.show_notice("任务超时", "本次没有任务奖励，稍后出现新目标；航行继续。")
 
@@ -788,7 +997,15 @@ func _ensure_storm_support(delta: float) -> void:
 	# Keep at most two alive, replacing defeated shooters on a four-second cadence
 	# so automatic weapons cannot permanently exhaust the task's bullet supply.
 	# Actual captured projectiles remain the sole progress source.
-	var slots := mini(2 - _storm_support_count, maxi(0, MAX_LIVE_ENEMIES - 1 - combat_runtime.enemies.size()))
+	for pending in _pending_spawns:
+		if StringName(pending.get("objective_support", &"")) == StringName(objective.id):
+			_storm_support_count += 1
+	var population_limit := int(controller.evolution.get_enemy_snapshot().get("population_limit", MAX_LIVE_ENEMIES))
+	var slots := mini(2 - _storm_support_count, maxi(0, population_limit - 1 - combat_runtime.enemies.size() - _pending_spawns.size()))
+	_report_population()
+	var population := controller.get_population_snapshot()
+	var spare_threat := maxi(0, int(population["threat_limit"]) - int(population["threat_total"]) - int(population["pending_threat"]))
+	slots = mini(slots, spare_threat / 2)
 	var entries: Array[Dictionary] = []
 	for index in 32:
 		if entries.size() >= slots:
@@ -803,7 +1020,9 @@ func _ensure_storm_support(delta: float) -> void:
 			continue
 		var health_scale := maxf(3.0, float(controller.evolution.get_enemy_snapshot().get("health_multiplier", 1.0)) * 3.0)
 		entries.append({"enemy_id": &"fan", "spawn_position": candidate, "objective_support": objective.id, "health_multiplier": health_scale, "is_captain": false})
-	_storm_support_count += combat_runtime.spawn_directed_wave(entries).size()
+	_queue_directed_spawns(entries)
+	_storm_support_count += entries.size()
+	_report_population()
 
 
 func _build_room_terrain() -> Array[Dictionary]:
@@ -836,6 +1055,8 @@ func _refresh_hud() -> void:
 		"objective_progress": float(objective.get("progress_ratio", 0.0)),
 		"race": _web_race_bridge != null,
 		"endless_navigation": true,
+		"experience": controller.evolution.get_experience_snapshot(),
+		"objective_feedback": _reward_ui_metadata() if _modal_kind == &"objective_complete" else {},
 	}
 	var pressure := "威胁 %d · 场上 %d\n收纳进化 %d" % [int(enemy_state.get("stage", 0)), combat_runtime.enemies.size(), int(player_state.get("stage", 0))]
 	presentation.update_hud(player, {}, {}, "无尽挑战", pressure, {}, context)
@@ -899,6 +1120,7 @@ func get_slice_snapshot() -> Dictionary:
 		"player_health": player.health,
 		"max_health": player.max_health,
 		"enemy_count": combat_runtime.enemies.size(),
+		"pending_enemy_count": _pending_spawns.size(),
 		"projectile_count": combat_runtime.projectiles.size(),
 		"run_ended": run_ended,
 		"modal_kind": _modal_kind,

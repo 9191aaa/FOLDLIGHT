@@ -4,6 +4,7 @@ extends Node
 signal enemy_evolution_changed(snapshot: Dictionary)
 signal player_evolution_changed(snapshot: Dictionary)
 signal mission_evolution_changed(snapshot: Dictionary)
+signal experience_changed(snapshot: Dictionary)
 
 const ABSORB_PERKS: Array[Dictionary] = [
 	{"id": &"wider_fold", "title": "折域延展", "capture_capacity": 2, "fold_radius_multiplier": 0.08},
@@ -78,6 +79,12 @@ var enemy_stage: int = 0
 var player_absorb_stage: int = 0
 var mission_reward_levels: Dictionary = {}
 var mission_modifiers: Dictionary = {}
+var experience_level: int = 1
+var experience_in_level: int = 0
+var experience_total: int = 0
+var experience_claimed_levels: int = 0
+var experience_reward_levels: Dictionary = {}
+var experience_modifiers: Dictionary = {}
 
 
 func reset(run_config: FoldlightEndlessSurvivalConfig) -> void:
@@ -88,9 +95,70 @@ func reset(run_config: FoldlightEndlessSurvivalConfig) -> void:
 	player_absorb_stage = 0
 	mission_reward_levels.clear()
 	mission_modifiers = _empty_modifier_snapshot()
+	experience_level = 1
+	experience_in_level = 0
+	experience_total = 0
+	experience_claimed_levels = 0
+	experience_reward_levels.clear()
+	experience_modifiers = _empty_modifier_snapshot()
 	enemy_evolution_changed.emit(get_enemy_snapshot())
 	player_evolution_changed.emit(get_player_snapshot())
 	mission_evolution_changed.emit(get_mission_snapshot())
+	experience_changed.emit(get_experience_snapshot())
+
+
+func experience_required(level: int) -> int:
+	if config == null:
+		return 18
+	var step := maxi(0, level - 1)
+	return config.first_level_experience + config.experience_step * step + 2 * (step / 3)
+
+
+func record_kill_experience(amount: int) -> Array[int]:
+	var levels: Array[int] = []
+	if config == null or amount <= 0:
+		return levels
+	experience_total += amount
+	experience_in_level += amount
+	while experience_in_level >= experience_required(experience_level):
+		experience_in_level -= experience_required(experience_level)
+		experience_level += 1
+		levels.append(experience_level)
+	experience_changed.emit(get_experience_snapshot())
+	return levels
+
+
+func get_experience_reward_options(level: int) -> Array[Dictionary]:
+	var options := get_mission_reward_options(maxi(0, level - 2))
+	for option: Dictionary in options:
+		option["next_level"] = int(experience_reward_levels.get(option["id"], 0)) + 1
+	return options
+
+
+func apply_experience_reward(reward_id: StringName) -> Dictionary:
+	var reward := _mission_reward_by_id(reward_id)
+	if reward.is_empty() or experience_claimed_levels >= experience_level - 1:
+		return {}
+	reward = _decorate_mission_reward(reward, _mission_lane_for_reward(reward_id))
+	experience_reward_levels[reward_id] = int(experience_reward_levels.get(reward_id, 0)) + 1
+	for key: Variant in reward.get("modifiers", {}):
+		experience_modifiers[key] = float(experience_modifiers.get(key, 0.0)) + float(reward.modifiers[key])
+	experience_claimed_levels += 1
+	reward["level"] = int(experience_reward_levels[reward_id])
+	reward["total_modifiers"] = experience_modifiers.duplicate(true)
+	experience_changed.emit(get_experience_snapshot())
+	return reward
+
+
+func get_experience_snapshot() -> Dictionary:
+	return {
+		"axis": &"enemy_defeats", "level": experience_level,
+		"xp_in_level": experience_in_level, "xp_to_next": experience_required(experience_level),
+		"total_xp": experience_total,
+		"pending_levels": maxi(0, experience_level - 1 - experience_claimed_levels),
+		"reward_levels": experience_reward_levels.duplicate(true),
+		"total_modifiers": experience_modifiers.duplicate(true),
+	}
 
 
 func advance_survival(delta: float) -> void:
@@ -164,6 +232,8 @@ func get_enemy_snapshot() -> Dictionary:
 		"wave_budget": mini(config.maximum_wave_budget, config.base_wave_budget + enemy_stage * 3),
 		"spawn_interval": maxf(config.minimum_spawn_interval, config.base_spawn_interval - stage_power * 0.62),
 		"captain_frequency": maxi(5 - enemy_stage / 2, 2),
+		"population_limit": mini(config.maximum_population_limit, config.base_population_limit + enemy_stage * 3),
+		"threat_limit": mini(config.maximum_threat_limit, config.base_threat_limit + enemy_stage * 8),
 	}
 
 
@@ -205,6 +275,7 @@ func get_snapshot() -> Dictionary:
 		"enemy": get_enemy_snapshot(),
 		"player": get_player_snapshot(),
 		"missions": get_mission_snapshot(),
+		"experience": get_experience_snapshot(),
 		"axes_are_independent": true,
 	}
 

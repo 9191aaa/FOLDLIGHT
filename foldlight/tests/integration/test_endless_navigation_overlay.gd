@@ -65,11 +65,15 @@ func _run() -> void:
 	state = nav.get_navigation_snapshot()
 	check(state.indicator_mode == &"safe" and state.indicator_direction.y > 0.9 and state.danger_text.contains("扣血"), "closed-zone escape takes priority over mission guidance and states its real consequence")
 	data.objective.status = &"failed"
+	data.objective.intermission_remaining = 2.6
 	nav.update_snapshot(data)
-	check(nav.get_navigation_snapshot().task_title.begins_with("未达成") and nav.get_navigation_snapshot().time_text == "未达成", "failed tasks visibly stop showing an active countdown")
+	check(nav.get_navigation_snapshot().task_title.begins_with("任务超时") and nav.get_navigation_snapshot().time_text == "3 秒" and nav.get_navigation_snapshot().instruction_text.contains("本次无奖励") and nav.get_navigation_snapshot().instruction_text.contains("3 秒后出现新目标"), "timed-out tasks clearly report no reward and the authoritative countdown to a new target")
+	data.objective.intermission_remaining = 1.2
+	nav.update_snapshot(data)
+	check(nav.get_navigation_snapshot().instruction_text.contains("2 秒后出现新目标"), "intermission feedback follows the source countdown without its own clock")
 	data.objective.status = &"completed"
 	nav.update_snapshot(data)
-	check(nav.get_navigation_snapshot().task_title.begins_with("完成"), "successful tasks have a distinct completion state")
+	check(nav.get_navigation_snapshot().task_title.begins_with("任务完成") and nav.get_navigation_snapshot().instruction_text.contains("继续航行"), "successful tasks have a distinct completion state and explain the next task transition")
 	check(_inside(nav._map.get_global_rect()) and not nav._map.get_global_rect().intersects(nav._task.get_global_rect()), "desktop map and task card fit without overlapping")
 	nav.set_touch_layout(true, 184)
 	await _settle()

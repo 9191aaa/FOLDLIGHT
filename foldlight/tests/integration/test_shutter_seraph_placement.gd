@@ -50,21 +50,30 @@ func _run() -> void:
 	slice.world.deactivate()
 	var controller := slice.controller
 	controller.enemy_wave_requested.disconnect(slice._on_enemy_wave_requested)
+	# The paused fixture still has its initial captain in the arrival queue.
+	# Acknowledge that actor for the planner, as live gameplay does on arrival.
+	controller.confirm_captain_spawned(StringName(controller.objectives.get_snapshot().get("target_id", &"")))
 	var no_early_elites := true
 	for index in 8:
+		# Pure planning has no actor factory to consume/report reservations.
+		controller.report_population({})
 		var request := controller._emit_next_wave()
 		no_early_elites = no_early_elites and _elite_entries(request).is_empty()
 	_check(no_early_elites, "opening endless waves cannot roll an invulnerable elite")
 	controller.evolution.advance_survival(105.0)
 	controller.wave_sequence = 11
+	controller.report_population({})
 	var first := controller._emit_next_wave()
 	_check(_elite_entries(first).size() == 1, "105-second endless wave introduces one elite")
 	controller.wave_sequence = 11
+	controller.report_population({})
 	var same := controller._emit_next_wave()
 	_check(_elite_entries(first) == _elite_entries(same), "same seed and wave select the same elite placement")
 	slice.world.activate()
 	slice._on_enemy_wave_requested(first)
 	slice._on_enemy_wave_requested(first)
+	for warning_step in 16:
+		slice._advance_spawn_queue(0.1)
 	_check(slice.combat_runtime.enemies.filter(func(enemy: Node) -> bool: return enemy.definition.content_id == &"shutter_seraph").size() == 1, "repeated waves cannot overlap two live barrage elites")
 	slice.start_slice(331)
 	_check(slice.combat_runtime.enemies.is_empty(), "restart clears the old elite along with combat")

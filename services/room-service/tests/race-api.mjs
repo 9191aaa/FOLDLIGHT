@@ -37,7 +37,7 @@ async function request(path, { method = 'GET', token, body, headers = {} } = {})
 
 const endpoint = fixture => `/api/rooms/${fixture.code}`;
 const player = (snapshot, client) => snapshot.players.find(value => value.id === client.id);
-const post = (fixture, client, body) => request(endpoint(fixture), { method: 'POST', token: client?.token, body: { rulesVersion: 'endless_race_v6', ...body } });
+const post = (fixture, client, body) => request(endpoint(fixture), { method: 'POST', token: client?.token, body: { rulesVersion: 'endless_race_v7', ...body } });
 const get = (fixture, client) => request(endpoint(fixture), { token: client?.token });
 function requireSuccess(response, expected, label) {
   if (response.status !== expected) throw new Error(`${label}: expected HTTP ${expected}, got ${response.status} (${response.data.error ?? 'unexpected response'})`);
@@ -46,7 +46,7 @@ function requireSuccess(response, expected, label) {
 
 async function createFixture(name) {
   if (createdRooms >= 4) throw new Error('Per-run room budget exhausted.');
-  const created = requireSuccess(await request('/api/rooms', { method: 'POST', body: { name: `测试甲-${name}`, rulesVersion: 'endless_race_v6' } }), 201, 'create');
+  const created = requireSuccess(await request('/api/rooms', { method: 'POST', body: { name: `测试甲-${name}`, rulesVersion: 'endless_race_v7' } }), 201, 'create');
   createdRooms += 1;
   const fixture = { name, code: created.room.code, seed: created.room.seed, a: { token: created.token, id: created.room.selfId, instance: randomUUID(), seq: 0 } };
   check(created.room.phase === 'waiting' && created.room.players.length === 1 && /^[A-HJ-NP-Z2-9]{7}$/.test(fixture.code), `${name}: create opens a one-player waiting room`);

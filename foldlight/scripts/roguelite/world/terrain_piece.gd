@@ -9,6 +9,7 @@ const CURRENT_COLOR := Color("90c9ee")
 
 signal terrain_effect_entered(kind: FoldlightRogueTerrainDefinition.TerrainKind, body: Node2D, strength: float, direction: Vector2)
 signal terrain_effect_exited(kind: FoldlightRogueTerrainDefinition.TerrainKind, body: Node2D)
+signal geometry_changed
 
 var placement_id: StringName = &""
 var kind: FoldlightRogueTerrainDefinition.TerrainKind = FoldlightRogueTerrainDefinition.TerrainKind.PAPER_WALL
@@ -24,6 +25,15 @@ var _observer: Node2D
 var _presence: float = 0.0
 var _proximity: float = 0.0
 var _redraw_remaining: float = 0.0
+
+
+func _init() -> void:
+	set_notify_transform(true)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED:
+		geometry_changed.emit()
 
 
 func _process(delta: float) -> void:
@@ -84,6 +94,7 @@ func configure(placement: Dictionary) -> void:
 	if effect_direction.is_zero_approx():
 		effect_direction = Vector2.RIGHT
 	_build_collision()
+	geometry_changed.emit()
 	queue_redraw()
 
 
@@ -116,6 +127,12 @@ func contains_world_point(world_point: Vector2) -> bool:
 	if kind == FoldlightRogueTerrainDefinition.TerrainKind.REFRACTION_PILLAR:
 		return local_point.length() <= minf(piece_size.x, piece_size.y) * 0.5
 	return Rect2(-piece_size * 0.5, piece_size).has_point(local_point)
+
+
+func get_global_query_bounds() -> Rect2:
+	# Transform all four authored corners; this also handles rotated/scaled
+	# parents. Circle pieces use a conservative rectangle then exact narrow phase.
+	return global_transform * Rect2(-piece_size * 0.5, piece_size)
 
 
 func _build_collision() -> void:

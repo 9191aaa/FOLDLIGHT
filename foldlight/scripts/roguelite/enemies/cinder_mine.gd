@@ -42,6 +42,8 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	_visual_time = 0.0
 	_hit_flash = 0.0
 	velocity = Vector2.ZERO
+	set_meta("defeat_reason", &"damage")
+	set_meta("grants_kill_credit", true)
 	queue_redraw()
 
 
@@ -72,6 +74,8 @@ func advance_simulation(delta: float, target_position: Vector2, hostile_time_sca
 			if _remaining <= 0.00001:
 				phase = Phase.SPENT
 				health = 0.0
+				set_meta("defeat_reason", &"self_detonation")
+				set_meta("grants_kill_credit", false)
 				blast_requested.emit({"origin": global_position, "radius": blast_radius, "source_id": actor_id})
 				defeated.emit(self)
 				return

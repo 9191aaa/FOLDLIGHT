@@ -21,6 +21,12 @@ func _run() -> void:
 	var controller_snapshot := snapshot.get("controller", {}) as Dictionary
 	_check(bool(controller_snapshot.get("active", false)), "standalone slice starts a live endless run")
 	_check(Vector2(snapshot.get("player_position", Vector2.ZERO)).is_equal_approx(slice.controller.map_definition.player_spawn), "slice player starts at the authored harbor")
+	_check(int(snapshot.get("pending_enemy_count", 0)) > 0, "the first wave has a visible staged arrival instead of materializing immediately")
+	# Advance the real bounded warning queue; this fixture does not depend on
+	# the machine producing a particular number of render frames in 0.65 s.
+	for warning_step in 12:
+		slice._advance_spawn_queue(0.1)
+	snapshot = slice.get_slice_snapshot()
 	_check(int(snapshot.get("enemy_count", 0)) > 0, "slice converts the first wave request into playable enemies")
 	_check(slice.world.room_runtime.get_terrain_pieces().size() == slice.controller.map_definition.walls.size(), "slice converts fixed-map cover into shared 2.0 terrain")
 	_check(slice.controller.map_runtime.get_node_or_null("AuthoredCoverCollision") == null, "slice disables the former parallel cover physics")

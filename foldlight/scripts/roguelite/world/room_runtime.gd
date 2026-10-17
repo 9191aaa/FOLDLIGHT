@@ -16,11 +16,15 @@ const DOOR_SCENE: PackedScene = preload("res://scenes/roguelite/rogue_door.tscn"
 const BEACON_SCENE: PackedScene = preload("res://scenes/roguelite/tide_beacon.tscn")
 const TERRAIN_HINT = preload("res://scripts/roguelite/world/terrain_hint.gd")
 const WALL_MARGIN: float = 56.0
+const TERRAIN_QUERY_CELL: float = 192.0
 
 var room_id: StringName = &""
 var room_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
 var _interactions_active: bool = false
 var _terrain_hint: Node2D
+var _terrain_index_dirty: bool = true
+var _terrain_pieces: Array[FoldlightTerrainPiece] = []
+var _terrain_cells: Dictionary = {}
 
 @onready var backdrop: FoldlightRoomBackdrop = $Backdrop
 @onready var terrain_container: Node2D = $Terrain
@@ -33,6 +37,7 @@ var _terrain_hint: Node2D
 
 
 func _ready() -> void:
+	terrain_container.child_order_changed.connect(_invalidate_terrain_index)
 	encounter_runtime.combat_lock_changed.connect(_on_combat_lock_changed)
 	encounter_runtime.spawn_telegraph_requested.connect(func(entry: Dictionary, duration: float) -> void: encounter_spawn_telegraph.emit(entry, duration))
 	encounter_runtime.enemy_spawn_requested.connect(func(entry: Dictionary) -> void: encounter_enemy_requested.emit(entry))
@@ -58,6 +63,7 @@ func configure_room(new_room_id: StringName, world_size: Vector2, placements: Ar
 		if not styled_placement.has("visual_style"):
 			styled_placement["visual_style"] = backdrop.style_id
 		piece.configure(styled_placement)
+		piece.geometry_changed.connect(_invalidate_terrain_index)
 		piece.terrain_effect_entered.connect(_forward_terrain_entered)
 		piece.terrain_effect_exited.connect(_forward_terrain_exited)
 	room_ready.emit(room_id, room_bounds)
@@ -210,11 +216,47 @@ func _clear_beacons() -> void:
 
 
 func get_terrain_pieces() -> Array[FoldlightTerrainPiece]:
-	var result: Array[FoldlightTerrainPiece] = []
+	_ensure_terrain_index()
+	return _terrain_pieces.duplicate()
+
+
+## Broad phase only: callers still use the piece's exact rotated/circular test.
+## Buckets retain scene order so overlapping effects resolve as before.
+func get_terrain_candidates(world_point: Vector2) -> Array:
+	_ensure_terrain_index()
+	return _terrain_cells.get(_terrain_cell(world_point), [])
+
+
+func _invalidate_terrain_index() -> void:
+	_terrain_index_dirty = true
+
+
+func _terrain_cell(point: Vector2) -> Vector2i:
+	return Vector2i(floori(point.x / TERRAIN_QUERY_CELL), floori(point.y / TERRAIN_QUERY_CELL))
+
+
+func _ensure_terrain_index() -> void:
+	if not _terrain_index_dirty:
+		return
+	_terrain_index_dirty = false
+	_terrain_pieces.clear()
+	_terrain_cells.clear()
 	for child in terrain_container.get_children():
-		if child is FoldlightTerrainPiece:
-			result.append(child as FoldlightTerrainPiece)
-	return result
+		if not child is FoldlightTerrainPiece or child.is_queued_for_deletion():
+			continue
+		var piece := child as FoldlightTerrainPiece
+		_terrain_pieces.append(piece)
+		if not piece.geometry_changed.is_connected(_invalidate_terrain_index):
+			piece.geometry_changed.connect(_invalidate_terrain_index)
+		var bounds := piece.get_global_query_bounds()
+		var first := _terrain_cell(bounds.position)
+		var last := _terrain_cell(bounds.end)
+		for y in range(first.y, last.y + 1):
+			for x in range(first.x, last.x + 1):
+				var cell := Vector2i(x, y)
+				if not _terrain_cells.has(cell):
+					_terrain_cells[cell] = []
+				(_terrain_cells[cell] as Array).append(piece)
 
 
 func _clear_terrain() -> void:

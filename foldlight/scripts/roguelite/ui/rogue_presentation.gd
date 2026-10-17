@@ -41,6 +41,8 @@ const MOBILE_HUD := preload("res://scripts/roguelite/ui/mobile_combat_hud.gd")
 const WEAPON_ARSENAL := preload("res://scripts/roguelite/ui/weapon_arsenal_strip.gd")
 const ACTIVE_COLLECTION := preload("res://scripts/roguelite/ui/active_skill_collection.gd")
 const ACTIVE_BADGE := preload("res://scripts/roguelite/ui/active_skill_badge.gd")
+const EXPERIENCE_STRIP := preload("res://scripts/roguelite/ui/kill_experience_strip.gd")
+const REWARD_FEEDBACK := preload("res://scripts/roguelite/ui/reward_feedback_text.gd")
 
 var _touch_layout: bool = false
 var _mobile_layout := MOBILE_LAYOUT.new()
@@ -91,6 +93,7 @@ var _hud_active: Label
 var _hud_active_bar: ProgressBar
 var _hud_active_badge: Control
 var _hud_status: Label
+var _hud_experience: Control
 var _hud_objective: Label
 var _hud_objective_detail: Label
 var _hud_objective_bar: ProgressBar
@@ -122,6 +125,8 @@ var _pause_weapons: Array[Label] = []
 var _pause_arsenal_hint: Label
 var _browse_mode_enabled: bool = false
 var _reward_title: Label
+var _reward_eyebrow: Label
+var _reward_metadata: Dictionary = {}
 var _reward_hint: Label
 var _reward_input_guard: Node
 var _reward_buttons: Array[Button] = []
@@ -393,6 +398,9 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 	_hud_region.text = "%s  /  %s" % [region_title, _category_title(StringName(room_node.get("category", &"combat")))]
 	_hud_room.text = _t(&"ROGUE_HUD_ROOM", "房间 %d  ·  微光 %d") % [int(snapshot.get("room_count", 0)) + 1, int(snapshot.get("glimmer", 0))]
 	_hud_context = context
+	_hud_experience.configure(context.get("experience", {}))
+	if is_instance_valid(_navigation_overlay):
+		_navigation_overlay.set_objective_feedback(context.get("objective_feedback", {}))
 	_on_touch_layout_changed()
 	if context.has("region_text"):
 		_hud_region.text = str(context["region_text"])
@@ -492,13 +500,22 @@ func hide_prologue_step() -> void:
 	_quick_tutorial.dismiss()
 
 
-func show_reward(choices: Array[Dictionary], room_title: String) -> void:
+func show_reward(choices: Array[Dictionary], room_title: String, metadata: Dictionary = {}) -> void:
 	_cancel_reward_motion()
+	_reward_metadata = metadata.duplicate(true)
 	_show_only(&"reward")
 	_reward_selection_locked = false
 	_pending_reward_id = &""
 	visual_canvas.configure(&"reward", FOLD)
 	_reward_title.text = _t(&"ROGUE_REWARD_TITLE", "%s · 选择一项奖励") % room_title
+	_reward_eyebrow.text = "航行补给 · 本局生效"
+	match StringName(metadata.get("source", &"")):
+		&"mission":
+			_reward_eyebrow.text = "任务完成 · 本局补给"
+			_reward_title.text = "%s完成 · 领取任务补给" % room_title
+		&"kill_level":
+			_reward_eyebrow.text = "击破成长 · 本局生效"
+			_reward_title.text = "击破升级 · Lv.%d · 选择一项强化" % maxi(1, int(metadata.get("level", 1)))
 	for index in _reward_buttons.size():
 		var button := _reward_buttons[index]
 		if index >= choices.size():
@@ -658,11 +675,16 @@ func _reward_choice_hint() -> String:
 			arsenal_hint = "  ·  武器全部保留，重选升阶"
 			break
 	if _touch_layout:
-		return "轻触一张卡片，领取奖励" + arsenal_hint
+		return _with_reward_heal_hint("轻触一张卡片，领取奖励" + arsenal_hint)
 	# Rewards cannot be dismissed, so show only the shared selection/confirm
 	# bindings and omit the menu's Back action.
 	var hint := INPUT_CONTRACT.menu_hint(_input_device == &"gamepad")
-	return "%s    %s" % [hint.get_slice("    ", 0), hint.get_slice("    ", 1)] + arsenal_hint
+	return _with_reward_heal_hint("%s    %s" % [hint.get_slice("    ", 0), hint.get_slice("    ", 1)] + arsenal_hint)
+
+
+func _with_reward_heal_hint(text: String) -> String:
+	var heal_hint := REWARD_FEEDBACK.heal_on_claim(_reward_metadata)
+	return text + " · " + heal_hint if not heal_hint.is_empty() else text
 
 
 func show_pause() -> void:
@@ -970,6 +992,11 @@ func _build_hud() -> void:
 	_hud_objective.hide()
 	_hud_objective_detail.hide()
 	_hud_objective_bar.hide()
+	_hud_experience = EXPERIENCE_STRIP.new()
+	_hud_experience.name = "KillExperience"
+	_hud_experience.custom_minimum_size = Vector2(520, 74)
+	_hud_experience.hide()
+	boss_stack.add_child(_hud_experience)
 
 	_hud_status = _label("", 20, FOLD)
 	_hud_status.custom_minimum_size.x = 250
@@ -1164,9 +1191,9 @@ func _build_reward() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 22)
 	margin.add_child(stack)
-	var eyebrow := _label("航行补给 · 本局生效", 20, FOLD)
-	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stack.add_child(eyebrow)
+	_reward_eyebrow = _label("航行补给 · 本局生效", 20, FOLD)
+	_reward_eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(_reward_eyebrow)
 	_reward_title = _label("", 38, PAPER)
 	_reward_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(_reward_title)
@@ -1785,7 +1812,7 @@ func _on_reward_input_state_changed() -> void:
 	_reward_collection_button.disabled = not available
 	for card in _reward_buttons:
 		card.set_selection_available(available)
-	_reward_hint.text = _reward_choice_hint() if available else _reward_input_guard.get_hint()
+	_reward_hint.text = _reward_choice_hint() if available else _with_reward_heal_hint(_reward_input_guard.get_hint())
 	if available:
 		var choices := _visible_buttons(_reward_buttons)
 		if _reward_collection_button.visible: choices.append(_reward_collection_button)

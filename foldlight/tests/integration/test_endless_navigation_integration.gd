@@ -39,32 +39,42 @@ func run() -> void:
 		check(slice.controller.defeated_total == kills_before, "retiring a failed task target does not award a kill")
 
 	slice.start_slice(1)
+	slice._clear_pending_spawns()
 	slice.combat_runtime.clear_combat()
 	slice.controller._captain_spawned_for_objective = &""
+	var population_limit := int(slice.controller.evolution.get_enemy_snapshot().population_limit)
 	var crowd: Array[Dictionary] = []
-	for index in slice.MAX_LIVE_ENEMIES:
+	for index in population_limit:
 		crowd.append({"enemy_id": &"drifter", "spawn_position": slice.controller.map_definition.player_spawn + Vector2(index * 3, -400)})
 	slice.combat_runtime.spawn_directed_wave(crowd)
+	slice._report_population()
 	slice.controller.force_next_wave()
 	check(slice.controller._captain_spawned_for_objective.is_empty(), "full enemy capacity cannot falsely acknowledge a task captain")
 	var removed: Node2D = slice.combat_runtime.enemies.pop_back()
 	removed.queue_free()
+	slice._report_population()
 	slice.controller.force_next_wave()
+	check(slice.controller._captain_spawned_for_objective.is_empty() and slice._pending_spawns.size() == 1, "opening a slot queues the captain warning without acknowledging an actor early")
+	_flush_arrivals(slice)
 	check(slice.controller._captain_spawned_for_objective == StringName(slice.controller.objectives.get_snapshot().target_id), "captain retries and is acknowledged once a real actor slot opens")
 	var captain_count := 0
 	for enemy in slice.combat_runtime.enemies:
 		if bool(enemy.get_meta("directed_spawn_entry", {}).get("is_captain", false)):
 			captain_count += 1
+	slice._report_population()
 	slice.controller.force_next_wave()
-	check(captain_count == 1 and slice.combat_runtime.enemies.size() == slice.MAX_LIVE_ENEMIES, "acknowledged captain is not duplicated by subsequent full waves")
+	_flush_arrivals(slice)
+	check(captain_count == 1 and slice.combat_runtime.enemies.size() == population_limit, "acknowledged captain is not duplicated by subsequent full waves")
 
 	slice.start_slice(0)
+	slice._clear_pending_spawns()
 	slice.controller.objectives.rotation_index = 4
 	slice.controller.objectives._start_current_objective()
 	var storm := slice.controller.objectives.get_snapshot()
 	slice.player.global_position = storm.target_position
 	var enemies_before := slice.combat_runtime.enemies.size()
 	slice._ensure_storm_support(1.0)
+	_flush_arrivals(slice)
 	check(slice.combat_runtime.enemies.size() > enemies_before and slice._storm_support_count <= 2, "near-field capture task supplies real limited shooter support on approach")
 	var support_count := slice.combat_runtime.enemies.size()
 	slice._ensure_storm_support(1.0)
@@ -74,6 +84,7 @@ func run() -> void:
 			slice.combat_runtime.enemies.erase(enemy)
 			enemy.queue_free()
 	slice._ensure_storm_support(4.0)
+	_flush_arrivals(slice)
 	check(slice._storm_support_count == 2 and slice.combat_runtime.enemies.size() == support_count, "defeated support is replenished after cooldown without exceeding two live shooters")
 
 	slice.start_slice(0)
@@ -119,6 +130,11 @@ func run() -> void:
 	await process_frame
 	print("FOLDLIGHT_ENDLESS_NAVIGATION_INTEGRATION: %s" % ("PASS" if failures.is_empty() else "FAIL"))
 	quit(0 if failures.is_empty() else 1)
+
+
+func _flush_arrivals(slice: FoldlightEndlessSliceRuntime) -> void:
+	for warning_step in 12:
+		slice._advance_spawn_queue(0.1)
 
 
 func check(condition: bool, label: String) -> void:

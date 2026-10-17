@@ -42,22 +42,30 @@ func _run() -> void:
 	slice.world.deactivate()
 	var controller := slice.controller
 	controller.enemy_wave_requested.disconnect(slice._on_enemy_wave_requested)
+	# Planning runs without the initial queued actor's normal spawn callback.
+	controller.confirm_captain_spawned(StringName(controller.objectives.get_snapshot().get("target_id", &"")))
 	controller.evolution.advance_survival(149.0)
 	controller.wave_sequence = 17
+	controller.report_population({})
 	_check(_bombers(controller._emit_next_wave()).is_empty(), "endless bomber cannot spawn before 150 survival seconds")
 	controller.evolution.advance_survival(1.0)
 	controller.wave_sequence = 17
+	controller.report_population({})
 	var first := controller._emit_next_wave()
 	_check(_bombers(first).size() == 1, "150-second authored third wave contains one bomber")
 	controller.wave_sequence = 17
+	controller.report_population({})
 	var same := controller._emit_next_wave()
 	_check(_bombers(first) == _bombers(same), "same seed, survival stage and wave deterministically place the same bomber")
 	controller.wave_sequence = 18
+	controller.report_population({})
 	_check(_bombers(controller._emit_next_wave()).is_empty(), "intermediate endless wave adds no bomber")
 	slice.world.activate()
 	var bomber_only := {"entries": _bombers(first)}
 	for attempt in 4:
 		slice._on_enemy_wave_requested(bomber_only)
+	for warning_step in 12:
+		slice._advance_spawn_queue(0.1)
 	_check(slice.combat_runtime.enemies.filter(func(enemy: Node) -> bool: return enemy.definition.content_id == &"cinder_mine").size() == 2, "repeated endless waves cannot exceed two live bombers")
 	_check(slice._bomber_introduced, "first endless spawn enables the concise warning notice")
 	slice.start_slice(331)

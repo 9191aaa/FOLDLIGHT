@@ -17,6 +17,19 @@ extends Resource
 @export_range(1.0, 5.0, 0.05) var health_growth_per_stage: float = 1.18
 @export_range(1.0, 4.0, 0.05) var projectile_growth_per_stage: float = 1.12
 
+@export_group("Population Budget")
+@export_range(4, 48, 1) var base_population_limit: int = 18
+@export_range(4, 48, 1) var maximum_population_limit: int = 36
+@export_range(4, 120, 1) var base_threat_limit: int = 24
+@export_range(4, 120, 1) var maximum_threat_limit: int = 72
+@export_range(320.0, 1200.0, 10.0) var spawn_safe_distance: float = 620.0
+
+@export_group("Kill Experience and Recovery")
+@export_range(1, 100, 1) var first_level_experience: int = 18
+@export_range(1, 40, 1) var experience_step: int = 8
+@export_range(0, 3, 1) var mission_recovery: int = 1
+@export_range(2, 10, 1) var recovery_level_interval: int = 3
+
 @export_group("Objectives")
 @export_range(3.0, 40.0, 0.5) var capture_hold_seconds: float = 12.0
 @export_range(10.0, 180.0, 1.0) var objective_time_limit: float = 90.0
@@ -44,6 +57,14 @@ func validation_errors() -> Array[String]:
 		errors.append("the complete 2.0 enemy family must remain available")
 	if minimum_spawn_interval > base_spawn_interval:
 		errors.append("minimum spawn interval cannot exceed the base interval")
+	if base_population_limit <= 0 or maximum_population_limit < base_population_limit:
+		errors.append("population limits must be positive and ordered")
+	if base_threat_limit <= 0 or maximum_threat_limit < base_threat_limit:
+		errors.append("threat limits must be positive and ordered")
+	if first_level_experience <= 0 or experience_step <= 0 or recovery_level_interval < 2:
+		errors.append("experience thresholds and recovery interval must be positive")
+	if not is_finite(spawn_safe_distance) or spawn_safe_distance < 320.0:
+		errors.append("spawn safety radius must be finite and at least 320 pixels")
 	return errors
 
 

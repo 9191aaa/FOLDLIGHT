@@ -49,8 +49,9 @@ func _run() -> void:
 	(slice.presentation._focus_groups[&"pause"][0] as Button).grab_focus()
 	(slice.presentation._focus_groups[&"pause"][0] as Button).pressed.emit()
 	_check(slice.get_slice_snapshot().modal_kind == &"", "continue button resumes the same run")
-	var options := slice.controller.evolution.get_mission_reward_options(0)
-	slice._on_mission_reward_offered(options, {"title": "折光任务"})
+	# Rewards are recovered from persisted controller entitlements; a bare
+	# presentation signal must not invent a claimable choice.
+	slice.controller._on_objective_completed({"completion_count": 2, "title": "折光任务"})
 	# Finish the visible facility unfold before inspecting or choosing cards.
 	for transition_step in 6:
 		slice._advance_reward_completion(0.1)

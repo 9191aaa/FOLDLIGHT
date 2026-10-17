@@ -147,7 +147,7 @@ func _test_endless() -> void:
 func _test_race() -> void:
 	var bridge := RecordingBridge.new()
 	root.add_child(bridge)
-	bridge.configure_session({"roomId": "skills", "matchId": "skills", "playerId": "test", "instanceId": "skills-315", "seed": 315315, "rulesVersion": "endless_race_v6"})
+	bridge.configure_session({"roomId": "skills", "matchId": "skills", "playerId": "test", "instanceId": "skills-315", "seed": 315315, "rulesVersion": "endless_race_v7"})
 	bridge.set_process(false)
 	var slice := (load("res://scenes/endless/endless_survival_slice.tscn") as PackedScene).instantiate() as FoldlightEndlessSliceRuntime
 	root.add_child(slice)

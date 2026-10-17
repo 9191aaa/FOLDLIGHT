@@ -3,6 +3,7 @@ extends Control
 signal pause_requested
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
 const WEAPON_ARSENAL = preload("res://scripts/roguelite/ui/weapon_arsenal_strip.gd")
+const EXPERIENCE_STRIP = preload("res://scripts/roguelite/ui/kill_experience_strip.gd")
 var health: Label
 var voyage: Label
 var fold: Label
@@ -15,6 +16,7 @@ var charge_bar: ProgressBar
 var boss_bar: ProgressBar
 var pause_button: Button
 var arsenal: Control
+var experience: Control
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -28,6 +30,9 @@ func _ready() -> void:
 	arsenal.size = Vector2(voyage.size.x, 58)
 	add_child(arsenal)
 	status = _text(Vector2(1380, 130), Vector2(340, 44), 32, Palette.FOLD)
+	experience = EXPERIENCE_STRIP.new()
+	experience.name = "MobileKillExperience"
+	add_child(experience)
 	fold = _text(Vector2(44, 212), Vector2(540, 44), 34, Palette.PAPER)
 	focus_bar = _bar(Rect2(44, 263, 380, 12), Palette.FOLD)
 	charge_bar = _bar(Rect2(44, 283, 380, 10), Palette.GOLD)
@@ -57,6 +62,8 @@ func apply_safe_area(insets: Vector4) -> void:
 	pause_button.position.x = width - right - 120.0
 	status.position.x = pause_button.position.x - 376.0
 	status.size.x = 340.0
+	experience.position = status.position
+	experience.size = Vector2(status.size.x, 58)
 	voyage.position.x = left + 376.0
 	voyage.size.x = maxf(200.0, status.position.x - voyage.position.x - 32.0)
 	# This is the existing voyage slot, ending before the navigation task panel.
@@ -79,6 +86,8 @@ func update_from(source: Node) -> void:
 	# The first line reports current pressure; the secondary evolution count
 	# belongs to the result screen and must not spill under the task panel.
 	status.text = source._hud_status.text.get_slice("\n", 0)
+	experience.configure(source._hud_context.get("experience", {}), true)
+	status.visible = not experience.visible
 	fold.text = source._hud_fold.text.replace("折域  ·  ", "").replace("折域回折  ", "回折 ")
 	focus_bar.value = source._hud_focus_bar.value
 	charge_bar.value = source._hud_charge_bar.value
