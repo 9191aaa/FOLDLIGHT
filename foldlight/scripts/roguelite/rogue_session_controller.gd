@@ -50,6 +50,8 @@ var _kill_shake_cooldown: float = 0.0
 var _boss_clear_banner: Control
 var _boss_clear_snapshot: Dictionary = {}
 var _scene_transitioning: bool = false
+var _music_sample_clock: float = 0.0
+var _music_wave_progress: float = 0.0
 
 @onready var player: FoldlightPlayer = get_parent().get_node("Player")
 @onready var run_controller: FoldlightRogueRunController = get_parent().get_node("RogueRunController")
@@ -159,6 +161,10 @@ func _process(delta: float) -> void:
 		_kill_combo_count = 0
 	if _can_advance_encounter():
 		world.room_runtime.advance_encounter(delta)
+		_music_sample_clock -= delta
+		if _music_sample_clock <= 0.0 and _can_advance_encounter():
+			_music_sample_clock = 1.0
+			audio_director.set_intensity(_combat_music_pressure())
 	if mode == SessionMode.RUN and run_controller.phase in [FoldlightRogueRunController.Phase.ENTERING_ROOM, FoldlightRogueRunController.Phase.COMBAT]:
 		run_controller.run_state.elapsed += delta
 	elif mode == SessionMode.PROLOGUE:
@@ -183,7 +189,7 @@ func enter_title() -> void:
 	player.visible = false
 	presentation.show()
 	presentation.show_title(profile_manager.get_roguelite_snapshot())
-	audio_director.set_intensity(0.045)
+	audio_director.set_music_context(&"title", &"", 0.045)
 
 
 func _on_endless_requested() -> void:
@@ -283,7 +289,7 @@ func start_prologue() -> void:
 	player.set_play_enabled(true)
 	_prologue_last_position = player.global_position
 	presentation.show_prologue_step(1, PROLOGUE_STEPS.size(), str(PROLOGUE_STEPS[0]["title"]), str(PROLOGUE_STEPS[0]["body"]))
-	audio_director.set_intensity(0.10)
+	audio_director.set_music_context(&"combat", &"paper_reef", 0.10)
 
 
 func _activate_gameplay() -> void:
@@ -361,6 +367,11 @@ func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> v
 	player.set_play_enabled(true)
 	current_wave_text = ""
 	presentation.show_hud()
+	_music_wave_progress = 0.0
+	_music_sample_clock = 1.0
+	# Spawn signals can synchronously open a mechanic briefing. Establish the
+	# room first so its quiet overlay remains the final audible context.
+	_restore_combat_music()
 	var plan := _boss_plan(room_node) if category == &"boss" else _encounter_plan(room_node)
 	var begin_errors := world.room_runtime.begin_encounter(plan)
 	if not begin_errors.is_empty():
@@ -368,7 +379,6 @@ func _on_room_requested(room_node: Dictionary, region_snapshot: Dictionary) -> v
 		run_controller.fail_run(&"invalid_encounter")
 		return
 	run_controller.begin_combat()
-	audio_director.set_intensity(0.18 + float(run_controller.run_state.current_region) * 0.13 + (0.18 if category == &"boss" else 0.0))
 	if category == &"boss":
 		audio_director.play_sfx(&"boss", 1.0, -2.0)
 
@@ -498,17 +508,16 @@ func _on_run_room_cleared(room_node: Dictionary, performance: Dictionary) -> voi
 	_current_reward_kind = &""
 	_pending_reward_sequence.clear()
 	_current_reward_title = _category_display(StringName(room_node.get("category", &"combat")))
+	audio_director.set_music_context(&"reward")
 	if run_controller.run_state.room_count == 2 and run_controller.run_state.active_item_id.is_empty():
 		_pending_reward_sequence = [&"upgrade", &"active"]
 		_show_next_reward_stage(rogue)
-		audio_director.set_intensity(0.07)
 		return
 	var choices := _draft_room_reward(StringName(room_node.get("category", &"combat")), rogue)
 	if choices.is_empty():
 		run_controller.open_route_choice()
 		return
 	presentation.show_reward(choices, _category_display(StringName(room_node.get("category", &"combat"))))
-	audio_director.set_intensity(0.07)
 
 
 func _begin_boss_clear() -> void:
@@ -524,7 +533,9 @@ func _begin_boss_clear() -> void:
 	var next_region := run_controller.run_state.current_region + 1
 	var next_title := FoldlightRogueContentCatalog.REGIONS[next_region].title if next_region < FoldlightRogueContentCatalog.REGIONS.size() else ""
 	_boss_clear_banner.present(str(_boss_clear_snapshot.get("title", "首领")), next_title)
-	audio_director.set_intensity(0.055)
+	# Keep the Boss phrase running while its energy settles beneath the clear
+	# chime; the 2.2-second aftermath must not restart a different overture.
+	audio_director.set_music_context(&"victory")
 	audio_director.play_sfx(&"victory", 1.0, -4.0)
 
 
@@ -557,6 +568,7 @@ func _restore_boss_clear() -> void:
 	_equip_run_loadout()
 	player.health = clampi(run_controller.run_state.health, 1, player.max_health)
 	world.room_runtime.set_doors_locked(true)
+	_restore_combat_music()
 	_begin_boss_clear()
 
 
@@ -600,6 +612,7 @@ func _route_view_snapshot() -> Dictionary:
 func _on_route_choice_requested(exits: Array[String]) -> void:
 	_enter_modal_safety()
 	presentation.show_route(_route_view_snapshot(), StringName(current_room_node.get("id", &"")), exits)
+	audio_director.set_music_context(&"route", &"", 0.10)
 
 
 func _on_route_chosen(destination_id: StringName) -> void:
@@ -635,6 +648,8 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 	player.set_play_enabled(false)
 	player.visible = false
 	if phase_hint == &"reward":
+		_restore_combat_music()
+		audio_director.set_music_context(&"reward")
 		_current_reward_kind = StringName(checkpoint.get("reward_current_kind", &""))
 		_pending_reward_sequence = _name_array(checkpoint.get("reward_sequence", []))
 		_current_reward_title = str(checkpoint.get("reward_title", _category_display(StringName(current_room_node.get("category", &"combat")))))
@@ -649,7 +664,7 @@ func _restore_pending_session(checkpoint: Dictionary) -> void:
 		for value: Variant in current_room_node.get("exits", []):
 			exits.append(String(value))
 		presentation.show_route(_route_view_snapshot(), StringName(current_room_node.get("id", &"")), exits)
-	audio_director.set_intensity(0.06)
+		audio_director.set_music_context(&"route", &"", 0.10)
 
 
 func _on_run_finished(result: Dictionary) -> void:
@@ -667,7 +682,7 @@ func _on_run_finished(result: Dictionary) -> void:
 		profile_manager.record_roguelite_run(completed)
 		_result_committed = true
 	presentation.show_result(completed)
-	audio_director.set_intensity(0.04)
+	audio_director.set_music_context(&"victory" if bool(completed.get("won", false)) else &"defeat")
 	if bool(completed.get("won", false)) and not from_boss_clear:
 		audio_director.play_sfx(&"victory", 1.0, -2.0)
 	elif not bool(completed.get("won", false)) and StringName(completed.get("reason", &"")) != &"lantern_extinguished":
@@ -747,7 +762,7 @@ func _show_next_mechanic_briefing() -> void:
 	_mechanic_intro_active = true
 	_enter_modal_safety()
 	presentation.show_mechanic_card(_mechanic_intro_queue[0])
-	audio_director.set_intensity(0.035)
+	audio_director.set_music_context(&"paused")
 
 
 func _on_mechanic_card_dismissed(content_id: StringName) -> void:
@@ -779,11 +794,12 @@ func _finish_mechanic_briefings() -> void:
 		presentation.show_prologue_step(_prologue_step_index + 1, PROLOGUE_STEPS.size(), str(step["title"]), str(step["body"]))
 	else:
 		presentation.show_hud()
-	audio_director.set_intensity(0.18 + float(run_controller.run_state.current_region) * 0.13)
+	_restore_combat_music()
 
 
 func _on_wave_started(wave_number: int, total_waves: int) -> void:
 	current_wave_text = "第 %d / %d 波" % [wave_number, total_waves]
+	_music_wave_progress = float(maxi(0, wave_number - 1)) / float(maxi(1, total_waves - 1))
 
 
 func _refresh_hud() -> void:
@@ -845,6 +861,7 @@ func _show_next_reward_stage(rogue: Dictionary) -> void:
 		_show_next_reward_stage(rogue)
 		return
 	presentation.show_reward(choices, _reward_stage_title(_current_reward_kind, _current_reward_title))
+	audio_director.set_music_context(&"reward")
 
 
 func _reward_stage_title(kind: StringName, room_title: String) -> String:
@@ -1031,7 +1048,7 @@ func _finish_prologue() -> void:
 	player.visible = false
 	presentation.hide_prologue_step()
 	presentation.show_result({"won": true}, true)
-	audio_director.set_intensity(0.04)
+	audio_director.set_music_context(&"victory")
 	audio_director.play_sfx(&"victory", 1.0, -2.0)
 
 
@@ -1236,7 +1253,7 @@ func _pause_game() -> void:
 	_paused = true
 	_enter_modal_safety()
 	presentation.show_pause()
-	audio_director.set_intensity(0.045)
+	audio_director.set_music_context(&"paused")
 
 
 func is_paused() -> bool:
@@ -1259,7 +1276,30 @@ func _resume_game() -> void:
 		presentation.show_prologue_step(_prologue_step_index + 1, PROLOGUE_STEPS.size(), str(step["title"]), str(step["body"]))
 	else:
 		presentation.show_hud()
-	audio_director.set_intensity(0.18 + float(run_controller.run_state.current_region) * 0.13)
+	_restore_combat_music()
+
+
+func _restore_combat_music() -> void:
+	var context := &"boss" if mode == SessionMode.RUN and StringName(current_room_node.get("category", &"")) == &"boss" else &"combat"
+	var region := current_region_definition.content_id if current_region_definition != null else &"paper_reef"
+	audio_director.set_music_context(context, region, _combat_music_pressure())
+	_music_sample_clock = 1.0
+
+
+func _combat_music_pressure() -> float:
+	if mode == SessionMode.PROLOGUE:
+		return 0.10 + (0.12 if _prologue_encounter_started else 0.0)
+	var pressure := 0.22 + float(run_controller.run_state.current_region) * 0.11
+	pressure += minf(0.10, float(current_room_node.get("depth", 0)) * 0.02)
+	pressure += _music_wave_progress * 0.12
+	pressure += minf(0.14, float(world.combat_runtime.enemies.size()) * 0.009)
+	pressure += minf(0.10, float(world.combat_runtime.projectiles.size()) * 0.0006)
+	if StringName(current_room_node.get("category", &"")) == &"boss":
+		pressure += 0.22
+		for actor in world.combat_runtime.enemies:
+			if is_instance_valid(actor) and actor is FoldlightRogueBossActor:
+				pressure += float((actor as FoldlightRogueBossActor).phase_controller.phase_index) * 0.07
+	return clampf(pressure, 0.0, 0.96)
 
 
 func _on_abandon_requested() -> void:

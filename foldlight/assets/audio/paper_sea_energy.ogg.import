@@ -14,6 +14,6 @@ dest_files=["res://.godot/imported/paper_sea_energy.ogg-673d79a1f326234d362ec17f
 
 loop=true
 loop_offset=0
-bpm=74.4
-beat_count=32
+bpm=80.0
+beat_count=64
 bar_beats=4

@@ -38,6 +38,7 @@ var _kill_shake_cooldown: float = 0.0
 var _return_kick_cooldown: float = 0.0
 var _barrage_elite_introduced: bool = false
 var _bomber_introduced: bool = false
+var _music_sample_clock: float = 0.0
 
 @onready var controller: FoldlightEndlessSurvivalController = $Controller
 @onready var audio_director: FoldlightAudioDirector = get_node("/root/AudioDirector") as FoldlightAudioDirector
@@ -101,6 +102,7 @@ func prepare_web_race(bridge: Node) -> bool:
 	_race_prepared = true
 	_modal_kind = &"race_waiting"
 	_set_combat_suspended(true)
+	audio_director.set_music_context(&"paused")
 	presentation.show_result({
 		"title": "好友无尽 · 等待出发",
 		"body": "双方准备完成后，统一倒计时。\n同一种子、相同基础机体；按有效战斗时间比较。",
@@ -122,6 +124,7 @@ func begin_web_race() -> void:
 	presentation.show_hud()
 	combat_runtime.set_active(true)
 	player.set_play_enabled(true)
+	_restore_survival_music()
 	_refresh_hud()
 
 
@@ -133,6 +136,7 @@ func stop_web_race(reason: String) -> void:
 	controller.exit_mode(StringName(reason))
 	_modal_kind = &"race_finished"
 	_modal_options.clear()
+	audio_director.set_music_context(&"defeat" if reason in ["player_defeated", "abandoned", "forfeit", "disconnected"] else &"victory")
 	presentation.show_result({
 		"title": "灯火熄灭" if reason == "player_defeated" else "好友对局已结束",
 		"body": "有效航行 %s · 击破 %d\n请在联机房间查看成绩。本局不能重新开始。" % [_format_time(controller.evolution.survival_seconds), controller.defeated_total],
@@ -212,6 +216,7 @@ func start_slice(seed: int = 20260728) -> Dictionary:
 	var snapshot := controller.enter_mode(seed, player)
 	_refresh_combined_modifiers()
 	controller.force_next_wave()
+	_restore_survival_music()
 	_refresh_hud()
 	return snapshot
 
@@ -228,6 +233,10 @@ func _physics_process(delta: float) -> void:
 	if run_ended:
 		return
 	_ensure_storm_support(delta)
+	_music_sample_clock -= delta
+	if _music_sample_clock <= 0.0:
+		_music_sample_clock = 1.0
+		audio_director.set_intensity(_survival_music_pressure())
 	_hud_clock -= delta
 	if _hud_clock <= 0.0:
 		_hud_clock = 0.10
@@ -276,6 +285,7 @@ func _pause_game() -> void:
 	_modal_kind = &"pause"
 	_set_combat_suspended(true)
 	presentation.show_pause()
+	audio_director.set_music_context(&"paused")
 
 
 func _resume_game() -> void:
@@ -337,6 +347,7 @@ func _return_to_title() -> void:
 		_web_race_bridge.call("finish_local", &"abandoned", "abandoned")
 		return
 	_transitioning_to_title = true
+	audio_director.set_music_context(&"title", &"", 0.045)
 	player.set_play_enabled(false)
 	world.deactivate()
 	controller.exit_mode(&"return_to_title")
@@ -485,6 +496,7 @@ func _on_mission_reward_offered(options: Array[Dictionary], objective_snapshot: 
 	_claiming_reward = false
 	_set_combat_suspended(true)
 	presentation.show_reward(_reward_card_choices(), str(objective_snapshot.get("title", "系统任务")))
+	audio_director.set_music_context(&"reward")
 
 
 func _reward_card_choices() -> Array[Dictionary]:
@@ -552,6 +564,7 @@ func _finish_run(reason: StringName = &"player_defeated") -> void:
 	player.set_play_enabled(false)
 	combat_runtime.set_active(false)
 	controller.exit_mode(reason)
+	audio_director.set_music_context(&"defeat")
 	if _web_race_bridge != null:
 		_web_race_bridge.call("finish_local", &"dead", "player_defeated")
 		return
@@ -575,6 +588,28 @@ func _set_combat_suspended(suspended: bool) -> void:
 	else:
 		combat_runtime.set_active(true)
 		player.resume_from_overlay(0.75)
+		_restore_survival_music()
+
+
+func _restore_survival_music() -> void:
+	# Music reads the authored map choice; it never consumes the seeded
+	# simulation RNG or changes the identical battlefield used by race peers.
+	var region: StringName = {
+		&"folded_delta": &"paper_reef",
+		&"inverted_canals": &"inverted_ink_city",
+		&"solar_archipelago": &"nameless_sun_court",
+	}.get(controller.map_definition.map_id, &"paper_reef")
+	audio_director.set_music_context(&"endless", region, _survival_music_pressure())
+	_music_sample_clock = 1.0
+
+
+func _survival_music_pressure() -> float:
+	var stage := int(controller.evolution.get_enemy_snapshot().get("stage", 0))
+	var pressure := 0.24 + minf(0.30, controller.evolution.survival_seconds / 720.0 * 0.30)
+	pressure += minf(0.12, float(controller.wave_sequence) / 36.0 * 0.12)
+	pressure += minf(0.20, float(combat_runtime.enemies.size()) * 0.005)
+	pressure += minf(0.10, float(stage) * 0.015)
+	return clampf(pressure, 0.0, 0.96)
 
 
 func _refresh_combined_modifiers() -> void:

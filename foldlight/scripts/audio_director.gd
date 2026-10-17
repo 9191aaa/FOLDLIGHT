@@ -11,8 +11,11 @@ const POOL_SIZE: int = 12
 const IMPACT_TOKEN_LIMIT: float = 4.0
 const IMPACT_TOKEN_REFILL: float = 18.0
 const IMPACT_GAPS: Dictionary = {&"weapon": 0.065, &"return": 0.085, &"break": 0.10}
-const MUSIC_BASE: AudioStream = preload("res://assets/audio/paper_sea_base.ogg")
-const MUSIC_ENERGY: AudioStream = preload("res://assets/audio/paper_sea_energy.ogg")
+const MUSIC_THEMES: Dictionary = {
+	&"harbor": "paper_harbor", &"reef": "paper_sea", &"archive": "paper_archive",
+	&"eclipse": "paper_eclipse", &"boss": "paper_boss",
+}
+const MUSIC_CROSSFADE_SECONDS: float = 2.4
 const PAPER_CUTOFF_HZ: float = 4200.0
 
 var _music_player: AudioStreamPlayer
@@ -24,6 +27,20 @@ var _pool_cursor: int = 0
 var _intensity: float = 0.0
 var _target_intensity: float = 0.0
 var _music_gain: float = 0.0
+var _music_pressure: float = 0.0
+var _music_context: StringName = &"title"
+var _music_region: StringName = &"paper_reef"
+var _music_theme: StringName = &"harbor"
+var _music_scene_gain: float = 1.0
+var _music_scene_target: float = 1.0
+var _music_banks: Array[Dictionary] = []
+var _music_positions: Dictionary = {}
+var _music_active_bank: int = 0
+var _music_incoming_bank: int = -1
+var _music_fade_elapsed: float = 0.0
+var _music_enabled: bool = true
+var _web_music_cache: JavaScriptObject
+var _music_pending_release: Array[AudioStream] = []
 var _muted: bool = false
 var _impact_tokens: float = IMPACT_TOKEN_LIMIT
 var _impact_cooldowns: Dictionary = {}
@@ -43,12 +60,11 @@ func _process(delta: float) -> void:
 	_hurt_focus_remaining = maxf(0.0, _hurt_focus_remaining - delta)
 	for kind in _impact_cooldowns:
 		_impact_cooldowns[kind] = maxf(0.0, float(_impact_cooldowns[kind]) - delta)
-	_intensity = move_toward(_intensity, _target_intensity, delta * 0.32)
-	_music_gain = move_toward(_music_gain, 1.0, delta * 8.0)
-	if is_instance_valid(_music_player):
-		_music_player.volume_linear = _music_gain
-	if is_instance_valid(_music_energy_player):
-		_music_energy_player.volume_linear = _intensity * _music_gain
+	var quiet := _music_context in [&"paused", &"reward", &"victory", &"defeat"]
+	_intensity = move_toward(_intensity, _target_intensity, delta * (0.85 if quiet else 0.32))
+	_music_gain = move_toward(_music_gain, 1.0, delta * 0.75)
+	_music_scene_gain = move_toward(_music_scene_gain, _music_scene_target, delta * 0.65)
+	_update_music_banks(delta)
 
 
 func _exit_tree() -> void:
@@ -56,10 +72,10 @@ func _exit_tree() -> void:
 
 
 func shutdown() -> void:
-	for music in [_music_player, _music_energy_player]:
-		if is_instance_valid(music):
-			music.stop()
-			music.stream = null
+	_music_enabled = false
+	_music_incoming_bank = -1
+	for bank in _music_banks:
+		_clear_music_bank(bank)
 	if is_instance_valid(_hurt_player):
 		_hurt_player.stop()
 		_hurt_player.stream = null
@@ -72,7 +88,59 @@ func shutdown() -> void:
 
 
 func set_intensity(value: float) -> void:
-	_target_intensity = clampf(value, 0.0, 1.0)
+	_music_pressure = clampf(value, 0.0, 1.0)
+	_update_music_mood()
+
+
+## Presentation only: neither scene transitions nor musical variation use the
+## gameplay RNG or affect combat time. Quiet overlays retain the current score.
+func set_music_context(context: StringName, region: StringName = &"", intensity: float = -1.0) -> void:
+	if context not in [&"title", &"route", &"rest", &"combat", &"boss", &"endless", &"reward", &"paused", &"victory", &"defeat"]:
+		return
+	_music_context = context
+	if region != &"": _music_region = region
+	if intensity >= 0.0: _music_pressure = clampf(intensity, 0.0, 1.0)
+	match context:
+		&"title", &"route", &"rest": _music_theme = &"harbor"
+		&"boss": _music_theme = &"boss"
+		&"combat", &"endless":
+			match _music_region:
+				&"inverted_ink_city": _music_theme = &"archive"
+				&"nameless_sun_court": _music_theme = &"eclipse"
+				_: _music_theme = &"reef"
+	_update_music_mood()
+	if _music_enabled and not _music_banks.is_empty() and _music_incoming_bank < 0:
+		_begin_music_transition()
+
+
+func _update_music_mood() -> void:
+	var energy_scale := 1.0
+	_music_scene_target = 1.0
+	match _music_context:
+		&"title", &"route", &"rest": energy_scale = 0.45
+		&"paused", &"reward":
+			energy_scale = 0.08
+			_music_scene_target = 0.65
+		&"victory":
+			energy_scale = 0.03
+			_music_scene_target = 0.75
+		&"defeat":
+			energy_scale = 0.0
+			_music_scene_target = 0.55
+	_target_intensity = _music_pressure * energy_scale
+
+
+func get_music_state() -> Dictionary:
+	var themes: Array[StringName] = []
+	var playing := 0
+	for bank in _music_banks:
+		if bank.theme != &"": themes.append(bank.theme)
+		for voice: AudioStreamPlayer in [bank.base, bank.energy]:
+			if voice.playing: playing += 1
+	return {"context": _music_context, "theme": _music_theme, "region": _music_region,
+		"intensity": _intensity, "target_intensity": _target_intensity,
+		"loaded_themes": themes, "playing_layers": playing,
+		"transitioning": _music_incoming_bank >= 0, "enabled": _music_enabled}
 
 
 func play_sfx(sound_name: StringName, pitch: float = 1.0, volume_db: float = 0.0) -> void:
@@ -155,24 +223,120 @@ func is_muted() -> bool:
 
 
 func _build_music_player() -> void:
+	if not _music_banks.is_empty(): return
 	_music_gain = 0.0
-	_music_player = AudioStreamPlayer.new()
-	_music_player.name = "GeneratedMusic"
-	_music_player.bus = &"Music"
-	_music_player.stream = MUSIC_BASE
-	_music_player.volume_linear = 0.0
-	_music_energy_player = AudioStreamPlayer.new()
-	_music_energy_player.name = "MusicEnergy"
-	_music_energy_player.bus = &"Music"
-	_music_energy_player.stream = MUSIC_ENERGY
-	_music_energy_player.volume_linear = 0.0
 	if OS.has_feature("web"):
-		_music_player.playback_type = AudioServer.PLAYBACK_TYPE_SAMPLE
-		_music_energy_player.playback_type = AudioServer.PLAYBACK_TYPE_SAMPLE
-	add_child(_music_player)
-	add_child(_music_energy_player)
-	_music_player.play()
-	_music_energy_player.play()
+		_web_music_cache = JavaScriptBridge.get_interface("FoldlightMusicCache")
+	for index in 2:
+		var bank := {"theme": &"", "offset": 0.0, "started_at": 0}
+		for layer in ["base", "energy"]:
+			var voice := AudioStreamPlayer.new()
+			voice.name = "Music%d%s" % [index, layer.capitalize()]
+			voice.bus = &"Music"
+			voice.volume_linear = 0.0
+			if OS.has_feature("web"):
+				voice.playback_type = AudioServer.PLAYBACK_TYPE_SAMPLE
+			add_child(voice)
+			bank[layer] = voice
+		_music_banks.append(bank)
+	_load_music_bank(_music_banks[0], _music_theme)
+	_set_active_music_bank(0)
+
+
+func _load_music_bank(bank: Dictionary, theme: StringName) -> void:
+	var prefix: String = MUSIC_THEMES[theme]
+	for layer in ["base", "energy"]:
+		var voice: AudioStreamPlayer = bank[layer]
+		voice.stream = ResourceLoader.load("res://assets/audio/%s_%s.ogg" % [prefix, layer], "AudioStreamOggVorbis", ResourceLoader.CACHE_MODE_IGNORE)
+		voice.volume_linear = 0.0
+		if OS.has_feature("web"):
+			# Decode BOTH layers before starting either clock. Web uses native
+			# AudioBuffer loops so busy gameplay frames cannot interrupt music.
+			AudioServer.register_stream_as_sample(voice.stream)
+			if _web_music_cache != null:
+				_web_music_cache.prepare(str(voice.stream.get_instance_id()))
+	bank.theme = theme
+	bank.offset = fmod(float(_music_positions.get(theme, 0.0)), bank.base.stream.get_length())
+	bank.started_at = Time.get_ticks_msec()
+	bank.base.play(bank.offset)
+	bank.energy.play(bank.offset)
+
+
+func _clear_music_bank(bank: Dictionary) -> void:
+	if bank.theme != &"":
+		_music_positions[bank.theme] = float(bank.offset) + float(Time.get_ticks_msec() - int(bank.started_at)) / 1000.0
+	# Stop both sources before retiring their browser-side PCM. Releasing the
+	# Godot resource alone leaves an entry in the Web driver's sample registry.
+	bank.base.stop()
+	bank.energy.stop()
+	for voice: AudioStreamPlayer in [bank.base, bank.energy]:
+		if voice.stream != null and _web_music_cache != null:
+			if not _web_music_cache.release(str(voice.stream.get_instance_id())):
+				_music_pending_release.append(voice.stream)
+		voice.stream = null
+	bank.theme = &""
+
+
+func _set_active_music_bank(index: int) -> void:
+	_music_active_bank = index
+	_music_player = _music_banks[index].base
+	_music_energy_player = _music_banks[index].energy
+
+
+func _begin_music_transition() -> void:
+	if _music_banks[_music_active_bank].theme == _music_theme: return
+	# Packaged Web builds always supply the bounded cache adapter. A raw engine
+	# export keeps its initial cue rather than accumulating unreleasable samples.
+	if OS.has_feature("web") and _web_music_cache == null: return
+	_music_incoming_bank = 1 - _music_active_bank
+	_music_fade_elapsed = 0.0
+	if not OS.has_feature("web"):
+		_load_music_bank(_music_banks[_music_incoming_bank], _music_theme)
+
+
+func _apply_music_gain(bank: Dictionary, weight: float) -> void:
+	var gain := _music_gain * _music_scene_gain * weight
+	bank.base.volume_linear = gain
+	bank.energy.volume_linear = gain * _intensity
+
+
+func _update_music_banks(delta: float) -> void:
+	if not _music_enabled or _music_banks.is_empty(): return
+	for index in range(_music_pending_release.size() - 1, -1, -1):
+		if _web_music_cache.release(str(_music_pending_release[index].get_instance_id())):
+			_music_pending_release.remove_at(index)
+	if _music_incoming_bank < 0:
+		_apply_music_gain(_music_banks[_music_active_bank], 1.0)
+		_begin_music_transition()
+		return
+	var outgoing := _music_banks[_music_active_bank]
+	var incoming := _music_banks[_music_incoming_bank]
+	var half := MUSIC_CROSSFADE_SECONDS * 0.5
+	if OS.has_feature("web"):
+		# Fade through on mobile browsers: release the old pair BEFORE decoding
+		# the new one. At most two music buffers live, independent of room count.
+		if outgoing.theme != &"":
+			_music_fade_elapsed += delta
+			_apply_music_gain(outgoing, 1.0 - clampf(_music_fade_elapsed / half, 0.0, 1.0))
+			if _music_fade_elapsed >= half:
+				_clear_music_bank(outgoing)
+				_music_fade_elapsed = half
+			return
+		if incoming.theme == &"":
+			if _music_pending_release.is_empty():
+				_load_music_bank(incoming, _music_theme)
+			return
+		_music_fade_elapsed += delta
+		_apply_music_gain(incoming, clampf((_music_fade_elapsed - half) / half, 0.0, 1.0))
+	else:
+		_music_fade_elapsed += delta
+		var blend := clampf(_music_fade_elapsed / MUSIC_CROSSFADE_SECONDS, 0.0, 1.0)
+		_apply_music_gain(outgoing, 1.0 - blend)
+		_apply_music_gain(incoming, blend)
+	if _music_fade_elapsed >= MUSIC_CROSSFADE_SECONDS:
+		_clear_music_bank(outgoing)
+		_set_active_music_bank(_music_incoming_bank)
+		_music_incoming_bank = -1
 
 
 func _build_sfx_pool() -> void:

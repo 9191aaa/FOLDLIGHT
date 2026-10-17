@@ -1,4 +1,4 @@
-# FOLDLIGHT / 折光 3.11.0
+# FOLDLIGHT / 折光 3.12.0
 
 当前为纸海统一重构预览：保留「迷航」与「无尽挑战」，移除三章十二航故事模式。两模式直接复用玩家操作和同一套 HUD、奖励卡、暂停、设置与结算组件；好友生存继续可用。运行、验证和架构说明见 [仓库 README](../README.md) 和 [重构记录](docs/godot-prompter/plans/unified_refactor.md)。
 
@@ -32,6 +32,7 @@ Windows 发行包运行 `FOLDLIGHT.exe`；Android 安装带发布签名的 APK�
 - 原八种敌人构成每个区域的战斗主体；固定炮塔、系铃增益单位与墨守控场单位只按职责配额叠加。
 - 锻造房提供自动武器替换，漂灯市提供主动道具替换；普通奖励优先拓宽局内构筑。
 - 迷航会在房间、奖励和路线选择阶段自动保存，可从标题继续。
+- 配乐分为归港、纸礁、墨城、日轮与首领五个主题，每首 48 秒、16 小节，包含主副旋律与段落变化。战斗压力逐渐叠加节奏层；暂停、三选一和击破演出会收束音乐，切回场景继续原有乐句。手机网页切曲先淡出并释放旧音频，避免长期游玩累积缓存。
 - 局外成长以横向解锁为主；数值构筑集中在当局。
 
 ## 验收
@@ -44,4 +45,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\run_godot_local.
 
 重构回归通过 `tools/check_refactor.ps1 -GodotPath <引擎路径>` 启动，每个测试使用独立用户数据目录。Windows 预览导出使用独立的 `FOLDLIGHT Refactor Preview` 存档目录。
 
-版本：3.11.0 · Windows x86-64 / Android 7+ / Web · Godot 4.6.3
+版本：3.12.0 · Windows x86-64 / Android 7+ / Web · Godot 4.6.3
