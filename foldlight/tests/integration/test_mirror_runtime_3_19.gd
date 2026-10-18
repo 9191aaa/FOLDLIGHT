@@ -28,7 +28,8 @@ func _run() -> void:
 	_world.process_mode = Node.PROCESS_MODE_DISABLED
 	_player.disable_mode = CollisionObject2D.DISABLE_MODE_KEEP_ACTIVE
 	_player.process_mode = Node.PROCESS_MODE_DISABLED
-	_test_actual_capture_and_pause()
+	_test_actual_release_and_pause()
+	_test_return_budget_accounting()
 	_test_push_and_shield_conversion()
 	_test_slow_and_decoy()
 	_test_heal_and_haste()
@@ -82,41 +83,83 @@ func _fire_player() -> FoldlightRogueProjectile:
 	return null
 
 
-func _test_actual_capture_and_pause() -> void:
+func _test_actual_release_and_pause() -> void:
 	var boss := _reset()
 	if boss == null: return
 	var copied: Dictionary = boss.call("get_mirror_snapshot")
 	_check(String(copied.build.provenance.source) == "actual_player_components" and String(copied.build.provenance.boss_actor_id) == String(boss.actor_id), "spawn copy records the real player component source and unique boss identity")
 	var projectile := _fire_player()
-	_check(projectile != null and not projectile.reflectable, "capture fixture uses a real non-reflectable player automatic shot")
+	_check(projectile != null and not projectile.reflectable, "release fixture uses a real player automatic shot")
 	if projectile == null: return
 	_check(_player.try_begin_fold(), "actual player fold action starts from shared controls")
 	_combat._update_enemies(0.1)
-	projectile.global_position = boss.global_position + Vector2(0, 30)
+	projectile.global_position = boss.global_position + Vector2(0, 100)
 	var health_before := boss.health
 	_combat._update_projectiles(0.0)
 	copied = boss.call("get_mirror_snapshot")
-	_check(copied.folding and copied.captured == 1 and boss.health == health_before and not _combat.projectiles.has(projectile), "live fold synchronization absorbs one real player shot without hurting the mirror")
+	_check(not copied.folding and copied.captured == 0 and _combat.projectiles.has(projectile), "holding player fold never opens a mirror collector or intercepts the player's actual weapon")
+	projectile.global_position = boss.global_position
 	_combat._update_projectiles(0.0)
-	_check(int(boss.call("get_mirror_snapshot").captured) == 1, "the removed shot cannot be captured twice by subsequent collision passes")
-	_check(_player.release_fold_action(), "actual player release drives the mirrored release edge")
-	_combat._update_enemies(0.1)
+	_check(boss.health < health_before, "player fire can damage the mirror while the player is folding")
+	for index in 5:
+		_combat._spawn_projectile({"origin": ORIGIN + Vector2(30, index * 4), "velocity": Vector2.ZERO, "hostile": true, "reflectable": true})
+	_combat._update_projectiles(0.0)
+	_check(_player.captured == 5, "five real hostile projectiles enter the player's actual collector")
+	_check(_player.release_fold_action(), "actual player release emits its captured count before clearing the player inventory")
 	var paused: Dictionary = boss.call("get_mirror_snapshot")
-	_check(paused.release_remaining > 0.0 and _combat.projectiles.is_empty(), "release starts a warning before any hostile ammunition appears")
+	_check(is_equal_approx(paused.release_remaining, 0.8) and paused.release_count == 5 and _returned_count(boss) == 0, "player release schedules exactly five mirror shots behind a full 0.8-second warning")
+	var accepted_serial := int(paused.last_release_serial)
+	_check(not boss.call("observe_player_release", 5, accepted_serial), "replaying the actual runtime release serial cannot duplicate its retaliation")
 	_combat.set_active(false)
 	_combat._physics_process(20.0)
-	_check(boss.call("get_mirror_snapshot") == paused, "paused runtime preserves copied build, stored light, warning and cooldowns")
+	_check(boss.call("get_mirror_snapshot") == paused, "paused runtime preserves copied build, queued equal-count retaliation, warning and cooldowns")
 	_combat.set_active(true)
 	_combat.set_physics_process(false)
-	for step in 8:
+	for step in 7:
 		_combat._update_enemies(0.1)
+	_check(_returned_count(boss) == 0, "the mirror cannot fire the count during the first 0.7 seconds")
+	for step in 3: _combat._update_enemies(0.1)
 	var returned := 0
 	for shot in _combat.projectiles:
 		if shot.hostile and shot.boss_source == boss.actor_id:
 			returned += 1
 			_check(shot.homing_target == _player and shot.homing_duration > 0.0 and shot.reflectable, "actual released shot pursues the player for a bounded interval and can be recaptured")
 			_check(shot.style == &"mirror_return" and shot.get_visual_contract().motif == &"hostile_fold_petal", "actual returned clone shot uses hostile paper geometry rather than friendly gold return trails")
-	_check(returned == 1 and int(boss.call("get_mirror_snapshot").captured) == 0, "one absorbed player projectile creates exactly one hostile return through the runtime")
+	_check(returned == 5 and int(boss.call("get_mirror_snapshot").return_queue_count) == 0, "five player captures produce exactly five real mirror returns, with successful spawn receipts")
+	_player.fold_component.cooldown_remaining = 0.0
+	_check(_player.try_begin_fold() and _player.release_fold_action(), "empty fold still uses the actual player input path")
+	_check(int(boss.call("get_mirror_snapshot").last_release_serial) == accepted_serial, "an empty player release does not manufacture another mirror event")
+
+
+func _returned_count(boss: Node2D) -> int:
+	var count := 0
+	for shot in _combat.projectiles:
+		if is_instance_valid(shot) and shot.hostile and shot.boss_source == boss.actor_id and shot.style == &"mirror_return": count += 1
+	return count
+
+
+func _test_return_budget_accounting() -> void:
+	var boss := _reset()
+	if boss == null: return
+	# Simulate a later resolved capacity gain after the boss birth snapshot.
+	_player.apply_roguelite_stats({"capture_capacity": 15})
+	_check(_player.try_begin_fold(), "budget fixture begins a real player fold")
+	var release_count := mini(23, _player.get_capture_capacity())
+	_check(release_count == 23, "later player capacity gains do not truncate the mirrored release to the boss's birth-time capacity")
+	for index in release_count: _player.capture_one()
+	_check(_player.release_fold_action(), "budget fixture reaches mirror through the real player release signal")
+	for index in FoldlightRogueCombatRuntime.MAX_PROJECTILES:
+		_combat._spawn_projectile({"origin": ORIGIN + Vector2(0, 400), "velocity": Vector2.ZERO, "hostile": true, "reflectable": true})
+	_check(_combat.projectiles.size() == FoldlightRogueCombatRuntime.MAX_PROJECTILES, "shared projectile pool is genuinely full")
+	for step in 15: _combat._update_enemies(0.1)
+	_check(_returned_count(boss) == 0 and int(boss.call("get_mirror_snapshot").return_queue_count) == release_count, "full pool leaves every unspawned mirror shot pending")
+	for index in 3: _combat._remove_projectile(_combat.projectiles.back())
+	_combat._update_enemies(0.1)
+	_check(_returned_count(boss) == 3 and int(boss.call("get_mirror_snapshot").return_queue_count) == release_count - 3, "three free slots acknowledge exactly three spawned shots, keeping the remainder")
+	for shot in _combat.projectiles.duplicate():
+		if shot.boss_source != boss.actor_id: _combat._remove_projectile(shot)
+	for step in 10: _combat._update_enemies(0.1)
+	_check(_returned_count(boss) == release_count and int(boss.call("get_mirror_snapshot").return_queue_count) == 0, "after space returns the exact remainder spawns without loss or duplication")
 
 
 func _test_push_and_shield_conversion() -> void:

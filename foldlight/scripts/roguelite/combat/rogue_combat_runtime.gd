@@ -51,7 +51,7 @@ var directed_spawn_validator: Callable
 var effect_suspension_guard: Callable
 var _poison_clouds: Array[FoldlightMiasmaCloud] = []
 var _mirror_fields: Array[FoldlightMirrorSpellField] = []
-var _clone_capture_candidates: Array[Node2D] = []
+var _player_release_serial: int = 0
 var _poison_hit_remaining: float = 0.0
 var _command_links_active: bool = false
 var _last_dash_blast_serial: int = -1
@@ -202,7 +202,7 @@ func get_glimmer_gain_multiplier() -> float:
 func clear_combat() -> void:
 	_clear_poison_clouds()
 	_clear_mirror_fields()
-	_clone_capture_candidates.clear()
+	_player_release_serial = 0
 	_poison_hit_remaining = 0.0
 	_command_links_active = false
 	_last_dash_blast_serial = -1
@@ -552,8 +552,6 @@ func _update_enemies(delta: float) -> void:
 		elif enemy is FoldlightInkWarden:
 			(enemy as FoldlightInkWarden).advance_simulation(delta, player.global_position, _hostile_time_scale)
 		elif enemy is FoldlightRogueBossActor:
-			if enemy.has_method("sync_mirror_input"):
-				enemy.call("sync_mirror_input", player.folding)
 			(enemy as FoldlightRogueBossActor).advance_simulation(delta, player.global_position, _hostile_time_scale)
 		elif enemy is FoldlightRogueEnemyActor:
 			(enemy as FoldlightRogueEnemyActor).advance_simulation(delta, target, _hostile_time_scale)
@@ -639,20 +637,11 @@ func _update_projectiles(delta: float) -> void:
 
 func _advance_projectiles(delta: float) -> void:
 	var was_active := active
-	# Only mirrors can absorb friendly shots. Gather once per fixed step,
-	# rather than scanning the full population twice for every friendly shot.
-	_clone_capture_candidates.clear()
-	for actor in enemies:
-		if is_instance_valid(actor) and not actor.is_queued_for_deletion() and actor.has_method("can_capture_projectile"):
-			_clone_capture_candidates.append(actor)
 	for projectile in projectiles.duplicate():
 		if was_active and not active:
 			return
 		if not is_instance_valid(projectile) or projectile.is_queued_for_deletion():
 			projectiles.erase(projectile)
-			continue
-		if not projectile.hostile and _try_clone_capture(projectile):
-			_remove_projectile(projectile)
 			continue
 		var projectile_scale := _hostile_time_scale if projectile.hostile else 1.0
 		if not projectile.hostile and projectile.style == &"return_light":
@@ -701,7 +690,7 @@ func _advance_projectiles(delta: float) -> void:
 					if active: _spawn_mirror_echo(projectile)
 				_remove_projectile(projectile)
 		else:
-			if _try_clone_capture(projectile) or _try_decoy_interception(projectile) or _try_mirror_interception(projectile):
+			if _try_decoy_interception(projectile) or _try_mirror_interception(projectile):
 				_remove_projectile(projectile)
 			else:
 				_resolve_friendly_collision(projectile)
@@ -1150,20 +1139,18 @@ func _try_mirror_interception(projectile: FoldlightRogueProjectile) -> bool:
 	return false
 
 
-func _try_clone_capture(projectile: FoldlightRogueProjectile) -> bool:
-	if projectile.hostile or _clone_capture_candidates.is_empty(): return false
-	var snapshot := {"capture_id": projectile.get_instance_id(), "position": projectile.global_position, "hostile": false, "reflectable": projectile.reflectable, "damage": projectile.damage, "velocity": projectile.velocity, "style": projectile.style, "automatic_weapon_id": projectile.automatic_weapon_id}
-	for actor in _clone_capture_candidates:
-		if not is_instance_valid(actor) or actor.is_queued_for_deletion(): continue
-		if bool(actor.call("can_capture_projectile", snapshot)) and bool(actor.call("capture_projectile", snapshot)):
-			return true
-	return false
-
-
 func _spawn_mirror_volley(snapshot: Dictionary, source: Node2D) -> int:
-	if not active or source.is_queued_for_deletion() or float(source.get("health")) <= 0.0: return 0
+	if not is_instance_valid(source): return 0
+	var return_request_id := int(snapshot.get("mirror_return_request_id", 0))
+	if not active or source.is_queued_for_deletion() or float(source.get("health")) <= 0.0:
+		if return_request_id > 0: source.call("acknowledge_mirror_return", return_request_id, 0)
+		return 0
 	var count := 0
 	for raw: Dictionary in snapshot.get("projectiles", []):
+		# Mirrored returns own a receipt-backed queue. Defer them instead of
+		# letting the generic spawn path evict an existing projectile at capacity.
+		if return_request_id > 0 and projectiles.size() >= MAX_PROJECTILES:
+			break
 		var shot := snapshot.duplicate()
 		shot.erase("projectiles")
 		shot.merge(raw, true)
@@ -1178,7 +1165,11 @@ func _spawn_mirror_volley(snapshot: Dictionary, source: Node2D) -> int:
 		# pressure in the actor, never strips several hearts in one collision.
 		shot["damage"] = 1.0
 		shot["reflectable"] = true
-		if _spawn_projectile(shot) != null: count += 1
+		if _spawn_projectile(shot) == null: break
+		count += 1
+	# A full shared projectile pool delays the unspawned remainder; it cannot
+	# consume a mirrored release that never actually appeared in the world.
+	if return_request_id > 0: source.call("acknowledge_mirror_return", return_request_id, count)
 	return count
 
 
@@ -1593,6 +1584,11 @@ func _on_player_shot_requested(snapshot: Dictionary) -> void:
 func _on_player_fold_released(captured_count: int, charge_ratio: float) -> void:
 	if captured_count <= 0:
 		return
+	if active:
+		_player_release_serial += 1
+		for actor in enemies:
+			if is_instance_valid(actor) and not actor.is_queued_for_deletion() and actor.has_method("observe_player_release"):
+				actor.call("observe_player_release", captured_count, _player_release_serial)
 	if player.weapon_mount.register_returned_light(captured_count):
 		_add_active_flash(player.global_position, Color(0.48, 0.92, 1.0), 170.0, 0.60)
 	var release_duration := minf(0.072, 0.030 + float(captured_count) * 0.0018)

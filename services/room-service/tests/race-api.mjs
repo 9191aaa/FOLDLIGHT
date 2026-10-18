@@ -37,7 +37,7 @@ async function request(path, { method = 'GET', token, body, headers = {} } = {})
 
 const endpoint = fixture => `/api/rooms/${fixture.code}`;
 const player = (snapshot, client) => snapshot.players.find(value => value.id === client.id);
-const post = (fixture, client, body) => request(endpoint(fixture), { method: 'POST', token: client?.token, body: { rulesVersion: 'endless_race_v10', ...body } });
+const post = (fixture, client, body) => request(endpoint(fixture), { method: 'POST', token: client?.token, body: { rulesVersion: 'endless_race_v11', ...body } });
 const get = (fixture, client) => request(endpoint(fixture), { token: client?.token });
 function requireSuccess(response, expected, label) {
   if (response.status !== expected) throw new Error(`${label}: expected HTTP ${expected}, got ${response.status} (${response.data.error ?? 'unexpected response'})`);
@@ -46,7 +46,7 @@ function requireSuccess(response, expected, label) {
 
 async function createFixture(name) {
   if (createdRooms >= 4) throw new Error('Per-run room budget exhausted.');
-  const created = requireSuccess(await request('/api/rooms', { method: 'POST', body: { name: `测试甲-${name}`, rulesVersion: 'endless_race_v10' } }), 201, 'create');
+  const created = requireSuccess(await request('/api/rooms', { method: 'POST', body: { name: `测试甲-${name}`, rulesVersion: 'endless_race_v11' } }), 201, 'create');
   createdRooms += 1;
   const fixture = { name, code: created.room.code, seed: created.room.seed, a: { token: created.token, id: created.room.selfId, instance: randomUUID(), seq: 0 } };
   check(created.room.phase === 'waiting' && created.room.players.length === 1 && /^[A-HJ-NP-Z2-9]{7}$/.test(fixture.code), `${name}: create opens a one-player waiting room`);
@@ -89,7 +89,7 @@ async function core(fixture) {
   check(identity.selfId === fixture.a.id && identity.players.every(value => !('token' in value) && !('token_hash' in value) && !('instance_id' in value)), 'core: snapshots expose public players but no peer secrets');
   check((await get(fixture, fixture.b)).cache?.includes('no-store'), 'core: authenticated snapshots cannot be cached');
   check((await post(fixture, fixture.a, { action: 'ready', instanceId: 'bad' })).status === 400, 'core: malformed instance ids are rejected');
-  check((await post(fixture, fixture.a, { action: 'ready', instanceId: fixture.a.instance, rulesVersion: 'endless_race_v1' })).status === 409, 'core: old map and objective rules cannot join the new game');
+  check((await post(fixture, fixture.a, { action: 'ready', instanceId: fixture.a.instance, rulesVersion: 'endless_race_v10' })).status === 409, 'core: previous v10 mirror timing rules cannot join a v11 match');
   check((await post(fixture, fixture.a, { action: 'heartbeat', rulesVersion: undefined })).status === 409, 'core: unversioned clients cannot submit survival time');
   requireSuccess(await post(fixture, fixture.a, { action: 'ready', instanceId: fixture.a.instance }), 200, 'bind instance');
   check((await post(fixture, fixture.a, { action: 'ready', instanceId: randomUUID() })).status === 409, 'core: a second page cannot replace the bound ready instance');

@@ -77,8 +77,8 @@ func _draw() -> void:
 
 func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 	match attack_style:
-		&"mirror_capture":
-			_draw_mirror_capture(origin, target, cycle)
+		&"mirror_echo":
+			_draw_mirror_echo(origin, target, cycle)
 		&"anchored_blast":
 			_draw_anchored_blast(origin, cycle)
 		&"poison_trail":
@@ -124,14 +124,15 @@ func _draw_anchored_blast(origin: Vector2, cycle: float) -> void:
 		draw_arc(origin, lerpf(24.0, 83.0, blast), 0, TAU, 48, Color(danger, 1.0 - blast), 8.0, true)
 
 
-func _draw_mirror_capture(origin: Vector2, target: Vector2, cycle: float) -> void:
+func _draw_mirror_echo(origin: Vector2, target: Vector2, cycle: float) -> void:
 	if cycle < 0.46:
 		var growth := clampf(cycle / 0.3, 0.0, 1.0)
-		for center in [origin, target]:
-			draw_arc(center, lerpf(28.0, 69.0, growth), 0.0, TAU, 36, Color(accent if center == origin else Color("83c8bd"), 0.68), 2.0, true)
+		# Only the player unfolds. The mirror keeps its automatic weapons and
+		# later echoes the count; it never intercepts the player's ammunition.
+		draw_arc(target, lerpf(28.0, 69.0, growth), 0.0, TAU, 36, Color(Color("83c8bd"), 0.68), 2.0, true)
 		for index in 3:
 			var progress := fposmod(cycle * 3.0 + index * 0.29, 1.0)
-			_draw_projectile(target.lerp(origin, progress) + Vector2(0, (index - 1) * 17.0), PI, false)
+			_draw_projectile(origin.lerp(target, progress) + Vector2(0, (index - 1) * 17.0), 0.0, true)
 	elif cycle < 0.65:
 		draw_dashed_line(origin, target, Color(accent, 0.62), 2.0, 9.0, true)
 	else:
@@ -445,7 +446,7 @@ func _infer_preview_kind(id: StringName) -> StringName:
 
 func _default_attack_style(id: StringName) -> StringName:
 	return {
-		&"mirror_moth": &"mirror_capture",
+		&"mirror_moth": &"mirror_echo",
 		&"miasma_wraith": &"poison_trail",
 		&"cinder_mine": &"anchored_blast",
 		&"shutter_seraph": &"exposure_barrage",

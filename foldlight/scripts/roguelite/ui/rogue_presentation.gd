@@ -494,10 +494,10 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 		_boss_bar.value = health
 		_boss_label.text = "%s  ·  已澄清" % str(boss_snapshot.get("title", "终潮")) if bool(boss_snapshot.get("defeated", false)) else "%s  ·  阶段 %d" % [str(boss_snapshot.get("title", "终潮")), int(boss_snapshot.get("phase", 1))]
 		var mirror: Dictionary = boss_snapshot.get("mirror", {})
-		if bool(mirror.get("folding", false)):
-			_boss_label.text = "%s · 收纳 %d/%d" % [str(boss_snapshot.get("title", "复影")), int(mirror.get("captured", 0)), int(mirror.get("capacity", 8))]
-		elif float(mirror.get("release_remaining", 0.0)) > 0.0:
-			_boss_label.text = "%s · 返光 %.1fs · 横向躲避" % [str(boss_snapshot.get("title", "复影")), float(mirror.release_remaining)]
+		if float(mirror.get("release_remaining", 0.0)) > 0.0:
+			_boss_label.text = "%s · 复射%d发 · %.1fs" % [str(boss_snapshot.get("title", "复影")), int(mirror.get("release_count", 0)), float(mirror.release_remaining)]
+		elif int(mirror.get("return_queue_count", 0)) > 0:
+			_boss_label.text = "%s · 复射剩余%d发" % [str(boss_snapshot.get("title", "复影")), int(mirror.return_queue_count)]
 	if _touch_layout:
 		_mobile_hud.update_from(self)
 		_mobile_hud.set_tutorial_mode(_quick_tutorial.visible)

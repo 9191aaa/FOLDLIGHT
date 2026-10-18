@@ -140,7 +140,7 @@ func _test_inversion_runtime(slice: FoldlightEndlessSliceRuntime) -> void:
 	_check(slice._inversion.get_snapshot().state == &"rest" and not slice.player.is_horizontal_input_reversed(), "the shared exit cleanup resets the active field and player state")
 	var bridge := RecordingBridge.new()
 	root.add_child(bridge)
-	bridge.configure_session({"roomId": "deep318", "matchId": "deep318", "playerId": "test", "instanceId": "deep318-test", "seed": 3, "rulesVersion": "endless_race_v10"})
+	bridge.configure_session({"roomId": "deep318", "matchId": "deep318", "playerId": "test", "instanceId": "deep318-test", "seed": 3, "rulesVersion": "endless_race_v11"})
 	bridge.set_process(false)
 	slice.prepare_web_race(bridge)
 	bridge.accept_page_state({"phase": "running", "mayStart": true})

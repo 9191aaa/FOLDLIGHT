@@ -14,7 +14,7 @@ func _initialize() -> void:
 func _run() -> void:
 	(root.get_node("ProfileManager") as FoldlightProfileManager).persistence_enabled = false
 	await _test_copy_and_arsenal()
-	await _test_capture_and_release()
+	await _test_observed_release_and_receipts()
 	await _test_skills_and_lifecycle()
 	await _test_dash_and_pose()
 	await _test_mirror_lifecycle()
@@ -90,51 +90,83 @@ func _test_copy_and_arsenal() -> void:
 	for event: Dictionary in events:
 		for shot: Dictionary in event.projectiles: all_hearts = all_hearts and shot.damage == 1.0 and shot.copied_damage > 0.0
 	_check(all_hearts, "copied combat power is inspectable while all hostile hits map to one player heart")
+	events.clear()
+	actor.sync_mirror_input(true)
+	for weapon: Dictionary in actor._mirror_weapons: actor._weapon_timers[StringName(weapon.weapon_id)] = 0.0
+	actor.advance_simulation(STEP, actor.position + Vector2(100,0))
+	_check(events.size() == 6 and not actor.get_mirror_snapshot().folding, "holding player fold leaves the complete copied six-weapon arsenal firing on its own timers")
 	actor.queue_free()
 	await process_frame
 
 
-func _test_capture_and_release() -> void:
+func _test_observed_release_and_receipts() -> void:
 	var actor := _actor(_build(false))
 	actor.sync_mirror_input(true)
-	_check(not actor.can_capture_projectile({"position": actor.position, "hostile": false}), "intro cannot silently consume friendly projectiles")
+	_check(not actor.observe_player_release(8, 1) and not actor.can_capture_projectile({"position": actor.position, "hostile": false}), "intro ignores release events and cannot silently consume friendly projectiles")
 	_live(actor)
+	actor._target_position = actor.position + Vector2(300,0)
 	actor.sync_mirror_input(true)
-	_check(actor.get_mirror_snapshot().folding and actor.get_mirror_capture_radius() == 140.0, "player folding opens mirror fold at the copied starting radius")
-	_check(not actor.capture_projectile({"hostile": true, "position": actor.position}) and not actor.capture_projectile({"position": actor.position + Vector2(999,0)}), "mirror rejects hostile shots and shots outside its actual collector")
-	var accepted := 0
-	for index in 33:
-		if actor.capture_projectile({"capture_id": index + 1, "hostile": false, "position": actor.position, "damage": 3.0}): accepted += 1
-	_check(accepted == 32 and actor.get_mirror_snapshot().captured == 32, "real capture capacity above twenty accepts exactly thirty-two shots")
-	_check(not actor.capture_projectile({"capture_id": 1, "position": actor.position}), "same projectile cannot enter the collector twice")
+	_check(not actor.get_mirror_snapshot().folding and actor.get_mirror_capture_radius() == 0.0 and not actor.capture_projectile({"position": actor.position}), "holding player fold never opens a mirror collector or intercepts a friendly shot")
 	var volleys: Array[Dictionary] = []
+	var warnings: Array[Dictionary] = []
 	actor.volley_requested.connect(func(event: Dictionary) -> void: volleys.append(event))
+	actor.telegraph_requested.connect(func(event: Dictionary) -> void: warnings.append(event))
+	_check(actor.observe_player_release(32, 10) and actor.observe_player_release(5, 11), "each actual player release queues its own exact return count")
+	_check(not actor.observe_player_release(32, 10) and not actor.observe_player_release(5, 11) and not actor.observe_player_release(1, 9), "duplicate and older event serials cannot replay returned ammunition")
+	_check(not actor.observe_player_release(0, 12) and not actor.observe_player_release(97, 12), "empty and invalid counts cannot create a return volley")
+	_check(actor.observe_player_release(96, 12) and actor.get_mirror_snapshot().pending_release_events.size() == 2, "a later real 96-shot release stays exact even when the birth snapshot capacity was 32")
+	_check(warnings.size() == 1 and warnings[0].duration == 0.8 and warnings[0].projectile_count == 32 and actor.get_mirror_snapshot().release_count == 32, "first FIFO event gives a clearly counted full 0.8-second warning")
 	actor.sync_mirror_input(false)
-	for tick in 20: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
-	_check(volleys.is_empty() and actor.get_mirror_snapshot().release_remaining > 0.0, "fold release gives a real 0.65-second warning before any returned bullet")
+	for tick in 47: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	_check(volleys.is_empty() and actor.get_mirror_snapshot().release_remaining > 0.0, "no projectile is requested during the first 47 simulation ticks of the warning")
 	actor.set_simulation_active(false)
 	var frozen := actor.get_mirror_snapshot()
 	actor.sync_mirror_input(true)
 	actor.advance_simulation(3.0, Vector2.ZERO)
-	_check(frozen == actor.get_mirror_snapshot(), "pause freezes input edges, release, copied skills and all weapon timers")
+	_check(not actor.observe_player_release(7, 13) and frozen == actor.get_mirror_snapshot(), "pause freezes queued releases, copied skills and all weapon timers")
 	actor.set_simulation_active(true)
-	for tick in 45: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
-	var returned := 0
+	for tick in 2: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	_check(volleys.size() == 1 and volleys[0].projectile_count == 18 and actor.get_mirror_snapshot().return_queue_count == 32, "requesting a bounded first batch does not consume unacknowledged ammunition")
+	var first_request := int(volleys[0].mirror_return_request_id)
+	for tick in 30: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	_check(volleys.size() == 1 and actor.get_mirror_snapshot().return_queue_count == 32, "missing runtime acknowledgement never repeats or silently discards a batch")
+	_check(not actor.acknowledge_mirror_return(first_request + 1, 18) and not actor.acknowledge_mirror_return(first_request, 19), "unknown receipts and oversized successful counts are rejected")
+	_check(actor.acknowledge_mirror_return(first_request, 0), "full global projectile budget acknowledges zero actual spawns")
+	for tick in 6: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	_check(volleys.size() == 2 and actor.get_mirror_snapshot().return_queue_count == 32 and volleys[1].projectiles == volleys[0].projectiles, "budget exhaustion retries the same intact prefix after the retry interval")
+	var second_request := int(volleys[1].mirror_return_request_id)
+	_check(actor.acknowledge_mirror_return(second_request, 7) and actor.get_mirror_snapshot().return_queue_count == 25 and not actor.acknowledge_mirror_return(second_request, 7), "partial receipt consumes only seven real spawns and duplicate receipt cannot consume again")
+	var returned_by_event := {10: 7, 11: 0, 12: 0}
+	var indexes: Array[String] = []
+	for index in 7: indexes.append("10:%d" % index)
+	var acknowledged := 2
 	var bounded := true
-	for event: Dictionary in volleys:
-		returned += event.projectiles.size()
-		bounded = bounded and event.projectiles.size() <= 18
-	_check(returned == 32 and bounded and actor.get_mirror_snapshot().captured == 0, "captured ammunition drains in bounded chunks without truncation or invented bullets")
-	var count := volleys.size()
-	actor.sync_mirror_input(true)
-	actor.sync_mirror_input(false)
-	for tick in 60: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
-	_check(volleys.size() == count, "empty mirrored folds cannot manufacture return shots")
-	actor.sync_mirror_input(true)
-	actor.capture_projectile({"capture_id": 88, "position": actor.position})
-	actor.sync_mirror_input(false)
+	for tick in 240:
+		actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+		while acknowledged < volleys.size():
+			var event: Dictionary = volleys[acknowledged]
+			acknowledged += 1
+			var serial := int(event.mirror_release_serial)
+			bounded = bounded and event.projectiles.size() <= 18
+			for shot: Dictionary in event.projectiles:
+				indexes.append("%d:%d" % [serial, int(shot.mirror_release_index)])
+				bounded = bounded and shot.echo_chance == 0.0 and shot.homing_duration == 1.4
+			returned_by_event[serial] = int(returned_by_event[serial]) + event.projectiles.size()
+			actor.acknowledge_mirror_return(int(event.mirror_return_request_id), event.projectiles.size())
+	var unique_indexes := {}
+	for key: String in indexes: unique_indexes[key] = true
+	_check(returned_by_event == {10: 32, 11: 5, 12: 96} and unique_indexes.size() == 133 and indexes.size() == 133 and bounded, "FIFO returns all 133 actual shots once across independent 32/5/96 events, partial receipts and bounded chunks")
+	_check(warnings.size() == 3 and warnings[1].projectile_count == 5 and warnings[2].projectile_count == 96 and warnings[1].duration == 0.8 and warnings[2].duration == 0.8, "every queued release retains its own full counted warning")
+	_check(actor.get_mirror_snapshot().return_queue_count == 0 and actor.get_mirror_snapshot().pending_release_events.is_empty() and actor.get_mirror_snapshot().release_count == 0, "successful receipts leave no invented or permanently stuck pending ammunition")
+	actor.observe_player_release(8, 13)
+	actor.observe_player_release(6, 14)
+	for tick in 49: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	var stale_request := int(volleys[-1].mirror_return_request_id)
 	actor.phase_controller.enter_stagger(2.0)
-	_check(actor.get_mirror_snapshot().captured == 0 and actor.get_mirror_snapshot().release_remaining == 0.0, "earned return stagger cancels stored and pending mirror attacks synchronously")
+	_check(actor.get_mirror_snapshot().return_queue_count == 0 and actor.get_mirror_snapshot().release_remaining == 0.0 and actor.get_mirror_snapshot().pending_release_events.is_empty(), "earned return stagger cancels both the active volley and queued events synchronously")
+	_check(not actor.acknowledge_mirror_return(stale_request, 8), "receipt from an interrupted return cannot revive or consume a later volley")
+	_live(actor)
+	_check(not actor.observe_player_release(6, 14), "stagger cancellation retains the monotonic event guard against replay")
 	actor.queue_free()
 	await process_frame
 
@@ -189,9 +221,10 @@ func _test_dash_and_pose() -> void:
 	var puppet = preload("res://scripts/visuals/boss_paper_puppet.gd")
 	var open := actor.get_visual_pose()
 	open["motion_scale"] = 0.0
-	var folded := open.duplicate(true)
-	folded["mirror_folding"] = true
-	_check(puppet.get_part_transforms(&"mirror_moth",open) != puppet.get_part_transforms(&"mirror_moth",folded), "reduced motion still distinguishes open moth from its folded collector silhouette")
+	actor.sync_mirror_input(true)
+	var held := actor.get_visual_pose()
+	held["motion_scale"] = 0.0
+	_check(puppet.get_part_transforms(&"mirror_moth",open) == puppet.get_part_transforms(&"mirror_moth",held) and not held.mirror_folding, "holding player fold never changes the mirror into an active collector silhouette")
 	_check(puppet.get_visual_contract(&"mirror_moth").part_count == 6, "mirror moth uses six cached articulated paper parts")
 	actor.queue_free()
 	await process_frame
@@ -218,21 +251,30 @@ func _test_mirror_lifecycle() -> void:
 	actor.take_damage(10000.0)
 	_check(actor.health == before, "intro cannot be damaged before the copied encounter is ready")
 	_live(actor)
-	actor.sync_mirror_input(true)
-	actor.capture_projectile({"capture_id": 771, "position": actor.position})
-	actor.sync_mirror_input(false)
+	actor.observe_player_release(8, 30)
+	actor.observe_player_release(5, 31)
+	for tick in 49: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	var phase_request := int(actor.get_mirror_snapshot().return_pending_request)
 	actor.health = actor.maximum_health * 0.3
 	actor.advance_simulation(STEP, actor.position + Vector2(300,0))
-	_check(actor.phase_controller.phase_index == 2 and actor._release_remaining == 0.0 and actor._captured_shots.is_empty(), "mirror phase change cancels an old return before it can cross into the new phase")
+	_check(actor.phase_controller.phase_index == 2 and actor._release_remaining == 0.0 and actor._return_queue.is_empty() and actor._release_events.is_empty(), "mirror phase change cancels active and queued returns before crossing into the new phase")
+	_check(phase_request > 0 and not actor.acknowledge_mirror_return(phase_request, 8) and actor.get_mirror_snapshot().last_release_serial == 31, "phase cancellation invalidates outstanding receipts while retaining event deduplication")
 	actor.phase_controller._transition_remaining = 0.0
 	_live(actor)
+	actor.observe_player_release(7, 32)
+	for tick in 49: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	var death_request := int(actor.get_mirror_snapshot().return_pending_request)
 	actor.take_damage(actor.maximum_health * 2.0)
 	_check(actor.health <= 0.0 and actor.phase_controller.state == FoldlightBossPhaseController.State.DEFEATED and actor._death_remnant_spawned, "real mirror death enters shared defeat and creates its articulated remnant")
-	_check(not actor.capture_projectile({"position": actor.position}), "dead mirror can never intercept another friendly shot")
+	_check(not actor.observe_player_release(5, 33) and not actor.acknowledge_mirror_return(death_request, 7) and actor._return_queue.is_empty(), "dead mirror rejects release events and late receipts after clearing pending ammunition")
 	actor.configure(DEFINITION, Rect2(0,0,6400,4000), 320, {"arena_pressure":false})
 	var fresh := _build(false)
 	fresh["max_health"] = 6
 	actor.configure_mirror_build(fresh)
-	_check(actor.maximum_health == 960.0 and actor._captured_shots.is_empty() and actor._active_pending.is_empty() and actor._mirror_dash_maximum == 1 and not actor._death_remnant_spawned, "full run reconfigure clears old identity, effects and copied charges before a fresh birth snapshot")
+	_check(actor.maximum_health == 960.0 and actor._return_queue.is_empty() and actor._release_events.is_empty() and actor._last_release_serial == 0 and actor._active_pending.is_empty() and actor._mirror_dash_maximum == 1 and not actor._death_remnant_spawned, "full run reconfigure clears old identity, queued events and copied charges before a fresh birth snapshot")
+	_live(actor)
+	actor.observe_player_release(3, 1)
+	for tick in 49: actor.advance_simulation(STEP, actor.position + Vector2(300,0))
+	_check(actor.get_mirror_snapshot().return_pending_request > death_request and not actor.acknowledge_mirror_return(death_request, 3) and actor.get_mirror_snapshot().return_queue_count == 3, "request IDs remain unique across reconfigure so an old run cannot acknowledge new ammunition")
 	actor.queue_free()
 	await process_frame
