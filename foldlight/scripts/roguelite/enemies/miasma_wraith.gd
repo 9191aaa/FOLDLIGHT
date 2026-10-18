@@ -6,7 +6,7 @@ signal poison_requested(snapshot: Dictionary)
 const CLOUD_INTERVAL: float = 2.2
 const CLOUD_RADIUS: float = 112.0
 const CLOUD_WARNING: float = 0.85
-const CLOUD_DURATION: float = 5.5
+const CLOUD_DURATION: float = 60.0
 const CLOUD_TICK_INTERVAL: float = 1.6
 const PAPER_COLOR := Color("a9b58c")
 const INK_COLOR := Color("243a34")
@@ -73,7 +73,7 @@ func get_contact_radius() -> float:
 func get_combat_snapshot() -> Dictionary:
 	var result := super.get_combat_snapshot()
 	result["classic_archetype"] = &"miasma_wraith"
-	result["visual_version"] = &"miasma_paper_3_18"
+	result["visual_version"] = &"miasma_paper_3_19"
 	result["maximum_health"] = float(get_meta("directed_maximum_health", definition.base_health if definition != null else 10.0))
 	result["cloud_remaining"] = _cloud_remaining
 	result["cloud_serial"] = _cloud_serial

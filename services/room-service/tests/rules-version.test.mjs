@@ -38,10 +38,10 @@ function fixture(t) {
   return { sqlite, call };
 }
 
-test('migration retains v3; v3/v4/v5/v6/v7/v8/v9 matches reject every other rules version before allocating slots', async t => {
+test('migration retains v3; v3/v4/v5/v6/v7/v8/v9/v10 matches reject every other rules version before allocating slots', async t => {
   const { sqlite, call } = fixture(t);
   assert.equal(sqlite.prepare("SELECT rules_version FROM race_rooms WHERE code='OLD2345'").get().rules_version, 'endless_race_v3');
-  const supported = ['endless_race_v3', 'endless_race_v4', 'endless_race_v5', 'endless_race_v6', 'endless_race_v7', 'endless_race_v8', 'endless_race_v9'];
+  const supported = ['endless_race_v3', 'endless_race_v4', 'endless_race_v5', 'endless_race_v6', 'endless_race_v7', 'endless_race_v8', 'endless_race_v9', 'endless_race_v10'];
   for (const version of supported) {
     const rules = version === 'endless_race_v3' ? {} : { rulesVersion: version };
     const created = await call({ name: '甲', ...rules });

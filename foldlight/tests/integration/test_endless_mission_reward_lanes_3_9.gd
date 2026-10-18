@@ -264,7 +264,7 @@ func _test_restart_resets_mission_rewards(slice: FoldlightEndlessSliceRuntime) -
 	_check((mission.get("reward_levels", {}) as Dictionary).is_empty() and all_zero, "restarting resets every mission reward level and modifier")
 	_check(slice.controller.get_pending_mission_rewards().is_empty(), "restarting clears pending mission choices")
 	var reset_stats := slice.get_effective_combat_stats()
-	_check(int(reset_stats.get("max_health", 0)) == 5 and int(reset_stats.get("weapon_pierce", -1)) == 0, "restarting restores baseline live combat values")
+	_check(int(reset_stats.get("max_health", 0)) == 4 and int(reset_stats.get("weapon_pierce", -1)) == 0, "restarting restores the four-heart baseline and clears weapon growth")
 	_check(profile_manager == null or var_to_str(profile_manager.get_public_snapshot()) == var_to_str(profile_before), "restarting mission rewards leaves the external Profile unchanged")
 
 

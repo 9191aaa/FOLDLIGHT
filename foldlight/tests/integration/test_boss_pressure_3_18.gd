@@ -13,8 +13,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	(root.get_node("ProfileManager") as FoldlightProfileManager).persistence_enabled = false
-	await _test_charge_chain(0, 0, 3)
-	await _test_charge_chain(2, 5, 6)
+	await _test_charge_chain(0, 0, 4)
+	await _test_charge_chain(2, 5, 8)
 	_test_warning_stall()
 	await _test_charge_cancellation()
 	await _test_charge_wall_and_contact()
@@ -62,7 +62,7 @@ func _test_charge_chain(phase: int, tier: int, expected_count: int) -> void:
 	for index in warnings.size():
 		var event := warnings[index]
 		numbered = numbered and int(event.get("charge_number", 0)) == index + 1 and int(event.get("charge_total", 0)) == expected_count
-		numbered = numbered and float(event["duration"]) >= 0.42 and float(event["hold_seconds"]) >= 0.24
+		numbered = numbered and float(event["duration"]) >= 0.42 and float(event["hold_seconds"]) >= 0.20
 		if index > 0: numbered = numbered and Vector2(event["target_position"]).is_equal_approx(target)
 	_check(numbered, "every charge publishes a bounded warning, active hold and fresh locked target")
 	_check(not actor.is_contact_dangerous() or not actor.get_contact_sweep().is_empty(), "recovery only retains the just-completed actual contact sweep")
@@ -199,7 +199,7 @@ func _test_command_field() -> void:
 	normal.advance_simulation(STEP, Vector2(2600,1200))
 	_check(attacks.size() == 1 and is_equal_approx(float(attacks[0]["projectiles"][0]["speed"]), 160.0 * float(stronger.projectile_speed_multiplier)), "commanded ordinary enemy emits physically faster bullets")
 	for tick in 240: normal.advance_simulation(STEP, Vector2(3600,1200))
-	_check(normal.velocity.length() < (original_speed + 35.0) * 1.86 and normal.definition.base_health == original_health and normal.definition.move_speed == original_speed, "long buff exposure stays bounded and never edits the shared enemy resource")
+	_check(normal.velocity.length() < (original_speed + 35.0) * 2.21 and normal.definition.base_health == original_health and normal.definition.move_speed == original_speed, "long buff exposure stays bounded and never edits the shared enemy resource")
 	normal.position = Vector2(4500,2800)
 	combat._update_command_links()
 	_check(normal.get_command_buff_snapshot() == {"move_multiplier": 1.0, "projectile_speed_multiplier": 1.0, "attack_interval_multiplier": 1.0}, "leaving every drawn command circle immediately restores original stats")

@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_check(FoldlightRogueContentCatalog.BOSSES.size() == 6, "catalog retains three original bosses plus three region alternatives")
+	_check(FoldlightRogueContentCatalog.BOSSES.size() == 7, "catalog retains six original bosses and adds the copied-player mirror")
 	var arena_rules: Dictionary = {}
 	var previous_health := 0.0
 	for boss_index in 3:

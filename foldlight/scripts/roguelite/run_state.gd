@@ -10,8 +10,8 @@ var current_node_id: StringName = &""
 var room_count: int = 0
 var elapsed: float = 0.0
 var glimmer: int = 0
-var health: int = 5
-var max_health: int = 5
+var health: int = 4
+var max_health: int = 4
 var weapon_ids: Array[StringName] = []
 var weapon_levels: Dictionary = {}
 var active_item_id: StringName = &""
@@ -29,8 +29,8 @@ func begin_run(run_seed: int, route_snapshot: Dictionary) -> void:
 	room_count = 0
 	elapsed = 0.0
 	glimmer = 0
-	health = 5
-	max_health = 5
+	health = 4
+	max_health = 4
 	weapon_ids = [&"crease_lantern"]
 	weapon_levels = {"crease_lantern": 1}
 	# The second cleared room teaches active items as a deliberate reward. The

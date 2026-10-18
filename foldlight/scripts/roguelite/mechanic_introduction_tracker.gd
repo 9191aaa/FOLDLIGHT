@@ -104,6 +104,8 @@ func _enemy_attack_style(definition: FoldlightRogueEnemyDefinition) -> StringNam
 
 func _boss_briefing(content_id: StringName) -> Dictionary:
 	match content_id:
+		&"mirror_moth":
+			return {"rule": "复影复制出场时你的武器等级、构筑属性和装备中的技能。你展开折域，它也收纳你的弹药；你松开，它预告后返还追踪弹。", "counterplay": "先横移骗过追踪，再冲刺脱离弹线；趁它结束收纳时反击。铜红折翼是复影，青色折翼才是你。", "attack_style": &"mirror_capture"}
 		&"reef_crown_battery":
 			return {
 				"rule": "王冠电池会把潮波推向整间战场，但每一道波面都留有一段明显的安静缺口。它也会唤来小怪补充可收纳弹药。",

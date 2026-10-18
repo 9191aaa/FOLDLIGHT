@@ -12,5 +12,5 @@ tags = Array[StringName]([&"channels", &"ink"])
 depth_count = 7
 base_threat_budget = 32
 encounter_ids = Array[StringName]([&"ink_city_order"])
-boss_ids = Array[StringName]([&"inverted_archivist", &"torn_page_executioner"])
+boss_ids = Array[StringName]([&"inverted_archivist", &"torn_page_executioner", &"mirror_moth"])
 backdrop_style = &"ink_city"

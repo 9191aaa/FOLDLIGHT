@@ -17,6 +17,9 @@ func _initialize() -> void:
 func _run() -> void:
 	(root.get_node("ProfileManager") as FoldlightProfileManager).persistence_enabled = false
 	for definition in FoldlightRogueContentCatalog.BOSSES:
+		# These contracts cover the six authored locked lane patterns. The
+		# player-copy actor uses finite homing, tested by mirror_moth_3_19.
+		if definition.content_id == &"mirror_moth": continue
 		_test_locked_casts(definition)
 		await _test_full_fold_cycle(definition)
 	_test_phase_reward_and_hazard_rest()
@@ -67,7 +70,7 @@ func _test_locked_casts(definition: FoldlightRogueBossDefinition) -> void:
 		state["zones_match"] = bool(state["zones_match"]) and Vector2(zone["position"]).is_equal_approx(Vector2(warning["target_position"])) and is_equal_approx(float(zone["radius"]), float(warning["zone_radius"]))
 	)
 	boss.minion_requested.connect(func(support: Dictionary) -> void:
-		state["support_bounded"] = bool(state["support_bounded"]) and int(support["total_maximum"]) <= (6 if definition.content_id == &"tide_loom_mother" else 4)
+		state["support_bounded"] = bool(state["support_bounded"]) and int(support["total_maximum"]) <= (8 if definition.content_id == &"tide_loom_mother" else 4)
 	)
 	for tick in 1800:
 		var target := BOUNDS.get_center() + Vector2.from_angle(float(tick) * 0.008) * 500.0

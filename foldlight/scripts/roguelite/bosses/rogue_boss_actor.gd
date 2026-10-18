@@ -238,10 +238,10 @@ func get_command_aura_snapshot() -> Dictionary:
 		return {}
 	var phase := phase_controller.phase_index
 	var frenzy := 1.0 if _loom_frenzy_remaining > 0.0 else 0.0
-	return {"source_id": actor_id, "position": global_position, "radius": minf(820.0, definition.command_radius + phase * 60.0 + _intensity_tier * 28.0),
-		"attack_interval_multiplier": maxf(0.38, 0.68 - phase * 0.06 - _intensity_tier * 0.025 - frenzy * 0.08),
-		"move_multiplier": minf(1.85, 1.25 + phase * 0.08 + _intensity_tier * 0.06 + frenzy * 0.12),
-		"projectile_speed_multiplier": minf(1.6, 1.15 + phase * 0.07 + _intensity_tier * 0.04 + frenzy * 0.06), "frenzy": frenzy > 0.0}
+	return {"source_id": actor_id, "position": global_position, "radius": minf(1100.0, definition.command_radius + phase * 90.0 + _intensity_tier * 44.0),
+		"attack_interval_multiplier": maxf(0.28, 0.55 - phase * 0.055 - _intensity_tier * 0.025 - frenzy * 0.08),
+		"move_multiplier": minf(2.20, 1.40 + phase * 0.10 + _intensity_tier * 0.08 + frenzy * 0.20),
+		"projectile_speed_multiplier": minf(1.85, 1.20 + phase * 0.08 + _intensity_tier * 0.06 + frenzy * 0.12), "frenzy": frenzy > 0.0}
 
 
 func set_command_targets(points: PackedVector2Array) -> void:
@@ -337,7 +337,7 @@ func _update_movement(delta: float) -> void:
 	if _endless_roam:
 		var offset := _target_position - global_position
 		var travel_direction := global_position.direction_to(_navigation_target) if _has_navigation_target and offset.length() > 470.0 else offset.normalized()
-		var desired := travel_direction * clampf((offset.length() - 390.0) * 0.35, -45.0, 105.0)
+		var desired := travel_direction * clampf((offset.length() - 390.0) * 0.50, -55.0, 175.0)
 		velocity = velocity.move_toward(desired, 260.0 * delta)
 		return
 	match definition.content_id:
@@ -426,7 +426,7 @@ func _on_stagger_started(duration: float) -> void:
 func _on_attack_ready(pattern_id: StringName, telegraph_duration: float) -> void:
 	_recoil_remaining = RECOIL_SECONDS
 	if definition.content_id == &"tide_loom_mother":
-		_loom_frenzy_remaining = 3.0 + phase_controller.phase_index * 0.5 + _intensity_tier * 0.25
+		_loom_frenzy_remaining = 5.0 + phase_controller.phase_index * 0.65 + _intensity_tier * 0.35
 		_request_loom_support()
 	if pattern_id == &"execution_dash" and definition.content_id == &"torn_page_executioner":
 		_charge_left = int(_charge_settings.get("count", 3))
@@ -524,10 +524,10 @@ func _finish_execution_charge() -> void:
 
 
 func _request_loom_support() -> void:
-	var count := mini(6, 3 + phase_controller.phase_index + _intensity_tier / 2)
+	var count := mini(8, 4 + phase_controller.phase_index + _intensity_tier / 2)
 	var positions: Array[Vector2] = []
 	var legal := _legal_body_bounds()
-	for offset in [Vector2(-280,-210),Vector2(280,-210),Vector2(-300,190),Vector2(300,190),Vector2(-100,320),Vector2(100,-320)]:
+	for offset in [Vector2(-280,-210),Vector2(280,-210),Vector2(-300,190),Vector2(300,190),Vector2(-100,320),Vector2(100,-320),Vector2(-430,20),Vector2(430,20)]:
 		positions.append((global_position + offset).clamp(legal.position, legal.end))
 	minion_requested.emit({"enemy_ids": [&"drifter", &"fan", &"ram"], "maximum": count, "total_maximum": count,
 		"positions": positions})

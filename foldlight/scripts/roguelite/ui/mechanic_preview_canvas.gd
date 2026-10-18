@@ -77,6 +77,8 @@ func _draw() -> void:
 
 func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 	match attack_style:
+		&"mirror_capture":
+			_draw_mirror_capture(origin, target, cycle)
 		&"anchored_blast":
 			_draw_anchored_blast(origin, cycle)
 		&"poison_trail":
@@ -120,6 +122,23 @@ func _draw_anchored_blast(origin: Vector2, cycle: float) -> void:
 	if cycle >= 0.78:
 		var blast := (cycle - 0.78) / 0.22
 		draw_arc(origin, lerpf(24.0, 83.0, blast), 0, TAU, 48, Color(danger, 1.0 - blast), 8.0, true)
+
+
+func _draw_mirror_capture(origin: Vector2, target: Vector2, cycle: float) -> void:
+	if cycle < 0.46:
+		var growth := clampf(cycle / 0.3, 0.0, 1.0)
+		for center in [origin, target]:
+			draw_arc(center, lerpf(28.0, 69.0, growth), 0.0, TAU, 36, Color(accent if center == origin else Color("83c8bd"), 0.68), 2.0, true)
+		for index in 3:
+			var progress := fposmod(cycle * 3.0 + index * 0.29, 1.0)
+			_draw_projectile(target.lerp(origin, progress) + Vector2(0, (index - 1) * 17.0), PI, false)
+	elif cycle < 0.65:
+		draw_dashed_line(origin, target, Color(accent, 0.62), 2.0, 9.0, true)
+	else:
+		for index in 3:
+			var progress := clampf((cycle - 0.65) / 0.35 + index * 0.08, 0.0, 1.0)
+			var point := origin.lerp(target + Vector2(40, -28), progress) + Vector2(0, sin(progress * PI) * (index - 1) * 38.0)
+			_draw_projectile(point, 0.0, true)
 
 
 func _draw_aimed_volley(origin: Vector2, target: Vector2, cycle: float) -> void:
@@ -426,6 +445,7 @@ func _infer_preview_kind(id: StringName) -> StringName:
 
 func _default_attack_style(id: StringName) -> StringName:
 	return {
+		&"mirror_moth": &"mirror_capture",
 		&"miasma_wraith": &"poison_trail",
 		&"cinder_mine": &"anchored_blast",
 		&"shutter_seraph": &"exposure_barrage",

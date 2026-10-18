@@ -38,20 +38,20 @@ func _test_schedule() -> void:
 	for step in 30:
 		director.advance(0.1, 8, 503.0)
 	_check(director.confirm_spawned([&"first"]) and director.report_defeated(&"first", 503.0), "first encounter clears through an actual acknowledged identity")
-	_check(director.advance(0.1, 50, 516.9).state == &"waiting" and is_equal_approx(director.recovery_interval(), 14.0), "deep progression retains fourteen seconds of recovery")
-	_check(director.advance(0.1, 50, 517.0).warning_count == 2, "earning many levels cannot skip from the first directly to six bosses")
-	var encounter_time := 517.0
+	_check(director.advance(0.1, 50, 508.9).state == &"waiting" and is_equal_approx(director.recovery_interval(), 6.0), "deep progression retains six seconds of recovery")
+	_check(director.advance(0.1, 50, 509.0).warning_count == 2, "earning many levels cannot skip from the first directly to six bosses")
+	var encounter_time := 509.0
 	for wave in range(2, 8):
 		if wave > 2:
-			_check(director.advance(0.1, 50, encounter_time + 37.9).state == &"waiting", "timed encounter waits until its full minimum interval")
-			encounter_time += 38.0
+			_check(director.advance(0.1, 50, encounter_time + 11.9).state == &"waiting", "timed encounter waits until its full minimum interval")
+			encounter_time += 12.0
 			director.advance(0.1, 50, encounter_time)
 		var planned := director.planned_boss_ids()
 		var unique: Dictionary = {}
 		for identity in planned:
 			unique[identity] = true
 		_check(planned.size() == mini(6, wave) and unique.size() == planned.size(), "wave %d contains unique independent boss definitions up to the six-boss cap" % wave)
-		_check(is_equal_approx(director.encounter_interval(), 38.0) and director.intensity_tier() == 5, "deep encounters expose the capped interval and fifth attack-intensity tier")
+		_check(is_equal_approx(director.encounter_interval(), 12.0) and director.intensity_tier() == 5, "deep encounters expose the capped interval and fifth attack-intensity tier")
 		for step in 30:
 			director.advance(0.1, 50, encounter_time)
 		var ids: Array[StringName] = []
@@ -140,7 +140,7 @@ func _test_inversion_runtime(slice: FoldlightEndlessSliceRuntime) -> void:
 	_check(slice._inversion.get_snapshot().state == &"rest" and not slice.player.is_horizontal_input_reversed(), "the shared exit cleanup resets the active field and player state")
 	var bridge := RecordingBridge.new()
 	root.add_child(bridge)
-	bridge.configure_session({"roomId": "deep318", "matchId": "deep318", "playerId": "test", "instanceId": "deep318-test", "seed": 3, "rulesVersion": "endless_race_v9"})
+	bridge.configure_session({"roomId": "deep318", "matchId": "deep318", "playerId": "test", "instanceId": "deep318-test", "seed": 3, "rulesVersion": "endless_race_v10"})
 	bridge.set_process(false)
 	slice.prepare_web_race(bridge)
 	bridge.accept_page_state({"phase": "running", "mayStart": true})

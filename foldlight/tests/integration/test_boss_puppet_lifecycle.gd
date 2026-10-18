@@ -20,6 +20,9 @@ func _run() -> void:
 	profile.persistence_enabled = false
 	profile.set_setting(&"screen_shake", 1.0)
 	for definition in FoldlightRogueContentCatalog.BOSSES:
+		# Mirror is a different physical actor with a copied, mobile arsenal;
+		# its intro/death/reconfigure/fold lifecycle is exercised in 3.19 tests.
+		if definition.content_id == &"mirror_moth": continue
 		_test_actor_clock(definition)
 	await process_frame
 	await _test_runtime_remnant(false)

@@ -89,6 +89,11 @@ func _draw() -> void:
 		var maximum := maxf(1, float(boss.get("maximum_health", 1)))
 		var name_text := str(boss.get("title", "首领"))
 		var hp_text := "%d / %d" % [ceili(current), ceili(maximum)]
+		var mirror: Dictionary = boss.get("mirror", {})
+		if bool(mirror.get("folding", false)):
+			hp_text = "收纳 %d/%d" % [int(mirror.get("captured", 0)), int(mirror.get("capacity", 8))]
+		elif float(mirror.get("release_remaining", 0.0)) > 0.0:
+			hp_text = "返光 %.1fs" % float(mirror.release_remaining)
 		var row_y := start + int(index / columns) * row_height
 		var row_x := (index % columns) * cell_width
 		var font_size := (26 if _mobile else 18) if columns == 2 else (30 if _mobile else 22)

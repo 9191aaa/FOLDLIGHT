@@ -493,6 +493,11 @@ func update_hud(player: FoldlightPlayer, snapshot: Dictionary, room_node: Dictio
 		_boss_bar.max_value = maximum
 		_boss_bar.value = health
 		_boss_label.text = "%s  ·  已澄清" % str(boss_snapshot.get("title", "终潮")) if bool(boss_snapshot.get("defeated", false)) else "%s  ·  阶段 %d" % [str(boss_snapshot.get("title", "终潮")), int(boss_snapshot.get("phase", 1))]
+		var mirror: Dictionary = boss_snapshot.get("mirror", {})
+		if bool(mirror.get("folding", false)):
+			_boss_label.text = "%s · 收纳 %d/%d" % [str(boss_snapshot.get("title", "复影")), int(mirror.get("captured", 0)), int(mirror.get("capacity", 8))]
+		elif float(mirror.get("release_remaining", 0.0)) > 0.0:
+			_boss_label.text = "%s · 返光 %.1fs · 横向躲避" % [str(boss_snapshot.get("title", "复影")), float(mirror.release_remaining)]
 	if _touch_layout:
 		_mobile_hud.update_from(self)
 		_mobile_hud.set_tutorial_mode(_quick_tutorial.visible)
@@ -977,7 +982,7 @@ func _build_hud() -> void:
 	var health_stack := VBoxContainer.new()
 	health_stack.add_theme_constant_override("separation", 7)
 	health_panel.add_child(health_stack)
-	_hud_health = _label("灯芯  5 / 5", 23, GOLD)
+	_hud_health = _label("灯芯  4 / 4", 23, GOLD)
 	health_stack.add_child(_hud_health)
 	_hud_health_bar = _hud_progress_bar("HealthBar", GOLD)
 	_hud_health_bar.custom_minimum_size.y = 8

@@ -175,9 +175,9 @@ func set_support_buff(attack_multiplier: float) -> void:
 
 
 func set_command_buff(snapshot: Dictionary) -> void:
-	command_move_multiplier = clampf(float(snapshot.get("move_multiplier", 1.0)), 1.0, 1.85)
-	command_projectile_speed_multiplier = clampf(float(snapshot.get("projectile_speed_multiplier", 1.0)), 1.0, 1.6)
-	_command_attack_multiplier = clampf(float(snapshot.get("attack_interval_multiplier", 1.0)), 0.38, 1.0)
+	command_move_multiplier = clampf(float(snapshot.get("move_multiplier", 1.0)), 1.0, 2.2)
+	command_projectile_speed_multiplier = clampf(float(snapshot.get("projectile_speed_multiplier", 1.0)), 1.0, 1.85)
+	_command_attack_multiplier = clampf(float(snapshot.get("attack_interval_multiplier", 1.0)), 0.28, 1.0)
 	_refresh_attack_multiplier()
 
 

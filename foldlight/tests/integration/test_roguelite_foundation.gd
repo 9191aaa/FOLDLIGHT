@@ -74,7 +74,7 @@ func _run() -> void:
 	var rogue_profile := migrated.get("roguelite", {}) as Dictionary
 	_check(rogue_profile.has("unlocked_weapons") and rogue_profile.has("active_run") and not bool(rogue_profile.get("prologue_complete", true)), "v6 migration supplies safe roguelite defaults")
 	_check(FoldlightRogueContentCatalog.validation_errors().is_empty(), "starter regions, weapon, active item, upgrades, and bosses form a valid typed catalog")
-	_check(FoldlightRogueContentCatalog.REGIONS.size() == 3 and FoldlightRogueContentCatalog.BOSSES.size() == 6, "catalog ships three regions with six compatible boss choices")
+	_check(FoldlightRogueContentCatalog.REGIONS.size() == 3 and FoldlightRogueContentCatalog.BOSSES.size() == 7, "catalog ships three regions with seven compatible boss choices")
 	profile_manager.profile = migrated.duplicate(true)
 	_check(profile_manager.commit_roguelite_checkpoint(restored.make_checkpoint(), false), "profile accepts a valid cleared-room roguelite checkpoint")
 	_check(not (profile_manager.get_roguelite_snapshot().get("active_run", {}) as Dictionary).is_empty(), "roguelite checkpoint is isolated inside its profile branch")

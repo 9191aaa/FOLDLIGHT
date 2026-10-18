@@ -37,16 +37,16 @@ func _test_schedule() -> void:
 	check(director.confirm_spawned([&"boss_a"]), "spawn acknowledgement activates one reserved encounter")
 	check(not director.report_defeated(&"unknown", 910.0), "unrelated deaths cannot complete an encounter")
 	check(director.report_defeated(&"boss_a", 910.0) and not director.report_defeated(&"boss_a", 910.0), "last boss grants one completion edge only")
-	check(director.advance(0.1, 50, 923.0).state == &"waiting", "new levels respect the deep-run fourteen-second post-boss recovery")
-	check(director.advance(0.1, 50, 924.0).wave_index == 2, "the next encounter begins after recovery")
+	check(director.advance(0.1, 50, 915.9).state == &"waiting", "new levels respect the deep-run six-second post-boss recovery")
+	check(director.advance(0.1, 50, 916.0).wave_index == 2, "the next encounter begins after recovery")
 	for step in 31:
-		director.advance(0.1, 50, 924.0)
+		director.advance(0.1, 50, 916.0)
 	check(director.planned_boss_ids().size() == 2, "high-level second encounter enables two distinct simultaneous bosses")
 	check(director.confirm_spawned([&"boss_b", &"boss_c"]), "two boss identities activate as a single encounter")
-	check(not director.report_defeated(&"boss_b", 924.0) and director.get_snapshot().active_count == 1, "first of two deaths keeps the encounter active")
-	check(director.report_defeated(&"boss_c", 924.0), "only final death completes a multi-boss wave")
+	check(not director.report_defeated(&"boss_b", 916.0) and director.get_snapshot().active_count == 1, "first of two deaths keeps the encounter active")
+	check(director.report_defeated(&"boss_c", 916.0), "only final death completes a multi-boss wave")
 	for wave in range(3, 8):
-		var time := 924.0 + (wave - 2) * 38.0
+		var time := 916.0 + (wave - 2) * 12.0
 		director.advance(0.1, 50, time)
 		for step in 31:
 			director.advance(0.1, 50, time)
@@ -83,6 +83,11 @@ func _test_boss_runtime(slice: FoldlightEndlessSliceRuntime) -> void:
 			boss = actor
 	if boss == null:
 		return
+	# The seven-boss seed rotation can now select a mirror, whose entrance is
+	# intentionally invulnerable. Complete its actual intro before testing death.
+	for step in 14:
+		boss.advance_simulation(0.1, slice.player.global_position)
+	check(boss.phase_controller.state != FoldlightBossPhaseController.State.INTRO, "scheduled boss finishes its real entrance before ownership and defeat checks")
 	var second := slice.combat_runtime._spawn_enemy_from_entry({"boss_id": &"tide_loom_mother", "spawn_position": slice.player.global_position + Vector2(700, 0), "boss_options": {"health_scale": 0.8, "endless_roam": true, "arena_pressure": false}}, false) as FoldlightRogueBossActor
 	check(boss.actor_id != second.actor_id, "simultaneous bosses have independent actor identities")
 	var minion := slice.combat_runtime._spawn_enemy_from_entry({"enemy_id": &"drifter", "spawn_position": slice.player.global_position + Vector2(600, 0), "spawned_by": boss.actor_id}, false)
@@ -119,7 +124,8 @@ func _test_bombardment(slice: FoldlightEndlessSliceRuntime) -> void:
 	check(edges == 1, "one barrage produces exactly one damage edge across all landing sites")
 	barrage.configure(slice.controller.map_definition, slice.controller.map_runtime, 317)
 	barrage.advance(0.1, 90.0, point, PackedVector2Array(), 2)
-	check(barrage.get_snapshot().state == &"rest", "two bosses suppress additional bombardment pressure")
+	check(barrage.get_snapshot().state == &"warning" and barrage.get_snapshot().zones.size() <= 2, "multiple bosses retain bombardment pressure with a bounded two-site footprint")
+	barrage.configure(slice.controller.map_definition, slice.controller.map_runtime, 317)
 	barrage.advance(0.1, 90.0, point, PackedVector2Array([point]), 0)
 	var protected := true
 	for zone in barrage.get_snapshot().zones:

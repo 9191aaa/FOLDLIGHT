@@ -20,6 +20,7 @@ var definition: FoldlightRogueEnemyDefinition
 var actor_id: StringName = &"cinder_mine"
 var health: float = 5.0
 var phase: Phase = Phase.APPROACH
+var command_move_multiplier: float = 1.0
 var _remaining: float = 0.0
 var _arming_remaining: float = 0.0
 var _visual_time: float = 0.0
@@ -39,6 +40,7 @@ func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: Stri
 	actor_id = new_actor_id
 	health = definition.base_health if definition != null else 5.0
 	phase = Phase.APPROACH
+	command_move_multiplier = 1.0
 	_remaining = 0.0
 	_arming_remaining = spawn_grace
 	_visual_time = 0.0
@@ -62,7 +64,7 @@ func advance_simulation(delta: float, target_position: Vector2, hostile_time_sca
 		Phase.APPROACH:
 			_arming_remaining = maxf(0.0, _arming_remaining - step)
 			var offset := target_position - global_position
-			var speed := definition.move_speed if definition != null else 135.0
+			var speed := (definition.move_speed if definition != null else 280.0) * command_move_multiplier
 			velocity = velocity.move_toward(offset.normalized() * speed, speed * 4.0 * step)
 			if _arming_remaining <= 0.00001 and offset.length() <= trigger_distance:
 				phase = Phase.CHARGING
@@ -116,6 +118,12 @@ func is_contact_dangerous() -> bool:
 
 func get_contact_radius() -> float:
 	return 25.0
+
+
+func set_command_buff(snapshot: Dictionary) -> void:
+	# A commander accelerates pursuit, never the committed fuse: the anchored
+	# blast retains its complete readable escape window at every difficulty.
+	command_move_multiplier = clampf(float(snapshot.get("move_multiplier", 1.0)), 1.0, 2.2)
 
 
 func set_simulation_active(value: bool) -> void:

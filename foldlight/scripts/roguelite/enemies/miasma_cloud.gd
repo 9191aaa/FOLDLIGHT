@@ -1,18 +1,22 @@
 class_name FoldlightMiasmaCloud
 extends Node2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 const MIST_COLOR := Color("a9b58c")
 const SHADOW_COLOR := Color("172b29")
-const DRAW_INTERVAL: float = 0.05
+const WARNING_DRAW_INTERVAL: float = 0.1
+const ACTIVE_DRAW_INTERVAL: float = 0.15
+const DEFAULT_DURATION: float = 60.0
 
 var source_id: StringName = &""
 var radius: float = 112.0
 var warning_duration: float = 0.85
-var duration: float = 5.5
+var duration: float = DEFAULT_DURATION
 var tick_interval: float = 1.6
 var damage: int = 1
 var _warning_remaining: float = 0.85
-var _remaining: float = 5.5
+var _remaining: float = DEFAULT_DURATION
 var _hit_remaining: float = 0.0
 var _draw_remaining: float = 0.0
 var _simulation_active: bool = true
@@ -32,7 +36,7 @@ func configure(snapshot: Dictionary) -> void:
 	source_id = StringName(snapshot.get("source_id", &""))
 	radius = clampf(float(snapshot.get("radius", 112.0)), 70.0, 150.0)
 	warning_duration = clampf(float(snapshot.get("warning_duration", 0.85)), 0.7, 2.0)
-	duration = clampf(float(snapshot.get("duration", 5.5)), 1.0, 7.0)
+	duration = clampf(float(snapshot.get("duration", DEFAULT_DURATION)), 1.0, 90.0)
 	tick_interval = clampf(float(snapshot.get("tick_interval", 1.6)), 1.2, 3.0)
 	damage = 1
 	_warning_remaining = warning_duration
@@ -41,7 +45,19 @@ func configure(snapshot: Dictionary) -> void:
 	_draw_remaining = 0.0
 	_expired = false
 	_simulation_active = true
-	queue_redraw()
+	RenderRedraw.request(self)
+
+
+func refresh_duration(seconds: float = DEFAULT_DURATION) -> bool:
+	# A carrier crossing its own trail refreshes the same visible area. Never
+	# grow the radius, restart its warning, or grant an extra damage tick.
+	if _expired or not _simulation_active:
+		return false
+	var refreshed := clampf(seconds, 1.0, 90.0)
+	duration = maxf(duration, refreshed)
+	_remaining = maxf(_remaining, refreshed)
+	RenderRedraw.request(self)
+	return true
 
 
 func set_simulation_active(value: bool) -> void:
@@ -55,6 +71,9 @@ func advance_simulation(delta: float) -> bool:
 		return false
 	# A stalled browser frame cannot skip the visible warning or tick damage.
 	var step := clampf(delta, 0.0, 0.1)
+	if step <= 0.0:
+		return false
+	var was_warning := _warning_remaining > 0.00001
 	var active_step := step
 	if _warning_remaining > 0.0:
 		var warning_step := minf(active_step, _warning_remaining)
@@ -64,9 +83,10 @@ func advance_simulation(delta: float) -> bool:
 	_hit_remaining = maxf(0.0, _hit_remaining - active_step)
 	_expired = _remaining <= 0.00001
 	_draw_remaining -= step
-	if _draw_remaining <= 0.0 or _expired:
-		_draw_remaining = DRAW_INTERVAL
-		queue_redraw()
+	var changed_phase := was_warning != (_warning_remaining > 0.00001)
+	if _draw_remaining <= 0.0 or _expired or changed_phase:
+		_draw_remaining = WARNING_DRAW_INTERVAL if _warning_remaining > 0.00001 else ACTIVE_DRAW_INTERVAL
+		RenderRedraw.request(self)
 	return _expired
 
 
@@ -81,11 +101,11 @@ func consume_damage_at(world_position: Vector2) -> bool:
 
 func get_hazard_snapshot() -> Dictionary:
 	return {"source_id": source_id, "position": global_position, "radius": radius,
-		"warning_remaining": _warning_remaining, "remaining": _remaining,
+		"warning_remaining": _warning_remaining, "remaining": _remaining, "duration": duration,
 		"tick_remaining": _hit_remaining, "damage": damage, "expired": _expired,
 		"dangerous": not _expired and _warning_remaining <= 0.00001,
 		"simulation_active": _simulation_active, "fill_alpha": 0.12,
-		"outline_alpha": 0.88, "visual_version": &"miasma_readable_3_18"}
+		"outline_alpha": 0.88, "visual_version": &"miasma_readable_3_19"}
 
 
 func _draw() -> void:

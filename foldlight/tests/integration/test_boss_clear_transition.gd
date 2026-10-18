@@ -116,6 +116,11 @@ func _enter_boss(session: FoldlightRogueSessionController, region: int) -> Foldl
 	session.start_new_run()
 	var controller := session.run_controller
 	controller.run_state.current_region = region
+	# This regression specifically exercises the archivist's deferred support.
+	# Pin authored bosses instead of depending on the expanding random roster.
+	for node: Dictionary in controller.run_state.route.regions[region].nodes:
+		if StringName(node.get("category", &"")) == &"boss":
+			node["boss_id"] = ["reef_crown_battery", "inverted_archivist", "origami_judge"][region]
 	for node: Dictionary in controller.get_current_region_snapshot().get("nodes", []):
 		if StringName(node.get("category", &"")) == &"boss":
 			controller.run_state.current_node_id = StringName(node["id"])

@@ -26,6 +26,12 @@ var homing_target: Node2D
 var homing_strength: float = 0.0
 var homing_range: float = 1500.0
 var homing_speed: float = 0.0
+## A hostile mirror pursues briefly, then commits to its flight direction.
+## Player homing keeps the existing unconstrained navigation contract.
+var homing_duration: float = 0.0
+var homing_turn_speed: float = 0.0
+var homing_elapsed: float = 0.0
+var boss_source: StringName = &""
 var navigation_waypoints: PackedVector2Array = PackedVector2Array()
 var navigation_waypoint_index: int = 0
 var navigation_repath_interval: float = 0.24
@@ -86,6 +92,10 @@ func configure(snapshot: Dictionary) -> void:
 	homing_strength = clampf(float(snapshot.get("homing_strength", 0.0)), 0.0, 14.0)
 	homing_range = clampf(float(snapshot.get("homing_range", 1500.0)), 120.0, 2400.0)
 	homing_speed = clampf(float(snapshot.get("homing_speed", 0.0)), 0.0, 1600.0)
+	homing_duration = clampf(float(snapshot.get("homing_duration", 0.0)), 0.0, 2.0)
+	homing_turn_speed = clampf(float(snapshot.get("homing_turn_speed", 0.0)), 0.0, 2.0)
+	homing_elapsed = 0.0
+	boss_source = StringName(snapshot.get("boss_source", &""))
 	var waypoint_variant: Variant = snapshot.get("navigation_waypoints", PackedVector2Array())
 	navigation_waypoints = PackedVector2Array(waypoint_variant) if waypoint_variant is PackedVector2Array else PackedVector2Array()
 	navigation_waypoint_index = 0
@@ -145,7 +155,14 @@ func advance_simulation(delta: float, time_scale: float = 1.0) -> bool:
 			_refresh_moving_visual()
 			return lifetime <= 0.0
 	_previous_global_position = global_position
-	if homing_strength > 0.0 and is_instance_valid(homing_target):
+	if hostile and homing_duration > 0.0 and homing_elapsed < homing_duration and is_instance_valid(homing_target):
+		var pursuit_step := minf(movement_step, homing_duration - homing_elapsed)
+		var offset := homing_target.global_position - global_position
+		if not offset.is_zero_approx() and offset.length_squared() <= homing_range * homing_range:
+			var angle_change := clampf(angle_difference(velocity.angle(), offset.angle()), -homing_turn_speed * pursuit_step, homing_turn_speed * pursuit_step)
+			velocity = velocity.rotated(angle_change)
+		homing_elapsed += movement_step
+	elif not hostile and homing_strength > 0.0 and is_instance_valid(homing_target):
 		_advance_navigation_waypoint()
 		var homing_position := homing_target.global_position
 		if navigation_waypoint_index < navigation_waypoints.size():
@@ -171,7 +188,7 @@ func advance_simulation(delta: float, time_scale: float = 1.0) -> bool:
 		velocity = velocity.lerp(return_offset.normalized() * velocity.length(), clampf(9.0 * movement_step, 0.0, 1.0)).normalized() * velocity.length()
 	if not is_zero_approx(curve):
 		velocity = velocity.rotated(curve * movement_step)
-	if style == &"tide_bell" and not hostile and not is_echo and global_position.distance_to(target_position) <= maxf(radius, velocity.length() * movement_step):
+	if style == &"tide_bell" and not is_echo and (not hostile or not boss_source.is_empty()) and global_position.distance_to(target_position) <= maxf(radius, velocity.length() * movement_step):
 		global_position = target_position
 		destination_reached = true
 	else:
@@ -195,7 +212,9 @@ func sync_visual_direction() -> void:
 	# transform rotate their retained commands, rather than rebuilding hundreds
 	# of outlines and PackedArrays on every physics tick. Simulation still uses
 	# world-space velocity/radius, exactly as before.
-	if _uses_rotating_hostile_visual():
+	if style == &"sun_thread":
+		rotation = velocity.angle()
+	elif _uses_rotating_hostile_visual():
 		rotation = velocity.angle()
 	elif not hostile and style in [&"crease_petal", &"needle_orbit", &"returning_gull", &"prism_fan", &"sun_thread"]:
 		rotation = velocity.angle() if launch_delay <= 0.0 else orbit_angle + PI * 0.5

@@ -15,7 +15,7 @@ var current_pattern: StringName = &""
 var definition: FoldlightRogueBossDefinition
 
 const TELEGRAPH_SECONDS := [1.05, 1.0, 0.95]
-const RECOVERY_SECONDS := [1.05, 0.95, 0.85]
+const RECOVERY_SECONDS := [0.68, 0.58, 0.48]
 const BLACK_GOLD_WARNING_BONUS := 0.22
 const PHASE_TRANSITION_SECONDS := 1.5
 
@@ -157,7 +157,7 @@ func _begin_telegraph() -> void:
 	if definition.telegraph_seconds > 0.0:
 		_last_telegraph_duration = definition.telegraph_seconds
 	if definition.content_id == &"torn_page_executioner" and current_pattern == &"execution_dash":
-		_last_telegraph_duration = maxf(0.62, definition.telegraph_seconds - phase_index * 0.05 - intensity_tier * 0.025)
+		_last_telegraph_duration = maxf(0.58, definition.telegraph_seconds - phase_index * 0.04 - intensity_tier * 0.02)
 	if current_pattern in [&"black_lane", &"margin_cut", &"unreflectable_cut", &"shrinking_frame"]:
 		_last_telegraph_duration += BLACK_GOLD_WARNING_BONUS
 	state = State.TELEGRAPH
@@ -167,4 +167,5 @@ func _begin_telegraph() -> void:
 
 
 func _recovery_seconds() -> float:
-	return definition.recovery_seconds if definition.recovery_seconds > 0.0 else float(RECOVERY_SECONDS[mini(phase_index, 2)])
+	var authored := definition.recovery_seconds if definition.recovery_seconds > 0.0 else float(RECOVERY_SECONDS[mini(phase_index, 2)])
+	return maxf(0.23, authored - phase_index * 0.045 - intensity_tier * 0.032)

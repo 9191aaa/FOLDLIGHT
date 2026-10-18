@@ -36,7 +36,7 @@ func _boss(boss_id: StringName, options: Dictionary = {}) -> FoldlightRogueBossA
 
 
 func _test_catalog_and_plans() -> void:
-	_check(FoldlightRogueContentCatalog.validation_errors().is_empty(), "six boss resources validate together")
+	_check(FoldlightRogueContentCatalog.validation_errors().is_empty(), "seven boss resources validate together")
 	var legacy: Array[StringName] = [&"reef_crown_battery", &"inverted_archivist", &"origami_judge"]
 	for index in 3:
 		var region := FoldlightRogueContentCatalog.REGIONS[index]
@@ -44,7 +44,7 @@ func _test_catalog_and_plans() -> void:
 		var expected := randi()
 		seed(317)
 		var options := FoldlightRogueContentCatalog.boss_options_for_region(region.content_id)
-		_check(options.size() == 2 and options[0].content_id == legacy[index] and options[1].content_id == Geometry.NEW_IDS[index], "%s retains its old primary and exposes one new alternative" % region.content_id)
+		_check(options.size() >= 2 and options[0].content_id == legacy[index] and options[1].content_id == Geometry.NEW_IDS[index], "%s retains its old primary and previous region alternative" % region.content_id)
 		_check(randi() == expected, "catalog lookup does not consume the seeded gameplay sequence")
 	for boss_id in Geometry.NEW_IDS:
 		var definition := FoldlightRogueContentCatalog.boss_by_id(boss_id)
@@ -102,7 +102,7 @@ func _test_delayed_cancellation() -> void:
 			actor.advance_simulation(STEP, actor.global_position+Vector2(0,450))
 			if not events.is_empty(): break
 		_check(events.size() == 1 and actor._pending_volleys.size() == 1, "%s cancellation fixture reaches a real first bell with its second pending" % cancel_reason)
-		_check(not warnings.is_empty() and float(warnings[0]["duration"]) >= 1.35, "paired attacks provide their full warning before the first pulse")
+		_check(not warnings.is_empty() and is_equal_approx(float(warnings[0]["duration"]), actor.definition.telegraph_seconds) and float(warnings[0]["duration"]) >= 1.0, "paired attacks provide their full authored warning before the first pulse")
 		var warning := FoldlightBossAttackTelegraph.new()
 		root.add_child(warning)
 		warning.configure(warnings[0])

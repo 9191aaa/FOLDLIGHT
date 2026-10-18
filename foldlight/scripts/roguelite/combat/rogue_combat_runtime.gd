@@ -16,9 +16,11 @@ const PROJECTILE_SCENE: PackedScene = preload("res://scenes/roguelite/combat/rog
 const TELEGRAPH_SCENE: PackedScene = preload("res://scenes/roguelite/combat/spawn_telegraph.tscn")
 const ZONE_SCENE: PackedScene = preload("res://scenes/roguelite/enemies/ink_denial_zone.tscn")
 const BOSS_SCENE: PackedScene = preload("res://scenes/roguelite/bosses/rogue_boss_actor.tscn")
+const MIRROR_BOSS_SCENE: PackedScene = preload("res://scenes/roguelite/bosses/mirror_moth_actor.tscn")
+const MIRROR_FIELD = preload("res://scripts/roguelite/combat/mirror_spell_field.gd")
 const BOSS_TELEGRAPH_SCENE: PackedScene = preload("res://scenes/roguelite/bosses/boss_attack_telegraph.tscn")
 const MIASMA_CLOUD = preload("res://scripts/roguelite/enemies/miasma_cloud.gd")
-const MAX_POISON_CLOUDS: int = 12
+const MAX_POISON_CLOUDS: int = 24
 const MAX_PROJECTILES: int = 260
 const MAX_AUTOMATIC_PROJECTILES: int = 64
 const MAX_PROJECTILES_PER_WEAPON: int = 16
@@ -48,6 +50,8 @@ var directed_threat_allowance: int = -1
 var directed_spawn_validator: Callable
 var effect_suspension_guard: Callable
 var _poison_clouds: Array[FoldlightMiasmaCloud] = []
+var _mirror_fields: Array[FoldlightMirrorSpellField] = []
+var _clone_capture_candidates: Array[Node2D] = []
 var _poison_hit_remaining: float = 0.0
 var _command_links_active: bool = false
 var _last_dash_blast_serial: int = -1
@@ -197,6 +201,8 @@ func get_glimmer_gain_multiplier() -> float:
 
 func clear_combat() -> void:
 	_clear_poison_clouds()
+	_clear_mirror_fields()
+	_clone_capture_candidates.clear()
 	_poison_hit_remaining = 0.0
 	_command_links_active = false
 	_last_dash_blast_serial = -1
@@ -433,7 +439,6 @@ func retire_directed_enemy(actor: Node2D, allow_expired_captain: bool = false) -
 		return false
 	enemies.erase(actor)
 	_collision_index_dirty = true
-	_clear_poison_clouds(StringName(actor.get("actor_id")))
 	if actor.is_connected("defeated", _on_enemy_defeated):
 		actor.disconnect("defeated", _on_enemy_defeated)
 	if actor.has_method("set_simulation_active"):
@@ -468,6 +473,9 @@ func _physics_process(delta: float) -> void:
 	player.tick_automatic_weapons(delta * _weapon_haste, not enemies.is_empty())
 	_update_support_links(delta)
 	_update_enemies(delta)
+	if not active:
+		return
+	_update_mirror_fields(delta)
 	if not active:
 		return
 	_update_dash_trail(delta)
@@ -544,6 +552,8 @@ func _update_enemies(delta: float) -> void:
 		elif enemy is FoldlightInkWarden:
 			(enemy as FoldlightInkWarden).advance_simulation(delta, player.global_position, _hostile_time_scale)
 		elif enemy is FoldlightRogueBossActor:
+			if enemy.has_method("sync_mirror_input"):
+				enemy.call("sync_mirror_input", player.folding)
 			(enemy as FoldlightRogueBossActor).advance_simulation(delta, player.global_position, _hostile_time_scale)
 		elif enemy is FoldlightRogueEnemyActor:
 			(enemy as FoldlightRogueEnemyActor).advance_simulation(delta, target, _hostile_time_scale)
@@ -629,11 +639,20 @@ func _update_projectiles(delta: float) -> void:
 
 func _advance_projectiles(delta: float) -> void:
 	var was_active := active
+	# Only mirrors can absorb friendly shots. Gather once per fixed step,
+	# rather than scanning the full population twice for every friendly shot.
+	_clone_capture_candidates.clear()
+	for actor in enemies:
+		if is_instance_valid(actor) and not actor.is_queued_for_deletion() and actor.has_method("can_capture_projectile"):
+			_clone_capture_candidates.append(actor)
 	for projectile in projectiles.duplicate():
 		if was_active and not active:
 			return
 		if not is_instance_valid(projectile) or projectile.is_queued_for_deletion():
 			projectiles.erase(projectile)
+			continue
+		if not projectile.hostile and _try_clone_capture(projectile):
+			_remove_projectile(projectile)
 			continue
 		var projectile_scale := _hostile_time_scale if projectile.hostile else 1.0
 		if not projectile.hostile and projectile.style == &"return_light":
@@ -656,31 +675,43 @@ func _advance_projectiles(delta: float) -> void:
 		if projectile.advance_simulation(delta, projectile_scale):
 			_remove_projectile(projectile)
 			continue
-		if not projectile.hostile and projectile.style == &"tide_bell" and projectile.destination_reached:
-			_detonate_tide_bell(projectile)
+		if projectile.style == &"tide_bell" and projectile.destination_reached:
+			if projectile.hostile:
+				_detonate_mirror_bell(projectile)
+			else:
+				_detonate_tide_bell(projectile)
 			continue
 		if not room.room_bounds.grow(120.0).has_point(projectile.global_position):
 			_remove_projectile(projectile)
 			continue
 		if _resolve_projectile_terrain(projectile, delta):
-			if not projectile.hostile and projectile.style == &"tide_bell":
-				_detonate_tide_bell(projectile)
+			if projectile.style == &"tide_bell":
+				if projectile.hostile: _detonate_mirror_bell(projectile)
+				else: _detonate_tide_bell(projectile)
 			else:
 				_remove_projectile(projectile)
 			continue
 		if projectile.hostile:
 			if projectile.global_position.distance_to(player.global_position) <= projectile.radius + player.get_hit_radius():
-				if _try_hit_player(projectile.velocity) and not projectile.status_id.is_empty():
-					player.apply_status(projectile.status_id, projectile.status_duration)
+				if projectile.style == &"tide_bell" and not projectile.boss_source.is_empty():
+					_detonate_mirror_bell(projectile)
+					continue
+				if _try_hit_player(projectile.velocity):
+					if not projectile.status_id.is_empty(): player.apply_status(projectile.status_id, projectile.status_duration)
+					if active: _spawn_mirror_echo(projectile)
 				_remove_projectile(projectile)
 		else:
-			if _try_mirror_interception(projectile):
+			if _try_clone_capture(projectile) or _try_decoy_interception(projectile) or _try_mirror_interception(projectile):
 				_remove_projectile(projectile)
 			else:
 				_resolve_friendly_collision(projectile)
 
 
 func _update_automatic_homing(projectile: FoldlightRogueProjectile) -> void:
+	for field in _mirror_fields:
+		if is_instance_valid(field) and not field.is_queued_for_deletion() and field.resolved and field.action == &"dash_decoy" and field.global_position.distance_squared_to(projectile.global_position) < projectile.homing_range * projectile.homing_range:
+			projectile.set_homing_target(field)
+			return
 	if projectile.has_valid_homing_target() and not projectile.hit_actor_ids.has(StringName(projectile.homing_target.get("actor_id"))):
 		return
 	var selected: Node2D = null
@@ -790,8 +821,11 @@ func _resolve_friendly_collision(projectile: FoldlightRogueProjectile) -> void:
 		var applied_damage := projectile.damage
 		var enemy_health := float(enemy.get("health"))
 		var maximum_health := enemy_health
-		if enemy.has_method("get_combat_snapshot"):
-			maximum_health = float((enemy.call("get_combat_snapshot") as Dictionary).get("maximum_health", enemy_health))
+		if projectile.execute_damage_multiplier > 1.0:
+			if enemy.has_method("get_maximum_health"):
+				maximum_health = float(enemy.call("get_maximum_health"))
+			elif enemy.has_method("get_combat_snapshot"):
+				maximum_health = float((enemy.call("get_combat_snapshot") as Dictionary).get("maximum_health", enemy_health))
 		if maximum_health > 0.0 and enemy_health / maximum_health <= 0.30:
 			applied_damage *= projectile.execute_damage_multiplier
 		var target_defeated := false
@@ -921,8 +955,12 @@ func _damage_enemies_in_radius(center: Vector2, radius: float, amount: float, st
 			continue
 		var before := float(enemy.get("health"))
 		var applied_damage := amount
-		if execute_multiplier > 1.0 and enemy.has_method("get_combat_snapshot"):
-			var maximum_health := float((enemy.call("get_combat_snapshot") as Dictionary).get("maximum_health", before))
+		if execute_multiplier > 1.0:
+			var maximum_health := before
+			if enemy.has_method("get_maximum_health"):
+				maximum_health = float(enemy.call("get_maximum_health"))
+			elif enemy.has_method("get_combat_snapshot"):
+				maximum_health = float((enemy.call("get_combat_snapshot") as Dictionary).get("maximum_health", before))
 			if maximum_health > 0.0 and before / maximum_health <= 0.30:
 				applied_damage *= execute_multiplier
 		if not style.is_empty() and enemy is FoldlightRogueBossActor:
@@ -1040,14 +1078,13 @@ func _on_poison_requested(snapshot: Dictionary, source_id: StringName) -> void:
 	var point := Vector2(snapshot.get("position", Vector2.INF))
 	if not point.is_finite(): return
 	for cloud in _poison_clouds:
-		if is_instance_valid(cloud) and not cloud.is_queued_for_deletion() and cloud.source_id == source_id and cloud.global_position.distance_squared_to(point) < 84.0 * 84.0: return
+		if is_instance_valid(cloud) and not cloud.is_queued_for_deletion() and cloud.source_id == source_id and cloud.global_position.distance_squared_to(point) < 84.0 * 84.0:
+			cloud.refresh_duration(float(snapshot.get("duration", 60.0)))
+			return
 	if _poison_clouds.size() >= MAX_POISON_CLOUDS:
-		var oldest: FoldlightMiasmaCloud = _poison_clouds[0]
-		for cloud in _poison_clouds:
-			if is_instance_valid(cloud) and cloud.source_id == source_id:
-				oldest = cloud
-				break
-		_retire_poison_cloud(oldest)
+		# Preserve established routes instead of erasing the oldest trail every
+		# time a crowd emits. Expiry makes space for subsequent clouds.
+		return
 	var cloud: FoldlightMiasmaCloud = MIASMA_CLOUD.new()
 	room.projectile_container.add_child(cloud)
 	var owned := snapshot.duplicate(true)
@@ -1077,7 +1114,7 @@ func _update_poison_damage() -> void:
 	for cloud in _poison_clouds:
 		if is_instance_valid(cloud) and not cloud.is_queued_for_deletion() and cloud.consume_damage_at(player.global_position):
 			# Overlapping clouds share one exposure window, including shield and
-			# dash protection; twelve clouds cannot strip twelve shield layers.
+			# dash protection; overlapping clouds cannot strip several shields.
 			_poison_hit_remaining = maxf(1.2, float(cloud.tick_interval))
 			_try_hit_player(player.global_position - cloud.global_position)
 			return
@@ -1113,17 +1150,183 @@ func _try_mirror_interception(projectile: FoldlightRogueProjectile) -> bool:
 	return false
 
 
+func _try_clone_capture(projectile: FoldlightRogueProjectile) -> bool:
+	if projectile.hostile or _clone_capture_candidates.is_empty(): return false
+	var snapshot := {"capture_id": projectile.get_instance_id(), "position": projectile.global_position, "hostile": false, "reflectable": projectile.reflectable, "damage": projectile.damage, "velocity": projectile.velocity, "style": projectile.style, "automatic_weapon_id": projectile.automatic_weapon_id}
+	for actor in _clone_capture_candidates:
+		if not is_instance_valid(actor) or actor.is_queued_for_deletion(): continue
+		if bool(actor.call("can_capture_projectile", snapshot)) and bool(actor.call("capture_projectile", snapshot)):
+			return true
+	return false
+
+
+func _spawn_mirror_volley(snapshot: Dictionary, source: Node2D) -> int:
+	if not active or source.is_queued_for_deletion() or float(source.get("health")) <= 0.0: return 0
+	var count := 0
+	for raw: Dictionary in snapshot.get("projectiles", []):
+		var shot := snapshot.duplicate()
+		shot.erase("projectiles")
+		shot.merge(raw, true)
+		shot["origin"] = Vector2(raw.get("origin", snapshot.get("origin", source.global_position)))
+		shot["velocity"] = Vector2(shot.get("direction", Vector2.DOWN)).normalized() * float(shot.get("speed", 300.0))
+		shot["hostile"] = true
+		if StringName(shot.get("style", &"")) == &"return_light":
+			shot["style"] = &"mirror_return"
+		shot["boss_source"] = source.get("actor_id")
+		shot["homing_target"] = player
+		# The player owns a discrete heart system. Build damage changes attack
+		# pressure in the actor, never strips several hearts in one collision.
+		shot["damage"] = 1.0
+		shot["reflectable"] = true
+		if _spawn_projectile(shot) != null: count += 1
+	return count
+
+
+func _on_mirror_action_requested(snapshot: Dictionary, source: Node2D) -> void:
+	if not is_instance_valid(source) or source.is_queued_for_deletion(): return
+	var source_id := StringName(source.get("actor_id"))
+	var stage := StringName(snapshot.get("stage", &"resolve"))
+	if stage == &"cancel":
+		_clear_mirror_fields(source_id)
+		return
+	if not active or float(source.get("health")) <= 0.0: return
+	var action := StringName(snapshot.get("action", &""))
+	var serial := int(snapshot.get("serial", 0))
+	var origin := Vector2(snapshot.get("origin", source.global_position))
+	if action == &"dash_blast" and stage == &"resolve":
+		var path: PackedVector2Array = snapshot.get("path", PackedVector2Array([origin]))
+		if path.is_empty(): path.append(origin)
+		var radius := clampf(float(snapshot.get("radius", 70.0)), 45.0, 180.0)
+		if _blast_reachable_origin(path, player.global_position, radius).is_finite():
+			_try_hit_player(player.global_position - origin)
+		for projectile in projectiles.duplicate():
+			if is_instance_valid(projectile) and not projectile.hostile and _blast_reachable_origin(path, projectile.global_position, radius).is_finite():
+				_remove_projectile(projectile)
+		_add_active_flash(origin, Color("d3a291"), radius, 0.32)
+		return
+	if not action in [&"radial_push", &"anchor_shield", &"dash_decoy", &"hostile_slow"]: return
+	if stage == &"warning":
+		var field := _create_mirror_field({
+			"source_id": source_id, "serial": serial, "action": action,
+			"position": Vector2(snapshot.get("target_position", origin)) if action == &"hostile_slow" else origin,
+			"radius": 260.0 if action == &"hostile_slow" else (32.0 if action == &"dash_decoy" else (430.0 if action == &"anchor_shield" else 330.0)),
+			"power": snapshot.get("power", 1.0), "duration": snapshot.get("duration", 1.0),
+		})
+		if field != null: field.set_meta("mirror_source_instance", source.get_instance_id())
+		return
+	if stage != &"resolve": return
+	for field in _mirror_fields:
+		if not is_instance_valid(field) or field.is_queued_for_deletion() or field.source_id != source_id or field.serial != serial or field.resolved: continue
+		field.resolve()
+		if action in [&"radial_push", &"anchor_shield"]:
+			_convert_mirror_projectiles(source, field.global_position, 12 if action == &"radial_push" else 8, field.radius)
+			if action == &"radial_push" and field.contains_point(player.global_position):
+				_try_hit_player(player.global_position - field.global_position)
+			field.remaining = 0.35
+		return
+
+
+func _create_mirror_field(snapshot: Dictionary) -> FoldlightMirrorSpellField:
+	if room == null or _mirror_fields.size() >= 24: return null
+	var field: FoldlightMirrorSpellField = MIRROR_FIELD.new()
+	room.projectile_container.add_child(field)
+	field.configure(snapshot)
+	_mirror_fields.append(field)
+	return field
+
+
+func _convert_mirror_projectiles(source: Node2D, origin: Vector2, maximum: int, radius: float) -> int:
+	var origins: Array[Vector2] = []
+	for projectile in projectiles.duplicate():
+		if origins.size() >= maximum: break
+		# reflectable describes whether the PLAYER can absorb a hostile shot;
+		# real automatic/return shots are false and still belong to its mirror.
+		if not is_instance_valid(projectile) or projectile.hostile or projectile.global_position.distance_squared_to(origin) > radius * radius: continue
+		origins.append(projectile.global_position)
+		_remove_projectile(projectile)
+	var shots: Array[Dictionary] = []
+	for point in origins:
+		shots.append({"origin": point, "direction": point.direction_to(player.global_position), "speed": 440.0, "style": &"mirror_return", "radius": 7.0, "homing_duration": 1.4, "homing_turn_speed": 1.5, "lifetime": 4.0})
+	_spawn_mirror_volley({"projectiles": shots}, source)
+	return origins.size()
+
+
+func _detonate_mirror_bell(projectile: FoldlightRogueProjectile) -> void:
+	if projectile.explosion_resolved: return
+	projectile.explosion_resolved = true
+	var source_alive := false
+	for actor in enemies:
+		if is_instance_valid(actor) and not actor.is_queued_for_deletion() and actor.has_method("get_mirror_snapshot") and StringName(actor.get("actor_id")) == projectile.boss_source and float(actor.get("health")) > 0.0:
+			source_alive = true
+			break
+	# A flying bell must not recreate an owned skill after its source died.
+	if source_alive:
+		_create_mirror_field({"source_id": projectile.boss_source, "action": &"bell_blast", "position": projectile.global_position, "radius": projectile.area_radius, "duration": 0.35, "warning": 0.65, "waiting_for_actor": false})
+	_remove_projectile(projectile)
+
+
+func _spawn_mirror_echo(projectile: FoldlightRogueProjectile) -> void:
+	if projectile.boss_source.is_empty() or projectile.is_echo or projectile.echo_chance <= 0.0 or _rng.randf() > projectile.echo_chance: return
+	for side in [-1.0, 1.0]:
+		_spawn_projectile({"origin": projectile.global_position, "velocity": projectile.velocity.rotated(side * 0.28), "hostile": true,
+			"reflectable": true, "damage": 1.0, "radius": projectile.radius * 0.8, "lifetime": 1.8,
+			"style": projectile.style, "is_echo": true, "boss_source": projectile.boss_source,
+			"automatic_weapon_id": projectile.automatic_weapon_id, "homing_target": player,
+			"homing_duration": minf(0.7, projectile.homing_duration), "homing_turn_speed": projectile.homing_turn_speed})
+
+
+func _update_mirror_fields(delta: float) -> void:
+	for field in _mirror_fields.duplicate():
+		if not active: return
+		if not is_instance_valid(field) or field.is_queued_for_deletion():
+			_mirror_fields.erase(field)
+			continue
+		if field.advance_simulation(delta):
+			_retire_mirror_field(field)
+			continue
+		if not field.resolved: continue
+		if field.action == &"hostile_slow" and field.contains_point(player.global_position):
+			player.status_effects.apply_mirror_slow(field.power, 0.2)
+		elif field.action == &"bell_blast" and not field.damage_consumed:
+			field.damage_consumed = true
+			if field.contains_point(player.global_position): _try_hit_player(player.global_position - field.global_position)
+
+
+func _try_decoy_interception(projectile: FoldlightRogueProjectile) -> bool:
+	for field in _mirror_fields:
+		if is_instance_valid(field) and not field.is_queued_for_deletion() and field.resolved and field.action == &"dash_decoy" and field.contains_point(projectile.global_position): return true
+	return false
+
+
+func _clear_mirror_fields(source_id: StringName = &"") -> void:
+	for field in _mirror_fields.duplicate():
+		if not is_instance_valid(field) or source_id.is_empty() or field.source_id == source_id: _retire_mirror_field(field)
+
+
+func _retire_mirror_field(field: FoldlightMirrorSpellField) -> void:
+	_mirror_fields.erase(field)
+	if is_instance_valid(field):
+		field.hide()
+		field.queue_free()
+
+
 func _spawn_boss_actor(definition: FoldlightRogueBossDefinition, entry: Dictionary, counts_for_room: bool) -> FoldlightRogueBossActor:
 	if room == null:
 		return null
-	var boss := BOSS_SCENE.instantiate() as FoldlightRogueBossActor
+	var boss_scene := MIRROR_BOSS_SCENE if definition.content_id == &"mirror_moth" else BOSS_SCENE
+	var boss := boss_scene.instantiate() as FoldlightRogueBossActor
 	room.enemy_container.add_child(boss)
 	boss.configure(definition, room.room_bounds, _rng.randi(), entry.get("boss_options", {}))
 	_spawn_serial += 1
 	boss.actor_id = StringName("%s_%d" % [definition.content_id, _spawn_serial])
 	boss.global_position = Vector2(entry.get("spawn_position", room.room_bounds.get_center()))
+	if boss.has_method("configure_mirror_build") and is_instance_valid(player):
+		var build := player.get_mirror_build_snapshot()
+		build.provenance["boss_actor_id"] = String(boss.actor_id)
+		boss.call("configure_mirror_build", build)
+		boss.connect("mirror_action_requested", _on_mirror_action_requested.bind(boss))
 	boss.defeated.connect(_on_enemy_defeated)
-	boss.volley_requested.connect(_on_boss_volley_requested)
+	boss.volley_requested.connect(_on_boss_volley_requested.bind(boss))
 	boss.telegraph_requested.connect(_on_boss_telegraph_requested.bind(boss.actor_id))
 	boss.zone_requested.connect(_on_boss_zone_requested.bind(boss.actor_id))
 	boss.minion_requested.connect(_on_boss_minion_requested.bind(boss.actor_id))
@@ -1149,6 +1352,7 @@ func _on_boss_telegraph_requested(snapshot: Dictionary, source_id: StringName = 
 
 
 func _on_boss_attack_cancelled(_state_value: float, source_id: StringName = &"") -> void:
+	_clear_mirror_fields(source_id)
 	_update_command_links()
 	if not is_instance_valid(room):
 		return
@@ -1157,7 +1361,10 @@ func _on_boss_attack_cancelled(_state_value: float, source_id: StringName = &"")
 			child.queue_free()
 
 
-func _on_boss_volley_requested(snapshot: Dictionary) -> void:
+func _on_boss_volley_requested(snapshot: Dictionary, source: Node2D = null) -> void:
+	if is_instance_valid(source) and source.has_method("configure_mirror_build"):
+		_spawn_mirror_volley(snapshot, source)
+		return
 	spawn_hostile_volley(snapshot)
 	var style := StringName(snapshot.get("style", &""))
 	var origin := Vector2(snapshot.get("origin", Vector2.ZERO))
@@ -1192,7 +1399,6 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 	directed_entry["grants_kill_credit"] = bool(actor.get_meta("grants_kill_credit", true))
 	enemies.erase(actor)
 	_collision_index_dirty = true
-	_clear_poison_clouds(StringName(actor.get("actor_id")))
 	_update_command_links()
 	enemy_defeated.emit(enemy_id)
 	enemy_defeated_detailed.emit(enemy_id, directed_entry)
@@ -1201,7 +1407,6 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 		for spawned in enemies.duplicate():
 			if is_instance_valid(spawned) and StringName(spawned.get_meta("spawned_by", &"")) == source_id:
 				enemies.erase(spawned)
-				_clear_poison_clouds(StringName(spawned.get("actor_id")))
 				spawned.queue_free()
 	if room != null and bool(actor.get_meta("counts_for_room", true)):
 		room.notify_enemy_defeated()
@@ -1211,7 +1416,6 @@ func _on_enemy_defeated(actor: Node2D) -> void:
 		for minion in enemies.duplicate():
 			if is_instance_valid(minion) and StringName(minion.get_meta("spawned_by", &"")) == source_id:
 				enemies.erase(minion)
-				_clear_poison_clouds(StringName(minion.get("actor_id")))
 				minion.queue_free()
 		if is_instance_valid(room):
 			for child in room.projectile_container.get_children():
@@ -1324,6 +1528,10 @@ func _on_player_shot_requested(snapshot: Dictionary) -> void:
 	var target := _select_target(int(snapshot.get("targeting", 0)), float(snapshot.get("targeting_range", 900.0)))
 	if target == null:
 		return
+	for field in _mirror_fields:
+		if is_instance_valid(field) and not field.is_queued_for_deletion() and field.resolved and field.action == &"dash_decoy" and StringName(target.get("actor_id")) == field.source_id:
+			target = field
+			break
 	var direction := player.global_position.direction_to(target.global_position)
 	if int(snapshot.get("targeting", 0)) == FoldlightRogueWeaponDefinition.TargetingMode.FORWARD_CONE and not player.velocity.is_zero_approx():
 		direction = player.velocity.normalized()
@@ -1674,10 +1882,11 @@ func _update_dash_trail(delta: float) -> void:
 
 
 func _on_room_cleared(_performance: Dictionary) -> void:
+	_clear_poison_clouds()
+	_clear_mirror_fields()
 	for enemy in enemies.duplicate():
 		if is_instance_valid(enemy) and not bool(enemy.get_meta("counts_for_room", true)):
 			enemies.erase(enemy)
-			_clear_poison_clouds(StringName(enemy.get("actor_id")))
 			enemy.queue_free()
 	_clear_heal_progress += maxf(0.0, float(_build_stats.get("clear_heal_progress", 0.0)))
 	var heal := int(floor(_clear_heal_progress))
@@ -1931,17 +2140,18 @@ func _spawn_projectile(snapshot: Dictionary) -> FoldlightRogueProjectile:
 		return null
 	var automatic_id := StringName(snapshot.get("automatic_weapon_id", &""))
 	if not automatic_id.is_empty():
+		var hostile := bool(snapshot.get("hostile", false))
 		var automatic_count := 0
 		var weapon_count := 0
 		for existing in projectiles:
-			if not is_instance_valid(existing) or existing.is_queued_for_deletion() or existing.automatic_weapon_id.is_empty():
+			if not is_instance_valid(existing) or existing.is_queued_for_deletion() or existing.hostile != hostile or existing.automatic_weapon_id.is_empty():
 				continue
 			automatic_count += 1
 			if existing.automatic_weapon_id == automatic_id:
 				weapon_count += 1
 		# A complete arsenal must not erase hostile bullets or banked return
 		# light to make room for decorative fire; defer only this automatic shot.
-		if automatic_count >= MAX_AUTOMATIC_PROJECTILES or weapon_count >= MAX_PROJECTILES_PER_WEAPON or projectiles.size() >= MAX_PROJECTILES:
+		if automatic_count >= (96 if hostile else MAX_AUTOMATIC_PROJECTILES) or weapon_count >= (24 if hostile else MAX_PROJECTILES_PER_WEAPON) or projectiles.size() >= MAX_PROJECTILES:
 			return null
 	while projectiles.size() >= MAX_PROJECTILES:
 		_remove_projectile(projectiles[0])

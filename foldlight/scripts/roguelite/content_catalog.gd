@@ -102,6 +102,7 @@ const BOSSES: Array[FoldlightRogueBossDefinition] = [
 	preload("res://resources/roguelite/bosses/tide_loom_mother.tres"),
 	preload("res://resources/roguelite/bosses/torn_page_executioner.tres"),
 	preload("res://resources/roguelite/bosses/eclipse_twin_bells.tres"),
+	preload("res://resources/roguelite/bosses/mirror_moth.tres"),
 ]
 
 

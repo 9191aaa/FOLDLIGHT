@@ -18,7 +18,7 @@ const MOVE_SPEED: float = 430.0
 const FOLD_SPEED: float = 235.0
 const ACCELERATION: float = 2100.0
 const FRICTION: float = 1750.0
-const MAX_HEALTH: int = 5
+const MAX_HEALTH: int = 4
 const CAPTURE_CAPACITY: int = 16
 const FOCUS_DRAIN: float = 0.185
 const FOCUS_REGEN: float = 0.145
@@ -496,6 +496,42 @@ func get_active_item_cooldown_ratio() -> float:
 
 func get_active_inventory_snapshot() -> Array[Dictionary]:
 	return active_item_slot.get_inventory_snapshot()
+
+
+## Values come from the equipped components, after build modifiers. The mirror
+## owns a deep copy: collecting a reward later cannot silently rewrite a boss.
+func get_mirror_build_snapshot() -> Dictionary:
+	var weapons: Array[Dictionary] = []
+	var levels: Dictionary = {}
+	for definition in weapon_mount.definitions:
+		var shot := weapon_mount.make_shot_snapshot(definition)
+		weapons.append(shot)
+		levels[String(definition.content_id)] = int(shot.weapon_level)
+	var collection := active_item_slot.get_save_snapshot()
+	return {
+		"weapons": weapons, "weapon_levels": levels,
+		"build_stats": rogue_build_stats.duplicate(true),
+		"max_health": max_health, "current_health": health,
+		"move_speed": MOVE_SPEED * move_speed_multiplier,
+		"fold_move_speed": FOLD_SPEED * fold_speed_multiplier,
+		"dash_speed": dash_component.dash_speed * dash_component.speed_multiplier,
+		"dash_duration": dash_component.get_effective_duration(),
+		"dash_invulnerability": dash_component.get_effective_invulnerability(),
+		"dash_cooldown": dash_component.base_cooldown * dash_component.cooldown_multiplier,
+		"dash_cooldown_remaining": dash_component.cooldown_remaining,
+		"dash_charges": dash_component.maximum_charges,
+		"capture_capacity": get_capture_capacity(),
+		"capture_radius": FOLD_RADIUS_MAX * fold_radius_multiplier,
+		"capture_radius_min": FOLD_RADIUS_MIN * fold_radius_multiplier,
+		"capture_charge_time": FULL_CHARGE_TIME,
+		"capture_cooldown": fold_component.roguelite_cooldown * fold_component.cooldown_multiplier,
+		"body_size_multiplier": body_size_multiplier,
+		"active_item_id": collection.active_item_id,
+		"owned_active_items": collection.active_item_ids.duplicate(),
+		"active_cooldown": active_item_slot.definition.cooldown if active_item_slot.definition != null else 0.0,
+		"active_cooldown_remaining": active_item_slot.cooldown_remaining,
+		"provenance": {"source": "actual_player_components", "snapshot_version": 1},
+	}.duplicate(true)
 
 
 func capture_one() -> bool:

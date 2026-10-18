@@ -5,12 +5,15 @@ extends RefCounted
 
 const FIRST_LEVEL := 8
 const WARNING_SECONDS := 3.0
-const MINIMUM_RECOVERY := 45.0
-const TIMED_ENCOUNTER_INTERVAL := 180.0
+const MINIMUM_RECOVERY := 36.0
+const TIMED_ENCOUNTER_INTERVAL := 150.0
+const DEEP_RECOVERY := 6.0
+const DEEP_ENCOUNTER_INTERVAL := 12.0
 const MAX_BOSSES := 6
 const BOSS_IDS: Array[StringName] = [
 	&"reef_crown_battery", &"tide_loom_mother", &"inverted_archivist",
 	&"torn_page_executioner", &"origami_judge", &"eclipse_twin_bells",
+	&"mirror_moth",
 ]
 
 var _seed: int = 0
@@ -50,7 +53,8 @@ func advance(delta: float, level: int, combat_seconds: float) -> Dictionary:
 			var level_count := 1 + maxi(0, int((_level - FIRST_LEVEL) / 6))
 			var time_count := 1 + maxi(0, int((_clock - 480.0) / 360.0))
 			# The first encounter always teaches one boss. Later growth opens all
-			# six identities; a coprime stride prevents duplicate pairs at 4–6.
+			# seven identities while retaining at most six living bosses. Five
+			# is coprime to seven, so each reservation contains distinct bosses.
 			var count := mini(MAX_BOSSES, mini(_wave, maxi(level_count, time_count)))
 			for index in count:
 				_plan.append(BOSS_IDS[posmod(_seed + (_wave - 1) * 5 + index * 5, BOSS_IDS.size())])
@@ -83,7 +87,7 @@ func confirm_spawned(actor_ids: Array[StringName]) -> bool:
 			return false
 		_alive[identity] = true
 	_state = &"active"
-	var level_step := 4 if _level < 16 else (3 if _level < 28 else 2)
+	var level_step := 4 if _level < 16 else (2 if _level < 24 else 1)
 	_next_level = maxi(_next_level + level_step, _level + level_step)
 	return true
 
@@ -107,18 +111,22 @@ func get_snapshot() -> Dictionary:
 		"wave_index": _wave, "active_count": _alive.size(), "warning_count": _plan.size() if _state in [&"warning", &"ready"] else 0,
 		"capacity": MAX_BOSSES, "difficulty_tier": maxi(int(_clock / 75.0), int((_level - 1) / 2)),
 		"intensity_tier": intensity_tier(), "encounter_interval": encounter_interval(),
+		"recovery_interval": recovery_interval(),
 		"title": "多首领来袭" if _plan.size() > 1 else "首领来袭",
 		"recovery_remaining": maxf(0.0, recovery_interval() - (_clock - _last_clear)),
 	}
 
 
 func encounter_interval() -> float:
-	var depth := maxf(float(_level - FIRST_LEVEL), maxf(0.0, _clock - 480.0) / 55.0)
-	return maxf(38.0, TIMED_ENCOUNTER_INTERVAL - depth * 5.5)
+	return maxf(DEEP_ENCOUNTER_INTERVAL, TIMED_ENCOUNTER_INTERVAL - _pressure_depth() * 7.0)
 
 
 func recovery_interval() -> float:
-	return maxf(14.0, MINIMUM_RECOVERY - maxf(0.0, float(_level - FIRST_LEVEL)) * 1.25)
+	return maxf(DEEP_RECOVERY, MINIMUM_RECOVERY - _pressure_depth() * 1.5)
+
+
+func _pressure_depth() -> float:
+	return maxf(maxf(0.0, float(_level - FIRST_LEVEL)), maxf(0.0, _clock - 480.0) / 45.0)
 
 
 func intensity_tier() -> int:

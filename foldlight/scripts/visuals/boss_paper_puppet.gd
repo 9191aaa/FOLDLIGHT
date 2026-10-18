@@ -1,7 +1,7 @@
 extends RefCounted
 ## Art-only articulated paper models. Call from CanvasItem._draw().
 ## Templates contain one ordered vertex-colored surface per paper part; the
-## bounded six-model cache retains every Mesh RID used by canvas commands.
+## bounded seven-model cache retains every Mesh RID used by canvas commands.
 ## No nodes, simulation clocks, random calls or per-frame mesh rebuilds.
 ## Pose: phase 0..2, time, motion_scale 0..1, intro 0..1 (1 = unfolded),
 ## charge/recoil/stagger/flash 0..1, transition 0..1 + transition_active,
@@ -9,7 +9,7 @@ extends RefCounted
 
 const Palette = preload("res://scripts/ui/foldlight_theme.gd")
 const Batch = preload("res://scripts/visuals/paper_draw_batch.gd")
-const IDS: Array[StringName] = [&"reef_crown_battery", &"inverted_archivist", &"origami_judge", &"tide_loom_mother", &"torn_page_executioner", &"eclipse_twin_bells"]
+const IDS: Array[StringName] = [&"reef_crown_battery", &"inverted_archivist", &"origami_judge", &"tide_loom_mother", &"torn_page_executioner", &"eclipse_twin_bells", &"mirror_moth"]
 const SHADOW := Color("061119")
 const REEF := Color("a49772")
 const PAGE := Color("c4ccc0")
@@ -43,6 +43,7 @@ static func get_visual_bounds(boss_id: StringName) -> Rect2:
 		&"tide_loom_mother": return Rect2(-190, -130, 380, 272)
 		&"torn_page_executioner": return Rect2(-146, -181, 292, 359)
 		&"eclipse_twin_bells": return Rect2(-189, -151, 378, 297)
+		&"mirror_moth": return Rect2(-146, -132, 292, 243)
 		_: return Rect2(-196, -146, 392, 282)
 
 
@@ -71,6 +72,7 @@ static func _get_model(boss_id: StringName) -> Dictionary:
 			&"tide_loom_mother": _build_loom(parts)
 			&"torn_page_executioner": _build_executioner(parts)
 			&"eclipse_twin_bells": _build_bells(parts)
+			&"mirror_moth": _build_mirror(parts)
 			_: _build_judge(parts)
 		_models[resolved] = {"parts": parts}
 	return _models[resolved]
@@ -112,6 +114,13 @@ static func _part_transform(boss_id: StringName, part: Dictionary, pose: Diction
 		angle += side * ((1.0 - intro) * 0.72 - charge * 0.22 - float(phase) * 0.035 + stagger * 0.28 + change * 0.18)
 		angle += breathing * 0.018
 		origin += Vector2(side * (float(phase) * 2.0 + stagger * 8.0 - recoil * 8.0), recoil * 5.0)
+		if boss_id == &"mirror_moth":
+			# Folding is a combat state: even reduced motion keeps the narrower
+			# closed silhouette and copper collecting rim visually distinct.
+			var fold := 1.0 if bool(pose.get("mirror_folding", false)) else 0.0
+			angle += side * fold * 0.48
+			scale.x *= 1.0 - fold * 0.42
+			origin.x *= 1.0 - fold * 0.35
 	elif role == &"sun":
 		angle += sin(time * 0.3) * 0.045 + change * 0.18
 		scale *= 1.0 + charge * 0.05 + stagger * 0.05
@@ -147,6 +156,27 @@ static func _part_transform(boss_id: StringName, part: Dictionary, pose: Diction
 		angle += death * motion * (side if not is_zero_approx(side) else sin(float(order) + 1.0)) * 0.85
 		scale *= 1.0 - death * motion * 0.25
 	return Transform2D(angle, scale, 0.0, origin)
+
+
+static func _build_mirror(parts: Array[Dictionary]) -> void:
+	var rim := Color("d6a397")
+	var copper := Color("805e59")
+	for side in [-1.0, 1.0]:
+		var upper := Batch.new()
+		_folded(upper, _mirror(PackedVector2Array([Vector2(8,4),Vector2(53,-26),Vector2(139,-123),Vector2(119,-27),Vector2(72,30),Vector2(23,40)]), side), Vector2(side*64,-25), copper, rim, 2)
+		upper.draw_colored_polygon(_mirror(PackedVector2Array([Vector2(54,-24),Vector2(129,-110),Vector2(90,-30),Vector2(69,16)]),side), Color("b08b7b"))
+		upper.draw_line(Vector2(side*26,27),Vector2(side*119,-90),Color(rim,0.72),1.5,true)
+		_add(parts,upper.build_mesh(),Vector2(side*4,-1),0.0,&"wing",side,0)
+		var lower := Batch.new()
+		_folded(lower,_mirror(PackedVector2Array([Vector2(9,17),Vector2(67,35),Vector2(134,98),Vector2(66,91),Vector2(17,60)]),side),Vector2(side*56,63),Color("435659"),rim,2)
+		lower.draw_colored_polygon(_mirror(PackedVector2Array([Vector2(18,38),Vector2(113,89),Vector2(61,79)]),side),Color("917469"))
+		_add(parts,lower.build_mesh(),Vector2(side*3,3),0.0,&"wing",side,1)
+	var body := Batch.new()
+	_folded(body,PackedVector2Array([Vector2(0,-49),Vector2(22,-12),Vector2(14,43),Vector2(0,76),Vector2(-14,43),Vector2(-22,-12)]),Vector2(0,13),Color("233a40"),rim,2)
+	body.draw_line(Vector2(-8,-37),Vector2(-29,-70),rim,2.0,true)
+	body.draw_line(Vector2(8,-37),Vector2(29,-70),rim,2.0,true)
+	_add(parts,body.build_mesh(),Vector2.ZERO,0.0,&"body")
+	_add(parts,_lantern(Vector2(9,19),rim),Vector2(0,4),0.0,&"core")
 
 
 static func _build_reef(parts: Array[Dictionary]) -> void:

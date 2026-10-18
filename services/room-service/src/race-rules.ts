@@ -1,9 +1,9 @@
 export const DISCONNECT_MS = 30_000;
 export const ROOM_TTL_MS = 3 * 60 * 60 * 1000;
 export const COUNTDOWN_MS = 5000;
-export const RACE_RULES_VERSION = "endless_race_v9";
+export const RACE_RULES_VERSION = "endless_race_v10";
 export const LEGACY_RACE_RULES_VERSION = "endless_race_v3";
-export const SUPPORTED_RACE_RULES_VERSIONS = [LEGACY_RACE_RULES_VERSION, "endless_race_v4", "endless_race_v5", "endless_race_v6", "endless_race_v7", "endless_race_v8", RACE_RULES_VERSION] as const;
+export const SUPPORTED_RACE_RULES_VERSIONS = [LEGACY_RACE_RULES_VERSION, "endless_race_v4", "endless_race_v5", "endless_race_v6", "endless_race_v7", "endless_race_v8", "endless_race_v9", RACE_RULES_VERSION] as const;
 export const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{7}$/;
 export type Player = {
   id: string; room: string; name: string; token_hash: string; slot: number; instance_id: string | null;

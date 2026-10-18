@@ -154,6 +154,10 @@ func _test_config_validation() -> void:
 	var old_rules := _config("old")
 	old_rules.rulesVersion = "different_rules"
 	_check(not bridge.configure_session(old_rules), "different competitive rule versions cannot silently share a score")
+	for version in range(3, 10):
+		old_rules.rulesVersion = "endless_race_v%d" % version
+		_check(not bridge.configure_session(old_rules) and bridge.phase == &"blocked", "3.19 cannot join an old v%d match with different combat rules" % version)
+	_check(FoldlightNativeRaceClient.RULES_VERSION == bridge.RULES_VERSION and bridge.RULES_VERSION == "endless_race_v10", "native and web 3.19 clients announce exactly the same competitive rules")
 	_check(bridge.configure_session({}, true, 727) and bridge.is_web_session() and not bridge.is_race_session() and bridge.get_run_seed() == 727, "plain web endless remains a separate seeded solo mode")
 	bridge.queue_free()
 
@@ -237,7 +241,7 @@ func _create_fixture(id: String, durable_attempts: Dictionary = {}) -> Dictionar
 
 
 func _config(id: String) -> Dictionary:
-	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v9"}
+	return {"roomId": id, "matchId": id, "playerId": "player-test", "instanceId": "instance-" + id, "seed": 414141, "rulesVersion": "endless_race_v10"}
 
 
 func _prepared_spawn_positions(slice: FoldlightEndlessSliceRuntime) -> Array[Vector2]:
@@ -261,7 +265,7 @@ func _valid_reports(messages: Array[Dictionary]) -> bool:
 		if message.method != &"report":
 			continue
 		var payload: Dictionary = JSON.parse_string(message.json)
-		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v9":
+		if int(payload.protocol) != 1 or payload.roomId != "first" or payload.matchId != "first" or payload.playerId != "player-test" or payload.instanceId != "instance-first" or int(payload.seed) != 414141 or payload.rulesVersion != "endless_race_v10":
 			return false
 		if int(payload.seq) <= sequence or int(payload.survivalMs) < elapsed or int(payload.kills) < 0:
 			return false

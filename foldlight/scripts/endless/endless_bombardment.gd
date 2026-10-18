@@ -5,6 +5,10 @@ extends Node2D
 
 const WARNING_SECONDS := 3.2
 const IMPACT_SECONDS := 0.55
+const BOSS_ARRIVAL_DELAY := 4.0
+const BOSS_REST_SECONDS := 14.0
+const DEEP_BOSS_REST_SECONDS := 8.0
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
 var _seed: int = 0
 var _cycle: int = 0
 var _state: StringName = &"rest"
@@ -14,6 +18,8 @@ var _zones: Array[Dictionary] = []
 var _map: FoldlightEndlessMapDefinition
 var _map_runtime: FoldlightEndlessHandcraftedMap
 var _paint_clock: float = 0.0
+var _previous_boss_count: int = 0
+var _enabled: bool = false
 
 
 func configure(definition: FoldlightEndlessMapDefinition, route_provider: FoldlightEndlessHandcraftedMap, run_seed: int) -> void:
@@ -25,19 +31,27 @@ func configure(definition: FoldlightEndlessMapDefinition, route_provider: Foldli
 	_remaining = 0.0
 	_next_at = 90.0
 	_zones.clear()
+	_paint_clock = 0.0
+	_previous_boss_count = 0
+	_enabled = true
 	z_index = 8
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func advance(delta: float, combat_seconds: float, player_position: Vector2, protected_points: PackedVector2Array, boss_count: int = 0) -> Array[Dictionary]:
 	var impacts: Array[Dictionary] = []
-	if _map == null or not is_finite(delta) or delta <= 0.0:
+	if not _enabled or _map == null or not is_finite(delta) or delta <= 0.0:
 		return impacts
 	var step := minf(delta, 0.1)
+	var state_before := _state
+	var bosses := maxi(0, boss_count)
 	if _state == &"rest":
-		# During multi-boss encounters the bosses own the dodge space.
-		if combat_seconds >= _next_at and boss_count < 2:
-			_select_sites(player_position, protected_points, boss_count, combat_seconds)
+		# Arrival accelerates only rest. An announced site stays locked until
+		# impact, including if more bosses arrive while the player is dodging.
+		if bosses > 0 and _previous_boss_count == 0:
+			_next_at = minf(_next_at, combat_seconds + BOSS_ARRIVAL_DELAY)
+		if combat_seconds >= _next_at:
+			_select_sites(player_position, protected_points, bosses, combat_seconds)
 			_cycle += 1
 			if not _zones.is_empty():
 				_state = &"warning"
@@ -55,22 +69,33 @@ func advance(delta: float, combat_seconds: float, player_position: Vector2, prot
 		if _remaining <= 0.00001:
 			_state = &"rest"
 			_zones.clear()
-			_next_at = combat_seconds + maxf(18.0, 30.0 - combat_seconds / 90.0) + (12.0 if boss_count > 0 else 0.0)
-	_paint_clock += step
-	if _paint_clock >= 0.05:
+			_next_at = combat_seconds + rest_interval(combat_seconds, bosses)
+	_previous_boss_count = bosses
+	if _state != &"rest":
+		_paint_clock += step
+	if state_before != _state or _paint_clock >= 0.05:
 		_paint_clock = 0.0
-		queue_redraw()
+		RenderRedraw.request(self)
 	return impacts
 
 
+func rest_interval(combat_seconds: float, boss_count: int) -> float:
+	if boss_count > 0:
+		return maxf(DEEP_BOSS_REST_SECONDS, BOSS_REST_SECONDS - maxf(0.0, combat_seconds - 90.0) / 90.0)
+	return maxf(18.0, 30.0 - combat_seconds / 90.0)
+
+
 func get_snapshot() -> Dictionary:
-	return {"state": _state, "warning_remaining": _remaining if _state == &"warning" else 0.0, "remaining": _remaining, "cycle": _cycle, "zones": _zones.duplicate(true), "damage": 1}
+	return {"state": _state, "warning_remaining": _remaining if _state == &"warning" else 0.0, "remaining": _remaining, "cycle": _cycle, "zones": _zones.duplicate(true), "damage": 1, "next_at": _next_at, "boss_pressure": _previous_boss_count > 0}
 
 
 func cancel() -> void:
 	_state = &"rest"
 	_zones.clear()
-	queue_redraw()
+	_remaining = 0.0
+	_previous_boss_count = 0
+	_enabled = false
+	RenderRedraw.request(self)
 
 
 func _select_sites(player_position: Vector2, protected_points: PackedVector2Array, boss_count: int, combat_seconds: float) -> void:
