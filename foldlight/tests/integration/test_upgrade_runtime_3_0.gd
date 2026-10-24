@@ -33,7 +33,7 @@ func _run() -> void:
 		"thick_paper": 1, "mend_on_clear": 1, "last_lantern": 1, "glimmer_guard": 1, "large_burden": 1, "ink_immunity": 1, "steady_heart": 1,
 	}
 	var stats := combat.apply_run_build(levels, &"thick_paper")
-	_check(player.max_health == 6 and player.health == 5, "max-health pickup applies its one-time heal after raising the cap")
+	_check(player.max_health == 5 and player.health == 5, "max-health pickup raises the four-heart baseline and applies its one-time heal")
 	_check(player.dash_component.maximum_charges == 2 and player.dash_component.charges == 2, "Double Step grants a real second dash charge")
 	_check(player.request_dash(Vector2.RIGHT), "first charged dash starts")
 	player.dash_component.tick(player.dash_component.get_effective_duration() + 0.01)

@@ -54,7 +54,7 @@ func _run() -> void:
 	presentation.show_title({"prologue_complete": true})
 	var has_endless := false
 	for node in _descendants(presentation.interface):
-		if node is Button and (node as Button).text.contains("无尽生存"):
+		if node is Button and (node as Button).text.contains("无尽挑战"):
 			has_endless = true
 			break
 	_check(has_endless and presentation.has_signal("endless_requested"), "title exposes a controller-focusable endless survival entry")

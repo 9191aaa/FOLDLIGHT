@@ -3,7 +3,7 @@ ROGUE_MENU_NEW,开始迷航,Begin Voyage
 ROGUE_MENU_FIRST,开始序章,Begin Prologue
 ROGUE_MENU_CONTINUE,继续迷航,Continue Voyage
 ROGUE_MENU_PROLOGUE,序章 · 学会折灯,Prologue · Learn the Fold
-ROGUE_MENU_CLASSIC,经典战役 · 十二航,Classic Campaign · Twelve Voyages
+ROGUE_MENU_CLASSIC,故事航路,Story Voyages
 ROGUE_MENU_SETTINGS,设置,Settings
 ROGUE_MENU_QUIT,退出,Quit
 ROGUE_TITLE_EYEBROW,一只手的深海折返战,One-hand deep-sea returnfire
@@ -15,5 +15,5 @@ ROGUE_REWARD_EYEBROW,局内构筑 · 只在本次迷航生效,Run build · lasts
 ROGUE_ROUTE_EYEBROW,折航图 · 你只能驶向相连的房间,Fold chart · only connected rooms are reachable
 ROGUE_RESULT_EYEBROW,本次航行记录,Voyage record
 ROGUE_RESULT_RETRY,再次迷航,Voyage again
-ROGUE_RESULT_TITLE,返回标题,Return to title
+ROGUE_RESULT_TITLE,返回主菜单,Main menu
 ROGUE_NEW_MECHANIC,新威胁,New threat

@@ -1,6 +1,8 @@
 class_name FoldlightInkWarden
 extends CharacterBody2D
 
+const RenderRedraw = preload("res://scripts/visuals/render_redraw.gd")
+
 signal zone_requested(snapshot: Dictionary)
 signal cast_state_changed(casting: bool)
 signal damaged(amount: float, health_remaining: float)
@@ -28,14 +30,14 @@ var _visual_time: float = 0.0
 func _ready() -> void:
 	collision_layer = 1 << 1
 	collision_mask = (1 << 0) | (1 << 2) | (1 << 3)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func configure(new_definition: FoldlightRogueEnemyDefinition, new_actor_id: StringName) -> void:
 	definition = new_definition
 	actor_id = new_actor_id
 	health = definition.base_health if definition != null else 13.0
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func begin_cast(new_target_position: Vector2) -> bool:
@@ -45,7 +47,7 @@ func begin_cast(new_target_position: Vector2) -> bool:
 	is_casting = true
 	_cast_remaining = telegraph_duration
 	cast_state_changed.emit(true)
-	queue_redraw()
+	RenderRedraw.request(self)
 	return true
 
 
@@ -79,7 +81,7 @@ func advance_simulation(delta: float, suggested_target: Vector2, hostile_time_sc
 		if _cooldown_remaining <= 0.0:
 			begin_cast(suggested_target)
 	move_and_slide()
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func take_damage(amount: float) -> bool:
@@ -92,13 +94,13 @@ func take_damage(amount: float) -> bool:
 	if health <= 0.0:
 		defeated.emit(self)
 		return true
-	queue_redraw()
+	RenderRedraw.request(self)
 	return false
 
 
 func set_support_buff(attack_multiplier: float) -> void:
 	support_attack_multiplier = clampf(attack_multiplier, 0.55, 1.0)
-	queue_redraw()
+	RenderRedraw.request(self)
 
 
 func get_combat_snapshot() -> Dictionary:

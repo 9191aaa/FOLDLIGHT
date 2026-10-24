@@ -45,25 +45,54 @@ func compose_encounter(
 	var definition_counts: Dictionary = {}
 	var spent := 0
 	var fodder_target := int(ceil(float(definition.threat_budget) * definition.minimum_fodder_ratio))
-	while spent < fodder_target and picks.size() < MAX_LIVE_ENEMIES:
+	var protected_mechanic: FoldlightRogueEnemyDefinition
+	if definition.minimum_pressure_count > 0:
+		var mechanics := _mechanic_pool(pool) if introduction_role < 0 else _definitions_with_role(pool, introduction_role)
+		_shuffle_definitions(mechanics, rng)
+		for candidate in mechanics:
+			if _role_has_capacity(candidate.role, role_counts, definition, turret_slots.size()):
+				protected_mechanic = candidate
+				break
+		var reserved := protected_mechanic.threat_cost if protected_mechanic != null else 0
+		var pressure_pool := _pressure_pool(pool)
+		var pressure_budget := maxi(0, definition.threat_budget - fodder_target - reserved)
+		var pressure_target := definition.minimum_pressure_count
+		# A low-budget recovery room degrades to a feasible composition while
+		# preserving its fodder ammunition and required mechanic introduction.
+		while pressure_target > 0 and _minimum_pick_cost(pressure_pool, pressure_target, definition_counts) > pressure_budget:
+			pressure_target -= 1
+		for index in pressure_target:
+			var choice := _choose_diverse_pressure(pressure_pool, pressure_budget - spent, pressure_target - index - 1, definition_counts, rng)
+			if choice == null:
+				break
+			_append_pick(choice, picks, role_counts, definition_counts)
+			spent += choice.threat_cost
+	var fodder_spent := 0
+	while fodder_spent < fodder_target and picks.size() < MAX_LIVE_ENEMIES:
 		var choice := _choose_affordable(fodder, definition.threat_budget - spent, definition_counts, rng)
 		if choice == null:
 			break
 		_append_pick(choice, picks, role_counts, definition_counts)
 		spent += choice.threat_cost
+		fodder_spent += choice.threat_cost
 
 	if introduction_role >= 0:
 		var introduction_pool := _definitions_with_role(pool, introduction_role)
-		var mechanic := _choose_affordable(introduction_pool, definition.threat_budget - spent, definition_counts, rng)
+		var mechanic := protected_mechanic if protected_mechanic != null else _choose_affordable(introduction_pool, definition.threat_budget - spent, definition_counts, rng)
 		if mechanic == null or not _role_has_capacity(mechanic.role, role_counts, definition, turret_slots.size()):
 			errors.append("requested introduction mechanic cannot fit this encounter")
 		else:
 			_append_pick(mechanic, picks, role_counts, definition_counts)
 			spent += mechanic.threat_cost
 	else:
+		if protected_mechanic != null and protected_mechanic.threat_cost <= definition.threat_budget - spent:
+			_append_pick(protected_mechanic, picks, role_counts, definition_counts)
+			spent += protected_mechanic.threat_cost
 		var mechanics := _mechanic_pool(pool)
 		_shuffle_definitions(mechanics, rng)
 		for mechanic in mechanics:
+			if protected_mechanic != null and mechanic.content_id == protected_mechanic.content_id:
+				continue
 			if picks.size() >= MAX_LIVE_ENEMIES:
 				break
 			if mechanic.threat_cost > definition.threat_budget - spent:
@@ -113,6 +142,7 @@ func compose_encounter(
 		"spent": spent,
 		"entries": entries,
 		"role_counts": role_counts.duplicate(true),
+		"pressure_target": definition.minimum_pressure_count,
 		"errors": errors,
 	}
 
@@ -174,6 +204,7 @@ func _mechanic_pool(pool: Array[FoldlightRogueEnemyDefinition]) -> Array[Foldlig
 			FoldlightRogueEnemyDefinition.EnemyRole.TURRET,
 			FoldlightRogueEnemyDefinition.EnemyRole.BUFFER,
 			FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER,
+			FoldlightRogueEnemyDefinition.EnemyRole.ELITE,
 		]:
 			result.append(definition)
 	return result
@@ -189,6 +220,45 @@ func _ordinary_pool(pool: Array[FoldlightRogueEnemyDefinition]) -> Array[Foldlig
 		]:
 			result.append(definition)
 	return result
+
+
+func _pressure_pool(pool: Array[FoldlightRogueEnemyDefinition]) -> Array[FoldlightRogueEnemyDefinition]:
+	var result: Array[FoldlightRogueEnemyDefinition] = []
+	for definition in pool:
+		if definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER, FoldlightRogueEnemyDefinition.EnemyRole.CHARGER]:
+			result.append(definition)
+	return result
+
+
+func _minimum_pick_cost(pool: Array[FoldlightRogueEnemyDefinition], count: int, counts: Dictionary) -> int:
+	var simulated := counts.duplicate()
+	var cost := 0
+	for _index in count:
+		var choice := _choose_cheapest_affordable(pool, 10000, simulated)
+		if choice == null:
+			return 10000
+		cost += choice.threat_cost
+		simulated[choice.content_id] = int(simulated.get(choice.content_id, 0)) + 1
+	return cost
+
+
+func _choose_diverse_pressure(pool: Array[FoldlightRogueEnemyDefinition], remaining: int, remaining_picks: int, counts: Dictionary, rng: RandomNumberGenerator) -> FoldlightRogueEnemyDefinition:
+	var candidates: Array[FoldlightRogueEnemyDefinition] = []
+	var lowest_count := 10000
+	for definition in pool:
+		var used := int(counts.get(definition.content_id, 0))
+		if used >= definition.max_simultaneous or definition.threat_cost > remaining:
+			continue
+		var simulated := counts.duplicate()
+		simulated[definition.content_id] = used + 1
+		if definition.threat_cost + _minimum_pick_cost(pool, remaining_picks, simulated) > remaining:
+			continue
+		if used < lowest_count:
+			lowest_count = used
+			candidates.clear()
+		if used == lowest_count:
+			candidates.append(definition)
+	return null if candidates.is_empty() else candidates[rng.randi_range(0, candidates.size() - 1)]
 
 
 func _choose_affordable(pool: Array[FoldlightRogueEnemyDefinition], remaining: int, counts: Dictionary, rng: RandomNumberGenerator) -> FoldlightRogueEnemyDefinition:
@@ -220,6 +290,8 @@ func _append_pick(definition: FoldlightRogueEnemyDefinition, picks: Array[Foldli
 func _role_has_capacity(role: int, role_counts: Dictionary, encounter: FoldlightRogueEncounterDefinition, turret_slot_count: int) -> bool:
 	var current := int(role_counts.get(role, 0))
 	match role:
+		FoldlightRogueEnemyDefinition.EnemyRole.ELITE:
+			return current < 1
 		FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER:
 			return current < encounter.controller_quota
 		FoldlightRogueEnemyDefinition.EnemyRole.BUFFER:
@@ -247,7 +319,7 @@ func _assign_spawn_slots(picks: Array[FoldlightRogueEnemyDefinition], wave_count
 		var candidates := ground_slots
 		if definition.role == FoldlightRogueEnemyDefinition.EnemyRole.TURRET:
 			candidates = turret_slots
-		elif definition.role == FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER and not ranged_slots.is_empty():
+		elif definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE] and not ranged_slots.is_empty():
 			# Shooter volleys are easiest to understand when their source is inside
 			# the room composition instead of hidden against a distant screen edge.
 			candidates = ranged_slots
@@ -256,6 +328,13 @@ func _assign_spawn_slots(picks: Array[FoldlightRogueEnemyDefinition], wave_count
 			var key := "%d:%s" % [wave, String(slot.get("id", &""))]
 			if not used_by_wave.has(key):
 				available.append(slot)
+		# Central ranged markers are a presentation preference, not a hard role
+		# requirement. Dense mixed waves may use an otherwise safe ground slot.
+		if available.is_empty() and definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.SHOOTER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE]:
+			for slot in ground_slots:
+				var key := "%d:%s" % [wave, String(slot.get("id", &""))]
+				if not used_by_wave.has(key):
+					available.append(slot)
 		if available.is_empty():
 			errors.append("wave %d has no unique safe slot for %s" % [wave + 1, definition.content_id])
 			continue

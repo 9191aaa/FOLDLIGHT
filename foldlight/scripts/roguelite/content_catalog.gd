@@ -45,6 +45,9 @@ const ENEMIES: Array[FoldlightRogueEnemyDefinition] = [
 	preload("res://resources/roguelite/enemies/prism_bulwark.tres"),
 	preload("res://resources/roguelite/enemies/brood_lantern.tres"),
 	preload("res://resources/roguelite/enemies/shear_scribe.tres"),
+	preload("res://resources/roguelite/enemies/shutter_seraph.tres"),
+	preload("res://resources/roguelite/enemies/cinder_mine.tres"),
+	preload("res://resources/roguelite/enemies/miasma_wraith.tres"),
 ]
 
 const ENCOUNTERS: Array[FoldlightRogueEncounterDefinition] = [
@@ -96,6 +99,10 @@ const BOSSES: Array[FoldlightRogueBossDefinition] = [
 	preload("res://resources/roguelite/bosses/reef_crown_battery.tres"),
 	preload("res://resources/roguelite/bosses/inverted_archivist.tres"),
 	preload("res://resources/roguelite/bosses/origami_judge.tres"),
+	preload("res://resources/roguelite/bosses/tide_loom_mother.tres"),
+	preload("res://resources/roguelite/bosses/torn_page_executioner.tres"),
+	preload("res://resources/roguelite/bosses/eclipse_twin_bells.tres"),
+	preload("res://resources/roguelite/bosses/mirror_moth.tres"),
 ]
 
 
@@ -173,6 +180,18 @@ static func boss_by_id(content_id: StringName) -> FoldlightRogueBossDefinition:
 		if definition.content_id == content_id:
 			return definition
 	return null
+
+
+static func boss_options_for_region(region_id: StringName) -> Array[FoldlightRogueBossDefinition]:
+	var result: Array[FoldlightRogueBossDefinition] = []
+	for region in REGIONS:
+		if region.content_id != region_id:
+			continue
+		for boss_id in region.boss_ids:
+			var boss := boss_by_id(boss_id)
+			if boss != null:
+				result.append(boss)
+	return result
 
 
 static func _validate_collection(label: String, definitions: Array, errors: Array[String]) -> void:

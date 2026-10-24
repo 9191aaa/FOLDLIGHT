@@ -24,15 +24,19 @@ func _run() -> void:
 	overlay.begin(false)
 	_check(overlay.visible and overlay.get_step_count() == 3 and overlay.get_current_step() == 0, "tutorial opens as a compact three-step sequence")
 	_check("2.0" in overlay.title_label.text + overlay.body_label.text, "movement lesson states the exact two-second dash cooldown")
+	_check("方向键" in overlay.controls_label.text, "the movement lesson includes the shared arrow-key controls")
 
 	overlay.show_step(1)
 	_check("SPACE" in overlay.controls_label.text and "8" in overlay.body_label.text and "1.5" in overlay.warning_label.text, "Fold lesson explains keyboard hold/release, capacity, and cooldown")
+	_check(" / E" in overlay.controls_label.text, "the Fold lesson includes the existing E alternative")
 	overlay.set_input_mode(true)
 	_check(overlay.is_gamepad_mode() and "A" in overlay.controls_label.text, "the same lesson swaps to controller prompts")
 
 	overlay.show_step(2)
 	_check("自动武器" in overlay.controls_label.text and "X" in overlay.controls_label.text, "final lesson covers automatic fire and the controller active skill")
 	_check("不可反射" in overlay.warning_label.text and "地形" in overlay.warning_label.text, "final warning names unreflectable bullets and terrain effects")
+	_check("自动追踪" in overlay.body_label.text and "装上" in overlay.body_label.text, "the combat lesson explains automatic targeting and active-item availability")
+	_check("LB" in overlay.skip_button.text, "tutorial skip names the actual mapped controller shoulder button")
 	overlay.advance()
 	_check(completed[0] == 1 and skipped[0] == 0, "advancing beyond the final page reports completion once")
 

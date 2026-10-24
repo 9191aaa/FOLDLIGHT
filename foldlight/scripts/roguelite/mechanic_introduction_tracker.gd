@@ -9,7 +9,7 @@ var _introduced_ids: Array[StringName] = []
 func request_introduction(definition: FoldlightRogueEnemyDefinition) -> Dictionary:
 	if definition == null or _introduced_ids.has(definition.content_id):
 		return {}
-	if not definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.TURRET, FoldlightRogueEnemyDefinition.EnemyRole.BUFFER, FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER]:
+	if definition.content_id != &"cinder_mine" and not definition.role in [FoldlightRogueEnemyDefinition.EnemyRole.TURRET, FoldlightRogueEnemyDefinition.EnemyRole.BUFFER, FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER, FoldlightRogueEnemyDefinition.EnemyRole.ELITE]:
 		return {}
 	_introduced_ids.append(definition.content_id)
 	var snapshot := {
@@ -78,11 +78,15 @@ func _role_title(role: FoldlightRogueEnemyDefinition.EnemyRole) -> String:
 		FoldlightRogueEnemyDefinition.EnemyRole.TURRET: "阵地单位",
 		FoldlightRogueEnemyDefinition.EnemyRole.BUFFER: "增幅单位",
 		FoldlightRogueEnemyDefinition.EnemyRole.CONTROLLER: "控场单位",
+		FoldlightRogueEnemyDefinition.EnemyRole.ELITE: "精英单位",
 	}.get(role, "机制单位")
 
 
 func _enemy_attack_style(definition: FoldlightRogueEnemyDefinition) -> StringName:
 	match definition.content_id:
+		&"miasma_wraith": return &"poison_trail"
+		&"cinder_mine": return &"anchored_blast"
+		&"shutter_seraph": return &"exposure_barrage"
 		&"paper_turret": return &"aimed_volley"
 		&"brood_lantern": return &"summon"
 		&"bell_binder": return &"tether"
@@ -100,6 +104,8 @@ func _enemy_attack_style(definition: FoldlightRogueEnemyDefinition) -> StringNam
 
 func _boss_briefing(content_id: StringName) -> Dictionary:
 	match content_id:
+		&"mirror_moth":
+			return {"rule": "复影拥有出场时你的整套自动武器、武器等级和装备技能。你收纳几发，它就在你松开后预告0.8秒，再发射同样数量的追踪弹。", "counterplay": "松开后立即横移，拉开追弹角度，再冲刺脱离弹线。复影不再同步展开折域拦截你的火力；铜红折翼是它，青色折翼才是你。", "attack_style": &"mirror_echo"}
 		&"reef_crown_battery":
 			return {
 				"rule": "王冠电池会把潮波推向整间战场，但每一道波面都留有一段明显的安静缺口。它也会唤来小怪补充可收纳弹药。",
@@ -118,4 +124,10 @@ func _boss_briefing(content_id: StringName) -> Dictionary:
 				"counterplay": "跟着安全框一起移动，留一次冲刺应对框体收缩；普通弹攒够后再打断它的宣判。",
 				"attack_style": &"shrinking_frame",
 			}
+		&"tide_loom_mother":
+			return {"rule": "织母强化范围内的敌人：跑得更快、开火更密、弹速更高。越到后期，号令越凶。", "counterplay": "看清连向织母的丝线，拉开敌群再优先击破她；光环外的小怪会失去强化。", "attack_style": &"command_swarm"}
+		&"torn_page_executioner":
+			return {"rule": "行刑者会连续追身冲撞，每一冲都会重新瞄准。后期连冲更多、转身更快。", "counterplay": "看到通道后横向闪开，别沿通道后退；每次都重新找侧面，留冲刺应对下一撞。", "attack_style": &"relentless_charge"}
+		&"eclipse_twin_bells":
+			return {"rule": "左右纸铃会先后敲出弹环，每个铃口的青色扇区都是缺口；下一轮先响的铃会交换。", "counterplay": "先看两侧各自的缺口，不要只跟着第一圈走；普通铃弹可收纳，返光能打断尚未响起的第二铃。", "attack_style": &"paired_gaps"}
 	return {}

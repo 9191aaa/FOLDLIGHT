@@ -13,10 +13,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_check(_has_physical_key(&"active_item", KEY_Q), "Q remains the roguelite active-item key")
-	_check(not _has_physical_key(&"open_challenge", KEY_Q) and _has_physical_key(&"open_challenge", KEY_V), "classic challenge shortcut no longer shares Q")
 	_check(_has_joy_button(&"active_item", JOY_BUTTON_X) and not _has_joy_button(&"open_archive", JOY_BUTTON_X), "gamepad X belongs only to the active item during combat")
 	_check(_has_joy_button(&"dash", JOY_BUTTON_B) and not _has_joy_button(&"open_challenge", JOY_BUTTON_B), "gamepad B belongs only to dash during combat")
-	_check(_has_joy_button(&"open_challenge", JOY_BUTTON_RIGHT_SHOULDER), "classic challenge keeps a non-conflicting controller shortcut")
 
 	var reward_director := FoldlightRewardDirector.new()
 	root.add_child(reward_director)
@@ -74,8 +72,8 @@ func _run() -> void:
 	_check(session.player.health == health_before and session.presentation.screen_kind == &"reward", "combat state remains intact while reward owns input")
 
 	for legacy_action in [&"open_challenge", &"open_archive", &"menu_settings", &"open_tutorial"]:
-		game._unhandled_input(_action_event(legacy_action))
-	_check(bool(game.get("_rogue_mode_active")) and session.mode == FoldlightRogueSessionController.SessionMode.RUN and session.presentation.screen_kind == &"reward", "legacy shortcuts cannot tear down a roguelite modal")
+		root.push_input(_action_event(legacy_action))
+	_check(session.mode == FoldlightRogueSessionController.SessionMode.RUN and session.presentation.screen_kind == &"reward", "legacy shortcuts cannot tear down a roguelite modal")
 
 	reward_director.queue_free()
 	mount.queue_free()

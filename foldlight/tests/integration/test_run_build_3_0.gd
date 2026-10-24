@@ -81,7 +81,7 @@ func _run() -> void:
 	player.configure_roguelite_combat(true)
 	var applied := player.apply_roguelite_build({"steady_lantern": 2, "swift_wing": 2, "wide_return": 2, "tiny_silhouette": 1, "thick_paper": 1})
 	_check(player.get_capture_capacity() == 10 and is_equal_approx(player.hit_radius, 13.0 * 0.82), "resolved build adds two Wide Return stacks to the eight-light base and keeps honest player collision")
-	_check(player.max_health == 6 and player.dash_component.cooldown_multiplier < 0.82, "resolved build reaches survival and dash components")
+	_check(player.max_health == 5 and player.dash_component.cooldown_multiplier < 0.82, "resolved build raises the four-heart baseline and reaches dash components")
 	var shot := player.weapon_mount.make_shot_snapshot(FoldlightRogueContentCatalog.weapon_by_id(&"crease_lantern"))
 	_check(float(shot.get("fire_interval", 1.0)) < 0.43 and float(applied.get("body_size_multiplier", 1.0)) == 0.82, "resolved build reaches automatic-weapon cadence without mutating its Resource")
 

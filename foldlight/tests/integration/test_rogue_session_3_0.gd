@@ -1,8 +1,7 @@
 extends SceneTree
 
 ## End-to-end contract for the actual default mode: title -> large room ->
-## reward -> route -> next room -> result, with the classic campaign still
-## reachable through its preserved controller.
+## reward -> route -> next room -> result -> the shared title.
 
 var _failures: Array[String] = []
 
@@ -24,7 +23,7 @@ func _run() -> void:
 	var session := game.get_node("RogueSession") as FoldlightRogueSessionController
 	session.persist_profile = false
 	_check(session.mode == FoldlightRogueSessionController.SessionMode.TITLE, "new roguelite title is the default mode")
-	_check(not game.get_node("HUD").visible and game.get_node("RoguePresentation").visible, "legacy HUD stays dormant behind the new title")
+	_check(game.get_node_or_null("HUD") == null and game.get_node("RoguePresentation").visible, "the shared presentation is the only interface in the main scene")
 
 	session.start_new_run()
 	await process_frame
@@ -45,15 +44,13 @@ func _run() -> void:
 	_check(session.run_controller.phase == FoldlightRogueRunController.Phase.REWARD, "clearing the room opens a real run-build reward")
 	_check(session.presentation.screen_kind == &"reward", "three-choice reward presentation replaces combat without leaving the run")
 
-	var profile_manager := root.get_node("ProfileManager") as FoldlightProfileManager
-	var rogue := profile_manager.get_roguelite_snapshot()
-	var unlocked: Array[StringName] = []
-	for value: Variant in rogue.get("unlocked_upgrades", []):
-		unlocked.append(StringName(value))
-	var choices := session.reward_director.draft_upgrades(session.run_controller.run_state.seed, session.run_controller.run_state.room_count, session.run_controller.run_state.upgrade_levels, unlocked, 3)
-	_check(choices.size() == 3, "reward draft supplies three legal unlocked upgrades")
-	if not choices.is_empty():
-		session._on_reward_chosen(StringName(choices[0].get("content_id", &"")))
+	var offered_ids: Array[StringName] = []
+	for card: Button in session.presentation._reward_buttons:
+		if card.visible:
+			offered_ids.append(StringName(card.get_meta("upgrade_id", &"")))
+	_check(offered_ids.size() == 3, "live reward draft supplies three legal weapon or build choices")
+	if not offered_ids.is_empty():
+		session._on_reward_chosen(offered_ids[0])
 	await process_frame
 	_check(session.run_controller.phase == FoldlightRogueRunController.Phase.ROUTE_CHOICE and session.presentation.screen_kind == &"route", "reward flows into the branching route chart")
 	var exits: Array[String] = []
@@ -65,13 +62,26 @@ func _run() -> void:
 	await process_frame
 	_check(session.run_controller.phase == FoldlightRogueRunController.Phase.COMBAT and String(session.current_room_node.get("id", "")) == exits[0], "route selection loads the chosen next room")
 
+	var audio_cues: Array[StringName] = []
+	session.audio_director.sfx_requested.connect(func(sound_name: StringName, _pitch: float, _volume_db: float) -> void: audio_cues.append(sound_name))
 	session.run_controller.fail_run(&"test_complete")
 	await process_frame
 	_check(session.mode == FoldlightRogueSessionController.SessionMode.RESULT and session.presentation.screen_kind == &"result", "failed voyage produces a complete result screen")
+	_check(audio_cues.count(&"hurt") == 1, "a non-damage failure retains its single result cue")
 
-	session._on_classic_requested()
+	session.start_new_run()
 	await process_frame
-	_check(not session._active and game.get_node("HUD").visible and game.mode == FoldlightGame.RunMode.CAMPAIGN_MAP, "classic Twelve Voyages remains reachable and owns its original HUD")
+	session.player.health = 1
+	session.player.invulnerability = 0.0
+	session.player.set_debug_invincible(false)
+	audio_cues.clear()
+	_check(session.world.combat_runtime._try_hit_player(Vector2.LEFT), "a real combat hit reaches the one-health player")
+	_check(session.player.health == 0 and session.mode == FoldlightRogueSessionController.SessionMode.RESULT and session.presentation.screen_kind == &"result", "fatal combat damage reaches the voyage result synchronously")
+	_check(audio_cues.count(&"hurt") == 1, "fatal damage and its result screen share exactly one hurt cue")
+
+	game.return_to_main_menu()
+	await process_frame
+	_check(session._active and session.mode == FoldlightRogueSessionController.SessionMode.TITLE and session.presentation.screen_kind == &"title", "result returns to the shared title with one active input owner")
 
 	game.queue_free()
 	await process_frame

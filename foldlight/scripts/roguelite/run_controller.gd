@@ -8,7 +8,7 @@ signal checkpoint_ready(snapshot: Dictionary)
 signal route_choice_requested(exits: Array[String])
 signal run_finished(result: Dictionary)
 
-enum Phase { INACTIVE, ENTERING_ROOM, COMBAT, REWARD, ROUTE_CHOICE, FINISHED }
+enum Phase { INACTIVE, ENTERING_ROOM, COMBAT, REWARD, ROUTE_CHOICE, FINISHED, BOSS_CLEAR }
 
 var phase: Phase = Phase.INACTIVE
 
@@ -38,6 +38,7 @@ func restore_run(checkpoint: Dictionary) -> bool:
 	match session_phase:
 		&"reward": phase = Phase.REWARD
 		&"route": phase = Phase.ROUTE_CHOICE
+		&"boss_clear": phase = Phase.BOSS_CLEAR
 		_: phase = Phase.ENTERING_ROOM
 	run_started.emit(run_state.make_checkpoint())
 	if phase == Phase.ENTERING_ROOM:
@@ -57,13 +58,22 @@ func complete_room(performance: Dictionary = {}) -> void:
 	if room_node.is_empty():
 		return
 	run_state.mark_room_cleared(run_state.current_node_id)
-	room_cleared.emit(room_node.duplicate(true), performance.duplicate(true))
 	var category := StringName(room_node.get("category", &""))
 	if category == &"boss":
-		_advance_after_boss()
+		phase = Phase.BOSS_CLEAR
+	room_cleared.emit(room_node.duplicate(true), performance.duplicate(true))
+	if category == &"boss":
+		checkpoint_ready.emit(_checkpoint_for(&"boss_clear"))
 		return
 	phase = Phase.REWARD
 	checkpoint_ready.emit(_checkpoint_for(&"reward"))
+
+
+func continue_after_boss() -> bool:
+	if phase != Phase.BOSS_CLEAR:
+		return false
+	_advance_after_boss()
+	return true
 
 
 func fail_run(reason: StringName = &"lantern_extinguished") -> Dictionary:

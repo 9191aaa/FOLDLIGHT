@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="FoldlightRogueBossDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_boss_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"mirror_moth"
+title = "镜渊复影"
+description = "复写相遇时的武器、阶级、装备技能与属性。你收纳时它也收纳，松开后将实收弹幕追踪返还；横向换位，利用转向期限甩开追弹。"
+accent = Color(0.84, 0.64, 0.59, 1)
+tags = Array[StringName]([&"mirror", &"capture", &"arsenal"])
+region_id = &"inverted_ink_city"
+base_health = 640.0
+phase_thresholds = PackedFloat32Array(0.68, 0.34)
+arena_rule = &"open_paper"
+return_window_fraction = 0.18
+return_window_seconds = 2.2
+return_damage_outside_stagger = 0.6
+target_duration = 150.0
+telegraph_seconds = 0.70
+recovery_seconds = 0.28
+active_pattern_seconds = {&"mirror_pressure": 1.9, &"mirror_dash": 1.9}
+pattern_ids = Array[StringName]([&"mirror_pressure", &"mirror_dash"])

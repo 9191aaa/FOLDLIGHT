@@ -36,9 +36,12 @@ const STATUS_DATA: Dictionary = {
 
 var _timers: Dictionary = {}
 var slow_severity_multiplier: float = 1.0
+var _mirror_slow_remaining: float = 0.0
+var _mirror_slow_multiplier: float = 1.0
 
 
 func tick(delta: float) -> void:
+	_mirror_slow_remaining = maxf(0.0, _mirror_slow_remaining - maxf(delta, 0.0))
 	for status_id: StringName in _timers.keys():
 		var remaining := maxf(0.0, float(_timers[status_id]) - delta)
 		if remaining <= 0.0:
@@ -57,6 +60,8 @@ func apply_status(status_id: StringName, duration: float) -> bool:
 
 
 func clear_all() -> void:
+	_mirror_slow_remaining = 0.0
+	_mirror_slow_multiplier = 1.0
 	var active_ids := _timers.keys()
 	_timers.clear()
 	for status_id: StringName in active_ids:
@@ -82,9 +87,17 @@ func has_status(status_id: StringName) -> bool:
 
 func get_move_multiplier() -> float:
 	var multiplier := lerpf(1.0, 0.70, clampf(slow_severity_multiplier, 0.0, 1.0)) if _timers.has(&"bound_crease") else 1.0
+	if _mirror_slow_remaining > 0.0:
+		multiplier = minf(multiplier, _mirror_slow_multiplier)
 	if _timers.has(&"sunlit"):
 		multiplier *= 1.18
 	return multiplier
+
+
+func apply_mirror_slow(multiplier: float, duration: float) -> void:
+	var amount := clampf(multiplier, 0.3, 1.0)
+	_mirror_slow_multiplier = minf(_mirror_slow_multiplier, amount) if _mirror_slow_remaining > 0.0 else amount
+	_mirror_slow_remaining = maxf(_mirror_slow_remaining, clampf(duration, 0.0, 0.3))
 
 
 func get_focus_regen_multiplier() -> float:

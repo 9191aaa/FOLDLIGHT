@@ -74,7 +74,7 @@ func _run() -> void:
 	var rogue_profile := migrated.get("roguelite", {}) as Dictionary
 	_check(rogue_profile.has("unlocked_weapons") and rogue_profile.has("active_run") and not bool(rogue_profile.get("prologue_complete", true)), "v6 migration supplies safe roguelite defaults")
 	_check(FoldlightRogueContentCatalog.validation_errors().is_empty(), "starter regions, weapon, active item, upgrades, and bosses form a valid typed catalog")
-	_check(FoldlightRogueContentCatalog.REGIONS.size() == 3 and FoldlightRogueContentCatalog.BOSSES.size() == 3, "catalog ships the three-region and three-boss product spine")
+	_check(FoldlightRogueContentCatalog.REGIONS.size() == 3 and FoldlightRogueContentCatalog.BOSSES.size() == 7, "catalog ships three regions with seven compatible boss choices")
 	profile_manager.profile = migrated.duplicate(true)
 	_check(profile_manager.commit_roguelite_checkpoint(restored.make_checkpoint(), false), "profile accepts a valid cleared-room roguelite checkpoint")
 	_check(not (profile_manager.get_roguelite_snapshot().get("active_run", {}) as Dictionary).is_empty(), "roguelite checkpoint is isolated inside its profile branch")
@@ -87,12 +87,12 @@ func _run() -> void:
 		root.add_child(game)
 		await process_frame
 		var rogue_controller := game.get_node("RogueRunController") as FoldlightRogueRunController
-		_check(rogue_controller.phase == FoldlightRogueRunController.Phase.INACTIVE and game.mode == FoldlightGame.RunMode.TITLE, "roguelite runtime stays dormant while Classic/title owns the game")
+		_check(rogue_controller.phase == FoldlightRogueRunController.Phase.INACTIVE and game.rogue_session.presentation.screen_kind == &"title", "combat stays dormant while the shared title owns the game")
 		var first_room_signals := [0]
 		rogue_controller.room_requested.connect(func(_room: Dictionary, _region: Dictionary) -> void: first_room_signals[0] += 1)
 		var start_snapshot := rogue_controller.start_new_run(60603)
 		_check(not start_snapshot.is_empty() and first_room_signals[0] == 1, "isolated run controller starts a deterministic first room")
-		_check(game.mode == FoldlightGame.RunMode.TITLE, "starting the isolated controller does not mutate legacy mode state before title integration")
+		_check(game.rogue_session.mode == FoldlightRogueSessionController.SessionMode.TITLE, "starting the isolated controller does not bypass session input ownership")
 		game.queue_free()
 
 	generator.queue_free()

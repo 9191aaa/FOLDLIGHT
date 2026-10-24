@@ -1,0 +1,20 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/bosses/mirror_moth_actor.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/roguelite/bosses/boss_phase_controller.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/roguelite/bosses/boss_arena_controller.gd" id="3"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_mirror"]
+radius = 34.0
+
+[node name="MirrorMothActor" type="CharacterBody2D"]
+script = ExtResource("1")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_mirror")
+
+[node name="PhaseController" type="Node" parent="."]
+script = ExtResource("2")
+
+[node name="ArenaController" type="Node2D" parent="."]
+script = ExtResource("3")

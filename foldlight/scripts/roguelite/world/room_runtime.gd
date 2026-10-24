@@ -9,13 +9,22 @@ signal combat_lock_changed(locked: bool)
 signal encounter_spawn_telegraph(entry: Dictionary, duration: float)
 signal encounter_enemy_requested(entry: Dictionary)
 signal encounter_cleared(performance: Dictionary)
+signal beacon_pulse_requested(beacon: FoldlightTideBeacon)
 
 const TERRAIN_SCENE: PackedScene = preload("res://scenes/roguelite/terrain_piece.tscn")
 const DOOR_SCENE: PackedScene = preload("res://scenes/roguelite/rogue_door.tscn")
+const BEACON_SCENE: PackedScene = preload("res://scenes/roguelite/tide_beacon.tscn")
+const TERRAIN_HINT = preload("res://scripts/roguelite/world/terrain_hint.gd")
 const WALL_MARGIN: float = 56.0
+const TERRAIN_QUERY_CELL: float = 192.0
 
 var room_id: StringName = &""
 var room_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
+var _interactions_active: bool = false
+var _terrain_hint: Node2D
+var _terrain_index_dirty: bool = true
+var _terrain_pieces: Array[FoldlightTerrainPiece] = []
+var _terrain_cells: Dictionary = {}
 
 @onready var backdrop: FoldlightRoomBackdrop = $Backdrop
 @onready var terrain_container: Node2D = $Terrain
@@ -28,6 +37,7 @@ var room_bounds: Rect2 = Rect2(Vector2.ZERO, Vector2(2880, 1620))
 
 
 func _ready() -> void:
+	terrain_container.child_order_changed.connect(_invalidate_terrain_index)
 	encounter_runtime.combat_lock_changed.connect(_on_combat_lock_changed)
 	encounter_runtime.spawn_telegraph_requested.connect(func(entry: Dictionary, duration: float) -> void: encounter_spawn_telegraph.emit(entry, duration))
 	encounter_runtime.enemy_spawn_requested.connect(func(entry: Dictionary) -> void: encounter_enemy_requested.emit(entry))
@@ -41,8 +51,10 @@ func configure_room(new_room_id: StringName, world_size: Vector2, placements: Ar
 	room_id = new_room_id
 	room_bounds = Rect2(Vector2.ZERO, world_size)
 	backdrop.configure(room_id, world_size, accent, backdrop_style)
+	backdrop.configure_ground(placements)
 	_clear_terrain()
 	_clear_doors()
+	_clear_beacons()
 	encounter_runtime.reset()
 	for placement in placements:
 		var piece := TERRAIN_SCENE.instantiate() as FoldlightTerrainPiece
@@ -51,6 +63,7 @@ func configure_room(new_room_id: StringName, world_size: Vector2, placements: Ar
 		if not styled_placement.has("visual_style"):
 			styled_placement["visual_style"] = backdrop.style_id
 		piece.configure(styled_placement)
+		piece.geometry_changed.connect(_invalidate_terrain_index)
 		piece.terrain_effect_entered.connect(_forward_terrain_entered)
 		piece.terrain_effect_exited.connect(_forward_terrain_exited)
 	room_ready.emit(room_id, room_bounds)
@@ -151,15 +164,99 @@ func validate_layout(world_size: Vector2, placements: Array[Dictionary]) -> Arra
 
 
 func bind_player(player: FoldlightPlayer) -> void:
+	backdrop.bind_observer(player)
 	player.play_bounds = room_bounds.grow(-WALL_MARGIN)
+	encounter_runtime.set_spawn_safety(player, room_bounds.grow(-80.0), get_solid_terrain_bounds(22.0))
+	for piece in get_terrain_pieces():
+		piece.bind_observer(player)
+		piece.set_motion_active(_interactions_active)
+	if not is_instance_valid(_terrain_hint):
+		_terrain_hint = TERRAIN_HINT.new()
+		_terrain_hint.name = "TerrainHint"
+		add_child(_terrain_hint)
+	_terrain_hint.bind(self, player)
+	_terrain_hint.set_active(_interactions_active)
+
+
+func configure_tide_beacons() -> void:
+	_clear_beacons()
+	# Authored encounters retain their central geometry. These pass-through
+	# devices occupy the open shore on each side and never count as enemies.
+	for point in [Vector2(290, 1060), Vector2(room_bounds.size.x - 290.0, 650)]:
+		var beacon := BEACON_SCENE.instantiate() as FoldlightTideBeacon
+		pickup_container.add_child(beacon)
+		beacon.position = point
+		beacon.set_interaction_active(_interactions_active)
+		beacon.pulse_requested.connect(func(source: FoldlightTideBeacon) -> void: beacon_pulse_requested.emit(source))
+
+
+func set_interactions_active(value: bool) -> void:
+	_interactions_active = value
+	backdrop.set_motion_active(value)
+	for piece in get_terrain_pieces():
+		piece.set_motion_active(value)
+	if is_instance_valid(_terrain_hint):
+		_terrain_hint.set_active(value)
+	for beacon in get_tide_beacons():
+		beacon.set_interaction_active(value)
+
+
+func get_tide_beacons() -> Array[FoldlightTideBeacon]:
+	var result: Array[FoldlightTideBeacon] = []
+	for child in pickup_container.get_children():
+		if child is FoldlightTideBeacon:
+			result.append(child as FoldlightTideBeacon)
+	return result
+
+
+func _clear_beacons() -> void:
+	for beacon in get_tide_beacons():
+		pickup_container.remove_child(beacon)
+		beacon.queue_free()
 
 
 func get_terrain_pieces() -> Array[FoldlightTerrainPiece]:
-	var result: Array[FoldlightTerrainPiece] = []
+	_ensure_terrain_index()
+	return _terrain_pieces.duplicate()
+
+
+## Broad phase only: callers still use the piece's exact rotated/circular test.
+## Buckets retain scene order so overlapping effects resolve as before.
+func get_terrain_candidates(world_point: Vector2) -> Array:
+	_ensure_terrain_index()
+	return _terrain_cells.get(_terrain_cell(world_point), [])
+
+
+func _invalidate_terrain_index() -> void:
+	_terrain_index_dirty = true
+
+
+func _terrain_cell(point: Vector2) -> Vector2i:
+	return Vector2i(floori(point.x / TERRAIN_QUERY_CELL), floori(point.y / TERRAIN_QUERY_CELL))
+
+
+func _ensure_terrain_index() -> void:
+	if not _terrain_index_dirty:
+		return
+	_terrain_index_dirty = false
+	_terrain_pieces.clear()
+	_terrain_cells.clear()
 	for child in terrain_container.get_children():
-		if child is FoldlightTerrainPiece:
-			result.append(child as FoldlightTerrainPiece)
-	return result
+		if not child is FoldlightTerrainPiece or child.is_queued_for_deletion():
+			continue
+		var piece := child as FoldlightTerrainPiece
+		_terrain_pieces.append(piece)
+		if not piece.geometry_changed.is_connected(_invalidate_terrain_index):
+			piece.geometry_changed.connect(_invalidate_terrain_index)
+		var bounds := piece.get_global_query_bounds()
+		var first := _terrain_cell(bounds.position)
+		var last := _terrain_cell(bounds.end)
+		for y in range(first.y, last.y + 1):
+			for x in range(first.x, last.x + 1):
+				var cell := Vector2i(x, y)
+				if not _terrain_cells.has(cell):
+					_terrain_cells[cell] = []
+				(_terrain_cells[cell] as Array).append(piece)
 
 
 func _clear_terrain() -> void:

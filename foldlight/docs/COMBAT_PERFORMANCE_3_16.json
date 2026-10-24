@@ -1,0 +1,170 @@
+{
+  "version": "3.16.0",
+  "baseline_source_commit": "ab22c0f463e8434b3d05e14ab0b27a8f3fe69ebf",
+  "platform": "Windows native Godot 4.6.3 debug executable, OpenGL Compatibility, NVIDIA GeForce RTX 5070 Ti Laptop GPU, driver 580.88, 1280x720 window / 1920x1080 logical canvas",
+  "measurement_date": "2026-10-17",
+  "controlled_36_enemies": {
+    "results": [
+      {
+        "actual_enemy_count": 36,
+        "actual_projectile_peak": 260,
+        "baseline_3_15": true,
+        "draw_calls_p50": 2463.0,
+        "engine_max_fps": 0,
+        "frame_interval_p50_ms": 50.824,
+        "frame_interval_p95_ms": 65.741,
+        "low_processor_usage_mode": false,
+        "minimum_projectiles_before_refill": 204,
+        "new_visuals_enabled": true,
+        "physics_cpu_p95_ms": 22.08,
+        "physics_frames": 802,
+        "sample_frames": 209,
+        "scene_cpu_process_p95_ms": 21.963,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_count": 36,
+        "actual_projectile_peak": 260,
+        "baseline_3_15": false,
+        "draw_calls_p50": 2446.0,
+        "engine_max_fps": 0,
+        "frame_interval_p50_ms": 18.763,
+        "frame_interval_p95_ms": 27.456,
+        "low_processor_usage_mode": false,
+        "minimum_projectiles_before_refill": 204,
+        "new_visuals_enabled": true,
+        "physics_cpu_p95_ms": 19.161,
+        "physics_frames": 303,
+        "sample_frames": 209,
+        "scene_cpu_process_p95_ms": 32.135,
+        "window_focused": true
+      }
+    ],
+    "scope": "Native debug Godot 4.6.3 / NVIDIA Compatibility 1280x720, production scene with identical immortal 36-enemy setup. 260 real projectiles replenished per rendered frame; native engine physics ticks unchanged. 3.15 query methods restored from HEAD in baseline subclasses; all art and budgets identical."
+  },
+  "extreme_84_enemies": {
+    "baseline": {
+      "combat_component_probe": {
+        "_update_dash_trail": {
+          "p50_ms": 0.002,
+          "p95_ms": 0.004
+        },
+        "_update_enemies": {
+          "p50_ms": 0.852,
+          "p95_ms": 1.064
+        },
+        "_update_projectiles": {
+          "p50_ms": 3.988,
+          "p95_ms": 4.605
+        },
+        "_update_support_links": {
+          "p50_ms": 0.002,
+          "p95_ms": 0.322
+        },
+        "_update_temporary_effects": {
+          "p50_ms": 0.021,
+          "p95_ms": 0.043
+        },
+        "_update_terrain_effects": {
+          "p50_ms": 1.212,
+          "p95_ms": 1.49
+        }
+      },
+      "comparisons": [
+        {
+          "actual_enemy_count": 84,
+          "actual_projectile_peak": 260,
+          "engine_max_fps": 0,
+          "frame_interval_p50_ms": 182.188,
+          "frame_interval_p95_ms": 215.754,
+          "low_processor_usage_mode": false,
+          "new_visuals_enabled": true,
+          "physics_cpu_p95_ms": 36.068,
+          "sample_frames": 89,
+          "scene_cpu_process_p95_ms": 20.575,
+          "window_focused": true
+        },
+        {
+          "actual_enemy_count": 84,
+          "actual_projectile_peak": 259,
+          "engine_max_fps": 0,
+          "frame_interval_p50_ms": 176.402,
+          "frame_interval_p95_ms": 202.824,
+          "low_processor_usage_mode": false,
+          "new_visuals_enabled": false,
+          "physics_cpu_p95_ms": 43.193,
+          "sample_frames": 89,
+          "scene_cpu_process_p95_ms": 20.228,
+          "window_focused": true
+        }
+      ],
+      "note": "Component probe advances one fixed 1/60 simulation step at a time in the crowded scene; excludes render/presentation scheduling. The snapshot is an extreme 84 immortal enemies converging on a stationary invincible player.",
+      "scope": "Same local native 84-enemy/260-projectile deterministic setup with new landmark/facility visuals enabled versus disabled; no gameplay caps changed"
+    },
+    "optimized": {
+      "combat_component_probe": {
+        "_update_dash_trail": {
+          "p50_ms": 0.003,
+          "p95_ms": 0.006
+        },
+        "_update_enemies": {
+          "p50_ms": 0.972,
+          "p95_ms": 1.302
+        },
+        "_update_projectiles": {
+          "p50_ms": 1.379,
+          "p95_ms": 1.782
+        },
+        "_update_support_links": {
+          "p50_ms": 0.002,
+          "p95_ms": 0.344
+        },
+        "_update_temporary_effects": {
+          "p50_ms": 0.027,
+          "p95_ms": 0.055
+        },
+        "_update_terrain_effects": {
+          "p50_ms": 0.078,
+          "p95_ms": 0.116
+        }
+      },
+      "comparisons": [
+        {
+          "actual_enemy_count": 84,
+          "actual_projectile_peak": 260,
+          "engine_max_fps": 0,
+          "frame_interval_p50_ms": 152.511,
+          "frame_interval_p95_ms": 208.907,
+          "low_processor_usage_mode": false,
+          "new_visuals_enabled": true,
+          "physics_cpu_p95_ms": 36.527,
+          "sample_frames": 89,
+          "scene_cpu_process_p95_ms": 29.553,
+          "window_focused": true
+        },
+        {
+          "actual_enemy_count": 84,
+          "actual_projectile_peak": 260,
+          "engine_max_fps": 0,
+          "frame_interval_p50_ms": 150.53,
+          "frame_interval_p95_ms": 167.272,
+          "low_processor_usage_mode": false,
+          "new_visuals_enabled": false,
+          "physics_cpu_p95_ms": 25.527,
+          "sample_frames": 89,
+          "scene_cpu_process_p95_ms": 18.347,
+          "window_focused": true
+        }
+      ],
+      "note": "Component probe advances one fixed 1/60 simulation step at a time in the crowded scene; excludes render/presentation scheduling. The snapshot is an extreme 84 immortal enemies converging on a stationary invincible player.",
+      "scope": "Same local native 84-enemy/260-projectile deterministic setup with new landmark/facility visuals enabled versus disabled; no gameplay caps changed"
+    }
+  },
+  "limits": [
+    "Synthetic immortal actors, invincible stationary player; not a representative full run difficulty or a device certification.",
+    "Controlled 36-enemy comparison uses the current identical production scene in both arms and restores five 3.15 combat query functions plus old terrain enumeration only. It is not a whole-version executable comparison.",
+    "Controlled fixture replenishes real hostile projectiles up to 260 each rendered frame; normal physics, attacks, flight and collision continue, so counts may fall between refills. No one-step-per-render alteration in the controlled comparison.",
+    "The extreme 84-enemy fixture remains slow after optimization. No claim of stable 60 FPS there, on phones, or in all browsers.",
+    "Godot process/physics monitors may carry timing samples across scenario changes; wall-clock frame intervals and separate manual component probe are the reported measures."
+  ]
+}

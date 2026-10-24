@@ -4,8 +4,11 @@ extends Node
 signal cooldown_started(duration: float)
 signal readiness_changed(ready: bool)
 
+const MAX_CAPACITY: int = 96
+const BASE_CAPACITY: int = 8
+
 @export_range(0.0, 4.0, 0.05) var roguelite_cooldown: float = 1.5
-@export_range(1, 32, 1) var roguelite_capacity: int = 8
+@export_range(1, 96, 1) var roguelite_capacity: int = BASE_CAPACITY
 @export_range(1, 32, 1) var classic_capacity: int = 16
 
 var roguelite_enabled: bool = false
@@ -22,7 +25,7 @@ func configure(for_roguelite: bool) -> void:
 
 func configure_build(stats: Dictionary) -> void:
 	cooldown_multiplier = clampf(float(stats.get("fold_cooldown_multiplier", 1.0)), 0.25, 2.0)
-	capacity_add = clampi(int(round(float(stats.get("capture_capacity", 0.0)))), 0, 12)
+	capacity_add = clampi(int(round(float(stats.get("capture_capacity", 0.0)))), 0, maxi(0, MAX_CAPACITY - roguelite_capacity))
 
 
 func tick(delta: float) -> void:
@@ -46,7 +49,7 @@ func on_release() -> void:
 
 
 func get_capacity() -> int:
-	return roguelite_capacity + capacity_add if roguelite_enabled else classic_capacity
+	return mini(MAX_CAPACITY, roguelite_capacity + capacity_add) if roguelite_enabled else classic_capacity
 
 
 func reset() -> void:

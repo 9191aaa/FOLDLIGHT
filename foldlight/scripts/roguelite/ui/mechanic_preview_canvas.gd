@@ -1,6 +1,8 @@
 class_name FoldlightMechanicPreviewCanvas
 extends Control
 
+const BossPaperPuppet = preload("res://scripts/visuals/boss_paper_puppet.gd")
+
 ## A lightweight, deterministic combat vignette used by first-encounter and
 ## boss briefings.  It deliberately redraws the game's authored silhouettes
 ## instead of instantiating live combat actors inside the UI.
@@ -10,6 +12,7 @@ var preview_id: StringName = &"unknown"
 var attack_style: StringName = &"radial"
 var accent: Color = FoldlightRogueUITheme.GOLD
 var _time: float = 0.0
+var _motion_scale: float = 1.0
 
 
 func _ready() -> void:
@@ -33,15 +36,22 @@ func get_preview_snapshot() -> Dictionary:
 		"preview_id": preview_id,
 		"attack_style": attack_style,
 		"animated": is_processing(),
-		"cycle_progress": fmod(_time, 3.6) / 3.6,
+		"cycle_progress": _cycle_progress(),
 		"shows_actor": true,
 		"shows_attack": true,
 	}
 
 
 func _process(delta: float) -> void:
-	_time += maxf(0.0, delta)
+	var profile := get_node_or_null("/root/ProfileManager")
+	_motion_scale = clampf(float(profile.call("get_setting", &"screen_shake", 1.0)), 0.0, 1.0) if profile != null else 1.0
+	_time += maxf(0.0, delta) * _motion_scale
 	queue_redraw()
+
+
+func _cycle_progress() -> float:
+	var duration := 6.0 if preview_id == &"shutter_seraph" else 3.6
+	return fmod(_time, duration) / duration
 
 
 func _draw() -> void:
@@ -57,7 +67,7 @@ func _draw() -> void:
 		draw_line(Vector2(x, 16.0), Vector2(x, size.y - 16.0), Color(0.55, 0.73, 0.72, 0.035), 1.0, true)
 	var actor_center := Vector2(size.x * 0.35, size.y * 0.52)
 	var player_center := Vector2(size.x * 0.79, size.y * 0.62)
-	var cycle := fmod(_time, 3.6) / 3.6
+	var cycle := _cycle_progress()
 	_draw_attack(actor_center, player_center, cycle)
 	_draw_actor(actor_center, cycle)
 	_draw_player_marker(player_center, cycle)
@@ -67,6 +77,18 @@ func _draw() -> void:
 
 func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 	match attack_style:
+		&"mirror_echo":
+			_draw_mirror_echo(origin, target, cycle)
+		&"anchored_blast":
+			_draw_anchored_blast(origin, cycle)
+		&"poison_trail":
+			_draw_poison_trail(origin, cycle)
+		&"command_swarm":
+			_draw_command_swarm(origin, target, cycle)
+		&"relentless_charge":
+			_draw_relentless_charge(origin, target, cycle)
+		&"exposure_barrage":
+			_draw_exposure_barrage(origin, target, cycle)
 		&"aimed_volley", &"line_volley":
 			_draw_aimed_volley(origin, target, cycle)
 		&"summon", &"brood_summon":
@@ -85,8 +107,39 @@ func _draw_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
 			_draw_partitions(origin, target, cycle)
 		&"shrinking_frame", &"moving_safe_frame":
 			_draw_shrinking_frame(origin, target, cycle)
+		&"woven_lanes", &"locked_dash", &"paired_gaps":
+			_draw_new_boss_attack(origin, target, cycle)
 		_:
 			_draw_radial(origin, cycle)
+
+
+func _draw_anchored_blast(origin: Vector2, cycle: float) -> void:
+	var charge := clampf(cycle / 0.78, 0.0, 1.0)
+	var danger := Color("f17665")
+	draw_circle(origin, 83.0, Color(danger, 0.09))
+	draw_arc(origin, 83.0, 0, TAU, 48, Color(danger, 0.78), 2.0, true)
+	draw_arc(origin, 77.0, -PI * 0.5, -PI * 0.5 + TAU * charge, 48, accent, 4.0, true)
+	if cycle >= 0.78:
+		var blast := (cycle - 0.78) / 0.22
+		draw_arc(origin, lerpf(24.0, 83.0, blast), 0, TAU, 48, Color(danger, 1.0 - blast), 8.0, true)
+
+
+func _draw_mirror_echo(origin: Vector2, target: Vector2, cycle: float) -> void:
+	if cycle < 0.46:
+		var growth := clampf(cycle / 0.3, 0.0, 1.0)
+		# Only the player unfolds. The mirror keeps its automatic weapons and
+		# later echoes the count; it never intercepts the player's ammunition.
+		draw_arc(target, lerpf(28.0, 69.0, growth), 0.0, TAU, 36, Color(Color("83c8bd"), 0.68), 2.0, true)
+		for index in 3:
+			var progress := fposmod(cycle * 3.0 + index * 0.29, 1.0)
+			_draw_projectile(origin.lerp(target, progress) + Vector2(0, (index - 1) * 17.0), 0.0, true)
+	elif cycle < 0.65:
+		draw_dashed_line(origin, target, Color(accent, 0.62), 2.0, 9.0, true)
+	else:
+		for index in 3:
+			var progress := clampf((cycle - 0.65) / 0.35 + index * 0.08, 0.0, 1.0)
+			var point := origin.lerp(target + Vector2(40, -28), progress) + Vector2(0, sin(progress * PI) * (index - 1) * 38.0)
+			_draw_projectile(point, 0.0, true)
 
 
 func _draw_aimed_volley(origin: Vector2, target: Vector2, cycle: float) -> void:
@@ -203,21 +256,53 @@ func _draw_radial(origin: Vector2, cycle: float) -> void:
 
 
 func _draw_actor(center: Vector2, cycle: float) -> void:
+	if preview_kind == &"boss":
+		if attack_style == &"relentless_charge":
+			var dash_cycle := fposmod(cycle * 3.0, 1.0)
+			var dash_index := mini(2, int(cycle * 3.0))
+			var destination := Vector2(size.x * 0.79, size.y * 0.62 + float(dash_index - 1) * minf(38.0, size.y * 0.10))
+			center = center.lerp(destination, clampf((dash_cycle - 0.48) / 0.34, 0.0, 1.0))
+		var bounds: Rect2 = BossPaperPuppet.get_visual_bounds(preview_id)
+		var charging := attack_style == &"relentless_charge"
+		var fit := minf(size.x * (0.32 if charging else 0.46) / bounds.size.x, size.y * (0.48 if charging else 0.66) / bounds.size.y)
+		draw_set_transform(center, 0.0, Vector2.ONE * fit)
+		BossPaperPuppet.draw_puppet(self, preview_id, {
+			"time": _time, "intro": 1.0, "phase": 0,
+			"motion_scale": _motion_scale,
+			"charge": clampf(cycle / 0.42, 0.0, 1.0) if cycle < 0.42 else 0.0,
+			"recoil": clampf(1.0 - (cycle - 0.42) / 0.10, 0.0, 1.0) if cycle >= 0.42 else 0.0,
+		})
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	var breathe := sin(_time * (2.6 if preview_kind == &"boss" else 3.4))
 	var scale_value := (1.25 if preview_kind == &"boss" else 1.0) * (1.0 + breathe * 0.025)
 	draw_set_transform(center + Vector2(0.0, breathe * 3.0), breathe * 0.025, Vector2.ONE * scale_value)
 	match preview_id:
+		&"miasma_wraith": _draw_miasma_body()
+		&"cinder_mine": _draw_cinder_mine_body(cycle)
+		&"shutter_seraph": _draw_seraph_body(cycle)
 		&"paper_turret": _draw_turret_body(cycle)
 		&"brood_lantern": _draw_lantern_body()
 		&"bell_binder": _draw_bell_body()
 		&"ink_warden": _draw_warden_body()
 		&"prism_bulwark": _draw_bulwark_body()
 		&"shear_scribe": _draw_scribe_body()
-		&"reef_crown_battery": _draw_reef_boss()
-		&"inverted_archivist": _draw_archivist_boss()
-		&"origami_judge": _draw_judge_boss()
 		_: _draw_generic_body()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_cinder_mine_body(cycle: float) -> void:
+	for side in [-1.0, 1.0]:
+		var fin := PackedVector2Array([Vector2(side * 15, -21), Vector2(side * 40, -6), Vector2(side * 25, 27), Vector2(side * 9, 14)])
+		draw_colored_polygon(fin, Color("503b3e"))
+		draw_polyline(PackedVector2Array(Array(fin) + [fin[0]]), accent, 2.0, true)
+	var body := PackedVector2Array([Vector2(0, -34), Vector2(24, 0), Vector2(0, 35), Vector2(-24, 0)])
+	draw_colored_polygon(body, Color("382f3b"))
+	draw_polyline(PackedVector2Array(Array(body) + [body[0]]), accent, 2.5, true)
+	draw_colored_polygon(PackedVector2Array([Vector2(0, -14), Vector2(9, 1), Vector2(0, 16), Vector2(-9, 1)]), Color("f17665"))
+	for index in 3:
+		var live := cycle < 0.78 * float(3 - index) / 3.0
+		draw_line(Vector2(-9 + index * 9, -41), Vector2(-9 + index * 9, -35), accent if live else Color("55454b"), 3.0, true)
 
 
 func _draw_turret_body(cycle: float) -> void:
@@ -265,28 +350,37 @@ func _draw_scribe_body() -> void:
 	draw_line(Vector2(-11, 0), Vector2(11, 0), Color(0.80, 0.58, 0.34), 3.0, true)
 
 
-func _draw_reef_boss() -> void:
-	var crown := PackedVector2Array([Vector2(-74, 34), Vector2(-65, -35), Vector2(-42, -58), Vector2(-20, -23), Vector2(0, -70), Vector2(20, -23), Vector2(43, -61), Vector2(67, -34), Vector2(74, 34)])
-	draw_colored_polygon(crown, Color(0.42, 0.36, 0.28, 0.98))
-	draw_polyline(crown, Color(0.48, 0.71, 0.68), 6.0, true)
-	draw_rect(Rect2(Vector2(-28, -10), Vector2(56, 43)), Color(0.12, 0.08, 0.12), true)
-	draw_circle(Vector2.ZERO, 10.0, Color(0.77, 0.57, 0.32))
+func _draw_exposure_barrage(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var seconds := cycle * 6.0
+	var direction := origin.direction_to(target)
+	if seconds >= 2.4 and seconds < 3.2:
+		draw_dashed_line(origin + direction * 48.0, target, Color(0.92, 0.66, 0.36, 0.65), 2.0, 9.0, true)
+	if seconds < 3.2 or seconds >= 5.6:
+		return
+	for row in 6:
+		var flight := fmod((seconds - 3.2) * 1.3 + row * 0.16, 1.0)
+		for column in 5:
+			var ray := direction.rotated(float(column - 2) * 0.15)
+			_draw_projectile(origin + ray * lerpf(48.0, origin.distance_to(target) + 42.0, flight), ray.angle(), true)
 
 
-func _draw_archivist_boss() -> void:
-	draw_rect(Rect2(Vector2(-49, -42), Vector2(98, 84)), Color(0.11, 0.08, 0.15, 0.98), true)
-	draw_rect(Rect2(Vector2(-49, -42), Vector2(98, 84)), Color(0.54, 0.43, 0.62), false, 6.0, true)
-	draw_line(Vector2(0, -40), Vector2(0, 40), Color(0.70, 0.57, 0.75), 4.0, true)
-	for page in 4:
-		var point := Vector2.from_angle(_time * 0.5 + page * TAU / 4.0) * 68.0
-		draw_rect(Rect2(point - Vector2(8, 5), Vector2(16, 10)), Color(0.65, 0.54, 0.70, 0.48), true)
-
-
-func _draw_judge_boss() -> void:
-	var judge := PackedVector2Array([Vector2(0, -56), Vector2(48, -21), Vector2(38, 47), Vector2(0, 29), Vector2(-38, 47), Vector2(-48, -21), Vector2(0, -56)])
-	draw_colored_polygon(judge.slice(0, 6), Color(0.16, 0.09, 0.09, 0.98))
-	draw_polyline(judge, Color(0.76, 0.51, 0.29), 6.0, true)
-	draw_line(Vector2(0, -54), Vector2(0, 29), Color(0.82, 0.64, 0.38, 0.72), 3.0, true)
+func _draw_seraph_body(cycle: float) -> void:
+	var seconds := cycle * 6.0
+	var firing := seconds >= 3.2 and seconds < 5.6
+	var opening := 1.0 if firing else (clampf((6.0 - seconds) / 0.4, 0.0, 1.0) if seconds >= 5.6 else 0.0)
+	for side in [-1.0, 1.0]:
+		for layer in 3:
+			var reach := lerpf(19.0, 66.0 + layer * 6.0, opening)
+			var wing := PackedVector2Array([Vector2(side * 4.0, -28.0 + layer * 14.0), Vector2(side * reach, -42.0 + layer * 26.0), Vector2(side * (reach - 10.0), 18.0 + layer * 15.0), Vector2(side * 5.0, 31.0)])
+			draw_colored_polygon(wing, Color(0.13 + layer * 0.03, 0.22 + layer * 0.025, 0.28 + layer * 0.02))
+			wing.append(wing[0])
+			draw_polyline(wing, Color(0.68, 0.71, 0.65), 2.0, true)
+	if firing:
+		draw_circle(Vector2.ZERO, 14.0, Color(0.97, 0.80, 0.48))
+		draw_circle(Vector2.ZERO, 6.0, Color(1.0, 0.95, 0.76))
+	else:
+		draw_line(Vector2(0.0, -24.0), Vector2(0.0, 29.0), Color(0.49, 0.77, 0.80), 4.0, true)
+		draw_arc(Vector2.ZERO, 42.0, -PI * 0.7, PI * 0.7, 26, Color(0.49, 0.77, 0.80, 0.7), 2.0, true)
 
 
 func _draw_generic_body() -> void:
@@ -313,8 +407,10 @@ func _draw_player_marker(center: Vector2, cycle: float) -> void:
 func _draw_timeline(cycle: float) -> void:
 	var rect := Rect2(Vector2(22.0, size.y - 24.0), Vector2(size.x - 44.0, 4.0))
 	draw_rect(rect, Color(0.25, 0.34, 0.38, 0.36), true)
+	if attack_style == &"exposure_barrage":
+		draw_rect(Rect2(rect.position + Vector2(rect.size.x * 3.2 / 6.0, -2.0), Vector2(rect.size.x * 2.4 / 6.0, 8.0)), Color(0.92, 0.67, 0.34, 0.54), true)
 	draw_rect(Rect2(rect.position, Vector2(rect.size.x * cycle, rect.size.y)), accent, true)
-	var marker_x := rect.position.x + rect.size.x * 0.42
+	var marker_x := rect.position.x + rect.size.x * (3.2 / 6.0 if attack_style == &"exposure_barrage" else 0.42)
 	draw_line(Vector2(marker_x, rect.position.y - 5.0), Vector2(marker_x, rect.end.y + 5.0), Color(0.82, 0.62, 0.34, 0.78), 2.0, true)
 
 
@@ -345,11 +441,15 @@ func _draw_petal_enemy(center: Vector2, scale_value: float) -> void:
 
 
 func _infer_preview_kind(id: StringName) -> StringName:
-	return &"boss" if id in [&"reef_crown_battery", &"inverted_archivist", &"origami_judge"] else &"enemy"
+	return &"boss" if FoldlightRogueContentCatalog.boss_by_id(id) != null else &"enemy"
 
 
 func _default_attack_style(id: StringName) -> StringName:
 	return {
+		&"mirror_moth": &"mirror_echo",
+		&"miasma_wraith": &"poison_trail",
+		&"cinder_mine": &"anchored_blast",
+		&"shutter_seraph": &"exposure_barrage",
 		&"paper_turret": &"aimed_volley",
 		&"brood_lantern": &"summon",
 		&"bell_binder": &"tether",
@@ -359,4 +459,107 @@ func _default_attack_style(id: StringName) -> StringName:
 		&"reef_crown_battery": &"tide_gap",
 		&"inverted_archivist": &"partitions",
 		&"origami_judge": &"shrinking_frame",
+		&"tide_loom_mother": &"command_swarm",
+		&"torn_page_executioner": &"relentless_charge",
+		&"eclipse_twin_bells": &"paired_gaps",
 	}.get(id, &"radial")
+
+
+func _draw_miasma_body() -> void:
+	var paper := Color("a9b58c")
+	var mantle := PackedVector2Array([Vector2(0, -39), Vector2(31, -9), Vector2(23, 29), Vector2(9, 18), Vector2(0, 40), Vector2(-13, 20), Vector2(-27, 31), Vector2(-32, -7)])
+	draw_colored_polygon(mantle, Color("243a34"))
+	draw_polyline(PackedVector2Array(Array(mantle) + [mantle[0]]), paper, 2.5, true)
+	draw_line(Vector2(0, -33), Vector2(0, 30), Color(paper, 0.45), 1.5, true)
+	draw_colored_polygon(PackedVector2Array([Vector2(0, -24), Vector2(12, -6), Vector2(0, 5), Vector2(-12, -6)]), Color("101f23"))
+	draw_line(Vector2(-7, -8), Vector2(-2, -6), paper, 2.5, true)
+	draw_line(Vector2(2, -6), Vector2(7, -8), paper, 2.5, true)
+
+
+func _draw_poison_trail(origin: Vector2, cycle: float) -> void:
+	var ink := Color("a9b58c")
+	for index in 3:
+		var center := origin + Vector2(44.0 + index * 52.0, 44.0 - index * 18.0)
+		var warning := cycle < 0.24 + index * 0.13
+		var cloud_radius := 33.0
+		draw_circle(center, cloud_radius, Color(ink, 0.05 if warning else 0.12))
+		if warning:
+			for segment in 8:
+				var angle := segment * TAU / 8.0
+				draw_arc(center, cloud_radius, angle, angle + 0.50, 6, Color(ink, 0.75), 2.0, true)
+		else:
+			draw_arc(center, cloud_radius, 0.0, TAU, 24, ink, 2.4, true)
+			for ray in 3:
+				var direction := Vector2.from_angle(-PI * 0.5 + ray * TAU / 3.0)
+				draw_line(center + direction * 3.0, center + direction * 12.0, Color(ink, 0.65), 3.5, true)
+
+
+func _draw_command_swarm(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var command_ink := Color("baa784")
+	var aura_radius := minf(102.0, size.y * 0.29)
+	draw_circle(origin, aura_radius, Color(command_ink, 0.035))
+	draw_arc(origin, aura_radius, 0.0, TAU, 48, Color(command_ink, 0.48), 1.8, true)
+	for index in 3:
+		var center := origin + Vector2.from_angle(-0.85 + index * 0.82) * (aura_radius - 12.0)
+		draw_line(origin, center, Color(command_ink, 0.55), 1.7, true)
+		_draw_petal_enemy(center, 0.78)
+		# The fixed chevron denotes a buff even with animation disabled.
+		draw_polyline(PackedVector2Array([center + Vector2(-7, -24), center + Vector2(0, -30), center + Vector2(7, -24)]), command_ink, 2.2, true)
+		var aim := center.direction_to(target)
+		for shot in 3:
+			var flight := fposmod(cycle * 2.0 + shot * 0.27, 1.0)
+			_draw_projectile(center + aim * lerpf(22.0, center.distance_to(target), flight), aim.angle(), true)
+
+
+func _draw_relentless_charge(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var dash_cycle := fposmod(cycle * 3.0, 1.0)
+	var dash_index := mini(2, int(cycle * 3.0))
+	var destination := target + Vector2(0.0, float(dash_index - 1) * minf(38.0, size.y * 0.10))
+	var aim := origin.direction_to(destination)
+	var side := aim.orthogonal() * 19.0
+	var ink := Color("c3a788")
+	draw_line(origin, destination, Color("362d32"), 38.0, true)
+	draw_dashed_line(origin + side, destination + side, ink, 2.0, 10.0, true)
+	draw_dashed_line(origin - side, destination - side, ink, 2.0, 10.0, true)
+	for index in 3:
+		var x := size.x * 0.35 + float(index - 1) * 20.0
+		var active_mark := index == dash_index
+		draw_rect(Rect2(x - 5.0, 20.0, 10.0, 5.0), ink if active_mark else Color(ink, 0.25))
+	if dash_cycle < 0.48:
+		var tip := origin.lerp(destination, dash_cycle / 0.48)
+		draw_polyline(PackedVector2Array([tip - aim * 10.0 + side * 0.40, tip, tip - aim * 10.0 - side * 0.40]), ink, 2.3, true)
+
+
+func _draw_new_boss_attack(origin: Vector2, target: Vector2, cycle: float) -> void:
+	var aim := origin.direction_to(target)
+	var travel := clampf((cycle - 0.42) / 0.38, 0.0, 1.0)
+	var distance := origin.distance_to(target) + 35.0
+	var gold := Color(0.95,0.67,0.32,0.65)
+	if attack_style == &"woven_lanes":
+		for lane in 5:
+			var start := origin + aim.orthogonal()*float(lane-2)*23.0
+			if lane == 2:
+				draw_line(start+aim*65.0,start+aim*distance,Color(0.47,0.94,0.82,0.28),13.0,true)
+				continue
+			draw_dashed_line(start,start+aim*distance,Color(accent,0.42),2.0,12.0,true)
+			if cycle >= 0.42:
+				_draw_projectile(start+aim*lerpf(35.0,distance,travel),aim.angle(),true)
+	elif attack_style == &"locked_dash":
+		var side := aim.orthogonal()*20.0
+		draw_line(origin,target+aim*35.0,Color(0.12,0.07,0.10,0.48),40.0,true)
+		draw_dashed_line(origin+side,target+side+aim*35.0,gold,2.0,12.0,true)
+		draw_dashed_line(origin-side,target-side+aim*35.0,gold,2.0,12.0,true)
+		if cycle >= 0.42:
+			_draw_blade(origin+aim*distance*travel,aim.angle())
+	else:
+		for index in 2:
+			var side := -1.0 if index == 0 else 1.0
+			var bell := origin+Vector2(side*36.0,7.0)
+			var gap_angle := aim.angle()+side*0.36
+			draw_arc(bell,50.0,gap_angle-0.78,gap_angle+0.78,18,Color(0.47,0.94,0.82,0.72),3.0,true)
+			var pulse := clampf((cycle-0.42-float(index)*0.145)/0.34,0.0,1.0)
+			if pulse <= 0.0: continue
+			for ray in 10:
+				var angle := gap_angle+float(ray)*TAU/10.0
+				if absf(wrapf(angle-gap_angle,-PI,PI)) < 0.78: continue
+				_draw_projectile(bell+Vector2.from_angle(angle)*lerpf(23.0,106.0,pulse),angle,true)

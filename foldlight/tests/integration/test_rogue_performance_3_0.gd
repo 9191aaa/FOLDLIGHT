@@ -41,7 +41,8 @@ func _run() -> void:
 	for index in 18:
 		var column := index % 6
 		var row := index / 6
-		runtime._spawn_enemy_from_entry({"enemy_id": mechanic_ids[index % mechanic_ids.size()], "spawn_position": Vector2(320 + column * 390, 250 + row * 430)}, false)
+		var enemy_id := &"shutter_seraph" if index == 17 else mechanic_ids[index % mechanic_ids.size()]
+		runtime._spawn_enemy_from_entry({"enemy_id": enemy_id, "spawn_position": Vector2(320 + column * 390, 250 + row * 430)}, false)
 
 	for index in FoldlightRogueCombatRuntime.MAX_PROJECTILES:
 		var column := index % 26

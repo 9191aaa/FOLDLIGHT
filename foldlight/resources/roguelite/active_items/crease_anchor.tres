@@ -4,7 +4,8 @@
 script = ExtResource("1")
 content_id = &"crease_anchor"
 title = "定折锚"
-description = "展开五秒四层护盾，并把身边八枚普通敌弹锚成追踪返光。"
+description = "撑起可抵挡 4 次攻击的护盾，持续 5 秒；将附近最多 8 发可收纳敌弹化作追踪返光，稳住阵脚。"
+usage_label = "防守 · 返光"
 accent = Color(0.35, 0.88, 0.88, 1)
 tags = Array[StringName]([&"shield", &"tradeoff"])
 cooldown = 17.0

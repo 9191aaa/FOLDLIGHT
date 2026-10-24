@@ -4,7 +4,7 @@
 script = ExtResource("1")
 content_id = &"needle_orbit"
 title = "环针灯"
-description = "细针环身旋转后飞向靠近者，擅长处理贴身压力。"
+description = "细针随身环绕后自动索敌，近身也能造成伤害；三阶双针，五阶强化贯穿。"
 accent = Color(0.50, 0.80, 1, 1)
 tags = Array[StringName]([&"orbit", &"close"])
 targeting = 3

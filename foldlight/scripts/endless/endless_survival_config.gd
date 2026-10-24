@@ -3,19 +3,35 @@ extends Resource
 
 @export_group("Identity")
 @export var mode_id: StringName = &"classic_2_0_endless"
-@export var rules_version: StringName = &"endless_1_0"
+@export var rules_version: StringName = &"endless_2_0"
 
 @export_group("Independent Evolution Axes")
 @export var enemy_stage_times := PackedFloat32Array([45.0, 105.0, 180.0, 270.0, 375.0, 495.0])
 @export var player_absorb_thresholds := PackedInt32Array([24, 60, 112, 184, 280, 400])
 
 @export_group("Pressure Curve")
-@export_range(0.5, 20.0, 0.1) var base_spawn_interval: float = 6.5
-@export_range(0.25, 10.0, 0.1) var minimum_spawn_interval: float = 2.1
-@export_range(1, 30, 1) var base_wave_budget: int = 5
-@export_range(1, 60, 1) var maximum_wave_budget: int = 28
+@export_range(0.5, 20.0, 0.1) var base_spawn_interval: float = 4.4
+@export_range(0.25, 10.0, 0.1) var minimum_spawn_interval: float = 1.9
+@export_range(1, 30, 1) var base_wave_budget: int = 8
+@export_range(1, 60, 1) var maximum_wave_budget: int = 32
 @export_range(1.0, 5.0, 0.05) var health_growth_per_stage: float = 1.18
 @export_range(1.0, 4.0, 0.05) var projectile_growth_per_stage: float = 1.12
+
+@export_group("Population Budget")
+@export_range(4, 80, 1) var base_population_limit: int = 28
+@export_range(4, 80, 1) var maximum_population_limit: int = 80
+@export_range(4, 160, 1) var base_threat_limit: int = 32
+@export_range(4, 160, 1) var maximum_threat_limit: int = 160
+@export_range(320.0, 1200.0, 10.0) var spawn_safe_distance: float = 620.0
+@export_range(800.0, 1800.0, 10.0) var spawn_local_radius: float = 1250.0
+@export_range(0.5, 1.0, 0.05) var breathing_wave_ratio: float = 0.75
+
+@export_group("Kill Experience and Recovery")
+@export_range(1, 100, 1) var first_level_experience: int = 42
+@export_range(1, 40, 1) var experience_step: int = 16
+@export_range(0, 8, 1) var experience_quadratic: int = 2
+@export_range(0, 3, 1) var mission_recovery: int = 1
+@export_range(2, 10, 1) var recovery_level_interval: int = 3
 
 @export_group("Objectives")
 @export_range(3.0, 40.0, 0.5) var capture_hold_seconds: float = 12.0
@@ -44,6 +60,18 @@ func validation_errors() -> Array[String]:
 		errors.append("the complete 2.0 enemy family must remain available")
 	if minimum_spawn_interval > base_spawn_interval:
 		errors.append("minimum spawn interval cannot exceed the base interval")
+	if base_population_limit <= 0 or maximum_population_limit < base_population_limit:
+		errors.append("population limits must be positive and ordered")
+	if base_threat_limit <= 0 or maximum_threat_limit < base_threat_limit:
+		errors.append("threat limits must be positive and ordered")
+	if first_level_experience <= 0 or experience_step <= 0 or recovery_level_interval < 2:
+		errors.append("experience thresholds and recovery interval must be positive")
+	if not is_finite(spawn_safe_distance) or spawn_safe_distance < 320.0:
+		errors.append("spawn safety radius must be finite and at least 320 pixels")
+	if not is_finite(spawn_local_radius) or spawn_local_radius <= spawn_safe_distance or breathing_wave_ratio < 0.5 or breathing_wave_ratio > 1.0:
+		errors.append("local reinforcement ring and breathing ratio must be bounded")
+	if experience_quadratic < 0:
+		errors.append("experience curve must not decrease with level")
 	return errors
 
 

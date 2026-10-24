@@ -1,0 +1,129 @@
+{
+	"results": [
+		{
+			"actual_enemy_max": 36,
+			"actual_enemy_min": 36,
+			"actual_projectile_min_before_refill": 255,
+			"actual_projectile_peak": 260,
+			"boss_activity": {
+				"support_requests": 0,
+				"telegraphs": 0,
+				"volleys": 0
+			},
+			"bosses": [],
+			"draw_calls_p50": 2522.0,
+			"effective_population_limit": 48,
+			"frame_interval_p50_ms": 17.768,
+			"frame_interval_p95_ms": 25.52,
+			"low_processor_usage_mode": false,
+			"map": 0,
+			"map_id": "folded_delta",
+			"map_size": "(7680.0, 5120.0)",
+			"max_fps": 0,
+			"name": "ordinary_36_reference",
+			"ordinary": 36,
+			"physics_frames": 722,
+			"physics_p95_ms": 11.778,
+			"process_p95_ms": 166.468,
+			"sample_frames": 610,
+			"wall_seconds": 12.000684,
+			"window_focused": true
+		},
+		{
+			"actual_enemy_max": 48,
+			"actual_enemy_min": 48,
+			"actual_projectile_min_before_refill": 253,
+			"actual_projectile_peak": 260,
+			"boss_activity": {
+				"support_requests": 0,
+				"telegraphs": 0,
+				"volleys": 0
+			},
+			"bosses": [],
+			"draw_calls_p50": 2768.0,
+			"effective_population_limit": 48,
+			"frame_interval_p50_ms": 21.301,
+			"frame_interval_p95_ms": 31.488,
+			"low_processor_usage_mode": false,
+			"map": 0,
+			"map_id": "folded_delta",
+			"map_size": "(7680.0, 5120.0)",
+			"max_fps": 0,
+			"name": "ordinary_48_limit",
+			"ordinary": 48,
+			"physics_frames": 725,
+			"physics_p95_ms": 30.441,
+			"process_p95_ms": 15.493,
+			"sample_frames": 478,
+			"wall_seconds": 12.012821,
+			"window_focused": true
+		},
+		{
+			"actual_enemy_max": 32,
+			"actual_enemy_min": 32,
+			"actual_projectile_min_before_refill": 256,
+			"actual_projectile_peak": 260,
+			"boss_activity": {
+				"support_requests": 3,
+				"telegraphs": 10,
+				"volleys": 8
+			},
+			"bosses": [
+				"inverted_archivist",
+				"torn_page_executioner"
+			],
+			"draw_calls_p50": 2388.0,
+			"effective_population_limit": 32,
+			"frame_interval_p50_ms": 15.829,
+			"frame_interval_p95_ms": 19.256,
+			"low_processor_usage_mode": false,
+			"map": 1,
+			"map_id": "inverted_canals",
+			"map_size": "(7936.0, 5504.0)",
+			"max_fps": 0,
+			"name": "two_bosses_32_total",
+			"ordinary": 30,
+			"physics_frames": 734,
+			"physics_p95_ms": 10.989,
+			"process_p95_ms": 19.819,
+			"sample_frames": 731,
+			"wall_seconds": 12.004061,
+			"window_focused": true
+		},
+		{
+			"actual_enemy_max": 24,
+			"actual_enemy_min": 24,
+			"actual_projectile_min_before_refill": 254,
+			"actual_projectile_peak": 260,
+			"boss_activity": {
+				"support_requests": 4,
+				"telegraphs": 14,
+				"volleys": 32
+			},
+			"bosses": [
+				"reef_crown_battery",
+				"tide_loom_mother",
+				"eclipse_twin_bells"
+			],
+			"draw_calls_p50": 2212.0,
+			"effective_population_limit": 24,
+			"frame_interval_p50_ms": 13.383,
+			"frame_interval_p95_ms": 16.645,
+			"low_processor_usage_mode": false,
+			"map": 2,
+			"map_id": "solar_archipelago",
+			"map_size": "(8256.0, 5504.0)",
+			"max_fps": 0,
+			"name": "three_bosses_24_total",
+			"ordinary": 21,
+			"physics_frames": 726,
+			"physics_p95_ms": 9.031,
+			"process_p95_ms": 305.792,
+			"sample_frames": 885,
+			"wall_seconds": 12.012291,
+			"window_focused": true
+		}
+	],
+	"scope": "Native debug Godot4.6.3 /1280x720 /1920x1080 logical /Compatibility. Production shared enemies, boss AI phase3 and collision; immortal actors, stationary invincible player, all weapons Lv5. Controllers and encounter scheduling frozen after setup; native combat fixed ticks unchanged. Refill real hostile bullets to260 each render; population allowance remains real. At least12 seconds and240 frames per scenario, first31 frames excluded. Synthetic bounded stress, not a whole-run or mobile performance claim.",
+	"version": "3.17.0"
+}

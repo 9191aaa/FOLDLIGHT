@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="FoldlightRogueBossDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/roguelite/resources/rogue_boss_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+content_id = &"eclipse_twin_bells"
+title = "蚀日双铃"
+description = "一明一暗的纸铃轮流敲出缺口脉冲；预警标出两处声源与即将转向的空隙。"
+accent = Color(0.94, 0.68, 0.32, 1)
+tags = Array[StringName]([&"paired", &"pulse"])
+region_id = &"nameless_sun_court"
+base_health = 1200.0
+phase_thresholds = PackedFloat32Array(0.72, 0.4)
+arena_rule = &"open_paper"
+return_window_fraction = 0.16
+return_window_seconds = 3.4
+return_damage_outside_stagger = 0.5
+target_duration = 230.0
+telegraph_seconds = 1.05
+recovery_seconds = 0.65
+active_pattern_seconds = {&"bell_alternation": 0.85, &"eclipse_procession": 0.85, &"eclipse_chime_cut": 0.35}
+pattern_ids = Array[StringName]([&"bell_alternation", &"eclipse_chime_cut", &"eclipse_procession"])

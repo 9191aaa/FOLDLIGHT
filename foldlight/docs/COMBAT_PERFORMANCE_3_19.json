@@ -1,0 +1,1044 @@
+{
+  "version": "3.19.0",
+  "measured_on": "2026-10-18",
+  "status": "Completed native synthetic stress and mobile-layout visual QA; high-density frame rate remains insufficient for a 60 FPS claim.",
+  "environment": {
+    "os": "Windows",
+    "engine": "Godot 4.6.3.stable.official.7d41c59c4 native debug engine",
+    "renderer": "OpenGL 3.3 Compatibility",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+    "driver": "580.88",
+    "measurement_window": [
+      1280,
+      720
+    ],
+    "logical_canvas": [
+      1920,
+      1080
+    ],
+    "max_fps": 0,
+    "physics_ticks_per_second": 60,
+    "window_focused": true,
+    "low_processor_usage_mode": false,
+    "isolated_user_data": true,
+    "other_godot_browser_gpu_or_emulator_concurrent": false
+  },
+  "methodology": {
+    "scope": "Native Godot 4.6.3 Compatibility; 1280x720 physical /1920x1080 logical. Shared real AI/collision/terrain, phase3 intensity5 bosses including actual mirror_moth with six copied Lv5 weapons, immortal target HP and stationary invincible non-folding player. Waves frozen after fixture setup; actual population and threat allowances retained. An escort is created from authored routes; real lockdown/inversion/bombardment advance. Boss cases prime 24 persistent clouds through two actual carriers' owned emission signals, then retain natural emissions/expiry. First31 render frames excluded. Bounded cases replenish real hostile projectiles to260 AFTER simulation; natural case injects ZERO bullets. Compared with 3.18 boss scenarios add mirror, 24 persistent clouds and frequent bombardment, so this is deliberately heavier rather than identical content. Synthetic stress, not whole-run balancing or Android performance evidence.",
+    "minimum_total_render_frames": 360,
+    "excluded_initial_render_frames": 31,
+    "minimum_wall_seconds": [
+      20,
+      20,
+      35
+    ],
+    "measured_frame_counts_exclude_initial_frames": true,
+    "source": "build/test-runtime/performance-319/measure_current.gd",
+    "boss_roster": [
+      "reef_crown_battery",
+      "tide_loom_mother",
+      "mirror_moth",
+      "torn_page_executioner",
+      "origami_judge",
+      "eclipse_twin_bells"
+    ],
+    "comparison_with_3_18": "Boss content is heavier: actual mirror replaces archivist, 24 persistent clouds rather than roughly six, and actual frequent boss bombardments. Not an identical-content cross-version A/B."
+  },
+  "baseline_before_snapshot_and_candidate_scan_cleanup": {
+    "results": [
+      {
+        "actual_enemy_max": 80,
+        "actual_enemy_min": 80,
+        "actual_projectile_min_before_refill": 254,
+        "actual_projectile_peak": 260,
+        "bombardment_cycles": 1,
+        "bombardment_states_seen": [
+          "warning",
+          "impact",
+          "rest"
+        ],
+        "bombardment_zone_peak": 5,
+        "boss_activity": {},
+        "boss_phases_seen": [],
+        "bosses": false,
+        "draw_calls_p50": 4556.0,
+        "effective_population_limit": 80,
+        "frame_interval_p50_ms": 47.773,
+        "frame_interval_p95_ms": 61.562,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "idle"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 0,
+        "map_id": "folded_delta",
+        "map_size": "(7680.0, 5120.0)",
+        "max_fps": 0,
+        "name": "ordinary_80_bounded_260",
+        "ordinary": 80,
+        "physics_frames": 1198,
+        "physics_p95_ms": 7.562,
+        "poison": 0,
+        "poison_cloud_min": 0,
+        "poison_cloud_peak": 0,
+        "population_max": 80,
+        "process_p95_ms": 58.188,
+        "projectile_counts": {
+          "friendly_spawned": 103,
+          "hostile_spawned": 1162,
+          "injected": 833,
+          "poison_requests": 0,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 369,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 92,
+        "wall_seconds": 20.008802,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 248,
+        "actual_projectile_peak": 260,
+        "bombardment_cycles": 2,
+        "bombardment_states_seen": [
+          "warning",
+          "impact",
+          "rest"
+        ],
+        "bombardment_zone_peak": 2,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "bell_alternation": 3,
+              "eclipse_chime_cut": 3,
+              "eclipse_procession": 4
+            },
+            "support_requests": 0,
+            "telegraphs": 10,
+            "volleys": 18
+          },
+          "mirror_moth": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {
+              "crease_lantern": 5,
+              "needle_orbit": 5,
+              "prism_fan": 5,
+              "returning_gull": 5,
+              "sun_thread": 5,
+              "tide_bell": 5
+            },
+            "mirror_actions": {
+              "mirror_dash:resolve": 5,
+              "radial_push:resolve": 2,
+              "radial_push:warning": 2
+            },
+            "patterns": {
+              "mirror_active": 2,
+              "mirror_dash": 5,
+              "mirror_pressure": 5
+            },
+            "support_requests": 0,
+            "telegraphs": 12,
+            "volleys": 147
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "judgement_petals": 5,
+              "shrinking_frame": 5,
+              "unreflectable_cut": 5
+            },
+            "support_requests": 0,
+            "telegraphs": 15,
+            "volleys": 19
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "black_lane": 4,
+              "petal_salvo": 4,
+              "tide_fan": 4,
+              "turret_crown": 4
+            },
+            "support_requests": 9,
+            "telegraphs": 16,
+            "volleys": 15
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "loom_crossweave": 3,
+              "loom_needle": 4,
+              "loom_shuttle": 4
+            },
+            "support_requests": 11,
+            "telegraphs": 11,
+            "volleys": 62
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 16,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "execution_counterfold": 2,
+              "execution_dash": 16,
+              "execution_rake": 2
+            },
+            "support_requests": 0,
+            "telegraphs": 20,
+            "volleys": 4
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "mirror_moth:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 4506.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 57.74,
+        "frame_interval_p95_ms": 76.614,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 1,
+        "map_id": "inverted_canals",
+        "map_size": "(7936.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_bounded_260",
+        "ordinary": 50,
+        "physics_frames": 1264,
+        "physics_p95_ms": 10.901,
+        "poison": 2,
+        "poison_cloud_min": 24,
+        "poison_cloud_peak": 24,
+        "population_max": 56,
+        "process_p95_ms": 85.004,
+        "projectile_counts": {
+          "friendly_spawned": 209,
+          "hostile_spawned": 3434,
+          "injected": 1302,
+          "poison_requests": 88,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 329,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 21.155678,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 128,
+        "actual_projectile_peak": 260,
+        "bombardment_cycles": 3,
+        "bombardment_states_seen": [
+          "warning",
+          "impact",
+          "rest"
+        ],
+        "bombardment_zone_peak": 2,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "bell_alternation": 5,
+              "eclipse_chime_cut": 5,
+              "eclipse_procession": 6
+            },
+            "support_requests": 0,
+            "telegraphs": 16,
+            "volleys": 31
+          },
+          "mirror_moth": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {
+              "crease_lantern": 5,
+              "needle_orbit": 5,
+              "prism_fan": 5,
+              "returning_gull": 5,
+              "sun_thread": 5,
+              "tide_bell": 5
+            },
+            "mirror_actions": {
+              "mirror_dash:resolve": 8,
+              "radial_push:resolve": 3,
+              "radial_push:warning": 3
+            },
+            "patterns": {
+              "mirror_active": 3,
+              "mirror_dash": 8,
+              "mirror_pressure": 9
+            },
+            "support_requests": 0,
+            "telegraphs": 20,
+            "volleys": 255
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "judgement_petals": 8,
+              "shrinking_frame": 9,
+              "unreflectable_cut": 8
+            },
+            "support_requests": 0,
+            "telegraphs": 25,
+            "volleys": 34
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "black_lane": 7,
+              "petal_salvo": 7,
+              "tide_fan": 6,
+              "turret_crown": 7
+            },
+            "support_requests": 15,
+            "telegraphs": 27,
+            "volleys": 27
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "loom_crossweave": 6,
+              "loom_needle": 6,
+              "loom_shuttle": 6
+            },
+            "support_requests": 19,
+            "telegraphs": 18,
+            "volleys": 116
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 26,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "execution_counterfold": 3,
+              "execution_dash": 27,
+              "execution_rake": 4
+            },
+            "support_requests": 0,
+            "telegraphs": 34,
+            "volleys": 7
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "mirror_moth:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 4334.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 61.608,
+        "frame_interval_p95_ms": 82.994,
+        "hostile_projectile_peak": 257,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 2,
+        "map_id": "solar_archipelago",
+        "map_size": "(8256.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_natural",
+        "ordinary": 50,
+        "physics_frames": 2102,
+        "physics_p95_ms": 16.363,
+        "poison": 2,
+        "poison_cloud_min": 24,
+        "poison_cloud_peak": 24,
+        "population_max": 56,
+        "process_p95_ms": 69.557,
+        "projectile_counts": {
+          "friendly_spawned": 738,
+          "hostile_spawned": 6147,
+          "injected": 0,
+          "poison_requests": 134,
+          "support_spawned": 0
+        },
+        "refill": false,
+        "sample_frames": 533,
+        "seconds": 35.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 35.014557,
+        "window_focused": true
+      }
+    ],
+    "scope": "Native Godot 4.6.3 Compatibility; 1280x720 physical /1920x1080 logical. Shared real AI/collision/terrain, phase3 intensity5 bosses including actual mirror_moth with six copied Lv5 weapons, immortal target HP and stationary invincible non-folding player. Waves frozen after fixture setup; actual population and threat allowances retained. An escort is created from authored routes; real lockdown/inversion/bombardment advance. Boss cases prime 24 persistent clouds through two actual carriers' owned emission signals, then retain natural emissions/expiry. First31 render frames excluded. Bounded cases replenish real hostile projectiles to260 AFTER simulation; natural case injects ZERO bullets. Compared with 3.18 boss scenarios add mirror, 24 persistent clouds and frequent bombardment, so this is deliberately heavier rather than identical content. Synthetic stress, not whole-run balancing or Android performance evidence.",
+    "version": "3.19.0"
+  },
+  "final_measurement": {
+    "results": [
+      {
+        "actual_enemy_max": 80,
+        "actual_enemy_min": 80,
+        "actual_projectile_min_before_refill": 253,
+        "actual_projectile_peak": 260,
+        "bombardment_cycles": 1,
+        "bombardment_states_seen": [
+          "warning",
+          "impact",
+          "rest"
+        ],
+        "bombardment_zone_peak": 5,
+        "boss_activity": {},
+        "boss_phases_seen": [],
+        "bosses": false,
+        "draw_calls_p50": 4557.0,
+        "effective_population_limit": 80,
+        "frame_interval_p50_ms": 49.863,
+        "frame_interval_p95_ms": 63.13,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "idle"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 0,
+        "map_id": "folded_delta",
+        "map_size": "(7680.0, 5120.0)",
+        "max_fps": 0,
+        "name": "ordinary_80_bounded_260",
+        "ordinary": 80,
+        "physics_frames": 1159,
+        "physics_p95_ms": 9.912,
+        "poison": 0,
+        "poison_cloud_min": 0,
+        "poison_cloud_peak": 0,
+        "population_max": 80,
+        "process_p95_ms": 61.063,
+        "projectile_counts": {
+          "friendly_spawned": 87,
+          "hostile_spawned": 1130,
+          "injected": 793,
+          "poison_requests": 0,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 336,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 92,
+        "wall_seconds": 20.008236,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 246,
+        "actual_projectile_peak": 260,
+        "bombardment_cycles": 2,
+        "bombardment_states_seen": [
+          "warning",
+          "impact",
+          "rest"
+        ],
+        "bombardment_zone_peak": 2,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "bell_alternation": 3,
+              "eclipse_chime_cut": 3,
+              "eclipse_procession": 4
+            },
+            "support_requests": 0,
+            "telegraphs": 10,
+            "volleys": 18
+          },
+          "mirror_moth": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {
+              "crease_lantern": 5,
+              "needle_orbit": 5,
+              "prism_fan": 5,
+              "returning_gull": 5,
+              "sun_thread": 5,
+              "tide_bell": 5
+            },
+            "mirror_actions": {
+              "mirror_dash:resolve": 5,
+              "radial_push:resolve": 2,
+              "radial_push:warning": 2
+            },
+            "patterns": {
+              "mirror_active": 2,
+              "mirror_dash": 5,
+              "mirror_pressure": 5
+            },
+            "support_requests": 0,
+            "telegraphs": 12,
+            "volleys": 147
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "judgement_petals": 5,
+              "shrinking_frame": 5,
+              "unreflectable_cut": 5
+            },
+            "support_requests": 0,
+            "telegraphs": 15,
+            "volleys": 19
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "black_lane": 4,
+              "petal_salvo": 4,
+              "tide_fan": 4,
+              "turret_crown": 4
+            },
+            "support_requests": 9,
+            "telegraphs": 16,
+            "volleys": 16
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "loom_crossweave": 3,
+              "loom_needle": 4,
+              "loom_shuttle": 4
+            },
+            "support_requests": 11,
+            "telegraphs": 11,
+            "volleys": 62
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 16,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "execution_counterfold": 2,
+              "execution_dash": 16,
+              "execution_rake": 2
+            },
+            "support_requests": 0,
+            "telegraphs": 20,
+            "volleys": 4
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "mirror_moth:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 4507.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 58.746,
+        "frame_interval_p95_ms": 70.517,
+        "hostile_projectile_peak": 260,
+        "inversion_states_seen": [
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 1,
+        "map_id": "inverted_canals",
+        "map_size": "(7936.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_bounded_260",
+        "ordinary": 50,
+        "physics_frames": 1273,
+        "physics_p95_ms": 9.827,
+        "poison": 2,
+        "poison_cloud_min": 24,
+        "poison_cloud_peak": 24,
+        "population_max": 56,
+        "process_p95_ms": 63.815,
+        "projectile_counts": {
+          "friendly_spawned": 202,
+          "hostile_spawned": 3482,
+          "injected": 1311,
+          "poison_requests": 88,
+          "support_spawned": 0
+        },
+        "refill": true,
+        "sample_frames": 329,
+        "seconds": 20.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 21.337091,
+        "window_focused": true
+      },
+      {
+        "actual_enemy_max": 56,
+        "actual_enemy_min": 56,
+        "actual_projectile_min_before_refill": 127,
+        "actual_projectile_peak": 260,
+        "bombardment_cycles": 3,
+        "bombardment_states_seen": [
+          "warning",
+          "impact",
+          "rest"
+        ],
+        "bombardment_zone_peak": 2,
+        "boss_activity": {
+          "eclipse_twin_bells": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "bell_alternation": 5,
+              "eclipse_chime_cut": 5,
+              "eclipse_procession": 6
+            },
+            "support_requests": 0,
+            "telegraphs": 16,
+            "volleys": 31
+          },
+          "mirror_moth": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {
+              "crease_lantern": 5,
+              "needle_orbit": 5,
+              "prism_fan": 5,
+              "returning_gull": 5,
+              "sun_thread": 5,
+              "tide_bell": 5
+            },
+            "mirror_actions": {
+              "mirror_dash:resolve": 8,
+              "radial_push:resolve": 3,
+              "radial_push:warning": 3
+            },
+            "patterns": {
+              "mirror_active": 3,
+              "mirror_dash": 8,
+              "mirror_pressure": 9
+            },
+            "support_requests": 0,
+            "telegraphs": 20,
+            "volleys": 256
+          },
+          "origami_judge": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "judgement_petals": 9,
+              "shrinking_frame": 9,
+              "unreflectable_cut": 8
+            },
+            "support_requests": 0,
+            "telegraphs": 26,
+            "volleys": 34
+          },
+          "reef_crown_battery": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "black_lane": 7,
+              "petal_salvo": 7,
+              "tide_fan": 6,
+              "turret_crown": 7
+            },
+            "support_requests": 15,
+            "telegraphs": 27,
+            "volleys": 27
+          },
+          "tide_loom_mother": {
+            "charge_last": 0,
+            "charge_segments": 0,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "loom_crossweave": 6,
+              "loom_needle": 6,
+              "loom_shuttle": 6
+            },
+            "support_requests": 19,
+            "telegraphs": 18,
+            "volleys": 116
+          },
+          "torn_page_executioner": {
+            "charge_last": 0,
+            "charge_segments": 26,
+            "copied_weapons": {},
+            "mirror_actions": {},
+            "patterns": {
+              "execution_counterfold": 3,
+              "execution_dash": 27,
+              "execution_rake": 4
+            },
+            "support_requests": 0,
+            "telegraphs": 34,
+            "volleys": 7
+          }
+        },
+        "boss_phases_seen": [
+          "reef_crown_battery:2",
+          "tide_loom_mother:2",
+          "mirror_moth:2",
+          "torn_page_executioner:2",
+          "origami_judge:2",
+          "eclipse_twin_bells:2"
+        ],
+        "bosses": true,
+        "draw_calls_p50": 4334.0,
+        "effective_population_limit": 56,
+        "frame_interval_p50_ms": 59.529,
+        "frame_interval_p95_ms": 71.493,
+        "hostile_projectile_peak": 255,
+        "inversion_states_seen": [
+          "warning",
+          "active",
+          "rest"
+        ],
+        "lockdown_states_seen": [
+          "warning",
+          "active"
+        ],
+        "low_processor_usage_mode": false,
+        "map": 2,
+        "map_id": "solar_archipelago",
+        "map_size": "(8256.0, 5504.0)",
+        "max_fps": 0,
+        "name": "six_bosses_50_ordinary_natural",
+        "ordinary": 50,
+        "physics_frames": 2105,
+        "physics_p95_ms": 9.553,
+        "poison": 2,
+        "poison_cloud_min": 24,
+        "poison_cloud_peak": 24,
+        "population_max": 56,
+        "process_p95_ms": 63.588,
+        "projectile_counts": {
+          "friendly_spawned": 737,
+          "hostile_spawned": 6158,
+          "injected": 0,
+          "poison_requests": 134,
+          "support_spawned": 0
+        },
+        "refill": false,
+        "sample_frames": 570,
+        "seconds": 35.0,
+        "task_kind": "escort",
+        "threat_max": 135,
+        "wall_seconds": 35.054015,
+        "window_focused": true
+      }
+    ],
+    "scope": "Native Godot 4.6.3 Compatibility; 1280x720 physical /1920x1080 logical. Shared real AI/collision/terrain, phase3 intensity5 bosses including actual mirror_moth with six copied Lv5 weapons, immortal target HP and stationary invincible non-folding player. Waves frozen after fixture setup; actual population and threat allowances retained. An escort is created from authored routes; real lockdown/inversion/bombardment advance. Boss cases prime 24 persistent clouds through two actual carriers' owned emission signals, then retain natural emissions/expiry. First31 render frames excluded. Bounded cases replenish real hostile projectiles to260 AFTER simulation; natural case injects ZERO bullets. Compared with 3.18 boss scenarios add mirror, 24 persistent clouds and frequent bombardment, so this is deliberately heavier rather than identical content. Synthetic stress, not whole-run balancing or Android performance evidence.",
+    "version": "3.19.0"
+  },
+  "paired_single_samples": [
+    {
+      "name": "ordinary_80_bounded_260",
+      "before_p50_ms": 47.773,
+      "final_p50_ms": 49.863,
+      "before_p95_ms": 61.562,
+      "final_p95_ms": 63.13,
+      "p50_delta_ms": 2.09,
+      "p95_delta_ms": 1.568,
+      "reciprocal_final_median_fps_not_average": 20.05
+    },
+    {
+      "name": "six_bosses_50_ordinary_bounded_260",
+      "before_p50_ms": 57.74,
+      "final_p50_ms": 58.746,
+      "before_p95_ms": 76.614,
+      "final_p95_ms": 70.517,
+      "p50_delta_ms": 1.006,
+      "p95_delta_ms": -6.097,
+      "reciprocal_final_median_fps_not_average": 17.02
+    },
+    {
+      "name": "six_bosses_50_ordinary_natural",
+      "before_p50_ms": 61.608,
+      "final_p50_ms": 59.529,
+      "before_p95_ms": 82.994,
+      "final_p95_ms": 71.493,
+      "p50_delta_ms": -2.079,
+      "p95_delta_ms": -11.501,
+      "reciprocal_final_median_fps_not_average": 16.8
+    }
+  ],
+  "interpretation_limits": [
+    "Single before/after samples do not establish statistical significance or causality. Median did not improve consistently.",
+    "Approximately 17-20 FPS by reciprocal median frame interval in persistent synthetic stress is not a high-density performance pass.",
+    "Full AI, collision, actors and authored boss attacks remained enabled. Ordinary count stayed 80; boss cases stayed 6 bosses + 50 ordinary.",
+    "Frame timing on this native Windows system cannot establish physical-phone, browser, thermal or whole-run performance.",
+    "Engine physics and process monitors are not disjoint stage timings; do not subtract them from frame intervals."
+  ],
+  "visual_qa": {
+    "scope": "Actual six shared bosses including mirror_moth and 50 ordinary actors including two poison carriers; native mobile touch layout. Invincible player and fixture teleport; bosses replenish real hits to30% of2x authoredHP only for six-row layout QA. Visual scenario does not prime 24 clouds: carriers emit naturally so the relocated-player screenshot can show newly warned poison. Real field/closure/lockdown/bombardment snapshots. Not Android device performance evidence.",
+    "images_inspected": 5,
+    "actual_image_size": [
+      1386,
+      780
+    ],
+    "logical_canvas": [
+      1920,
+      1080
+    ],
+    "safe_insets": "(80.0, 120.0, 56.0, 24.0)",
+    "six_boss_layout": {
+      "overlapping_controls": [],
+      "rect": "[P: (481.0, 856.0), S: (817.0, 176.0)]",
+      "safe_rect": "[P: (80.0, 120.0), S: (1784.0, 936.0)]",
+      "within_safe_insets": true
+    },
+    "six_boss_rows": 6,
+    "six_boss_columns": 2,
+    "actual_enemy_count": 56,
+    "combined_hazards": {
+      "closed_at_player": true,
+      "lockdown": {
+        "damage": 1,
+        "damage_interval": 2.0,
+        "elapsed": 98.2016859999992,
+        "outside": true,
+        "position": "(3220.086, 3186.017)",
+        "radius": 2400.0,
+        "remaining": 0.0,
+        "return_distance": 852.042213439941,
+        "return_goal": "(1470.0, 2105.0)",
+        "return_route_valid": true,
+        "seconds_until_damage": 1.783581,
+        "state": "active",
+        "wave_index": 6
+      },
+      "inversion": {
+        "axis": "horizontal",
+        "cycle": 1,
+        "inside": true,
+        "position": "(1470.0, 1442.0)",
+        "radius": 330.0,
+        "remaining": 8.833021,
+        "state": "active"
+      },
+      "visible_danger_text": "围猎圈外 · 1.8秒后扣血 · 返回圈内\n此处毒潮扣血 · 左右已反转"
+    },
+    "mirror_duel_scope": "Single actual mirror copy and player with six Lv5 weapons, native phone touch HUD and safe insets. Real player action and combat clocks drive synchronized fold/release; fixture refills boss HP and disables unrelated hazard scheduling. This is visual QA, not an APK/physical-phone performance test.",
+    "mirror_duel_layout": {
+      "overlapping_controls": [],
+      "rect": "[P: (481.0, 944.0), S: (817.0, 88.0)]",
+      "safe_rect": "[P: (80.0, 120.0), S: (1784.0, 936.0)]",
+      "within_safe_insets": true
+    },
+    "mirror_fold": {
+      "began_actual_fold": true,
+      "player_folding": true,
+      "mirror_folding": true,
+      "captured": 8,
+      "capacity": 8,
+      "copied_weapon_levels": {
+        "crease_lantern": 5,
+        "needle_orbit": 5,
+        "prism_fan": 5,
+        "returning_gull": 5,
+        "sun_thread": 5,
+        "tide_bell": 5
+      }
+    },
+    "mirror_release": {
+      "folding": false,
+      "captured": 8,
+      "release_remaining": 0.6,
+      "return_queue_count": 0
+    },
+    "visual_findings": [
+      "All five final images inspected. Six boss rows fit two columns by three rows; boss rail is inside logical safe area and does not geometrically overlap touch controls.",
+      "Orange bombardments, green poison, purple inversion and red lockdown remain distinguishable; the full crowd stress image is still visually dense.",
+      "Focused mirror HUD visibly reads 收纳 8/8 and 返光 0.6s while retaining the actual health bar.",
+      "World-space small text can still be covered by the dash control; essential mirror state is also visible in the boss rail.",
+      "Native touch-layout images do not validate physical Android rendering, heat or frame rate."
+    ]
+  },
+  "logs": [
+    {
+      "stdout": "build/test-runtime/performance-319/measure-final.stdout.log",
+      "stderr": "build/test-runtime/performance-319/measure-final.stderr.log",
+      "stderr_bytes": 0,
+      "script_error_found": false
+    },
+    {
+      "stdout": "build/test-runtime/performance-319/measure-optimized.stdout.log",
+      "stderr": "build/test-runtime/performance-319/measure-optimized.stderr.log",
+      "stderr_bytes": 0,
+      "script_error_found": false
+    },
+    {
+      "stdout": "build/test-runtime/performance-319/capture-final.stdout.log",
+      "stderr": "build/test-runtime/performance-319/capture-final.stderr.log",
+      "stderr_bytes": 0,
+      "script_error_found": false
+    },
+    {
+      "stdout": "build/test-runtime/performance-319/capture-optimized.stdout.log",
+      "stderr": "build/test-runtime/performance-319/capture-optimized.stderr.log",
+      "stderr_bytes": 0,
+      "script_error_found": false
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "build/test-runtime/performance-319/baseline-first-319.json",
+      "sha256": "a267d28d2acb59128f42803879091a70787fab04c559ba2d5481a8c3af22685b",
+      "bytes": 9855
+    },
+    {
+      "path": "build/test-runtime/performance-319/results.json",
+      "sha256": "dc730d37ea22e019a1c2f99632dab2e20f3bd6f0938b4d46e7c3a9f1065301d1",
+      "bytes": 9852
+    },
+    {
+      "path": "build/test-runtime/performance-319/measure_current.gd",
+      "sha256": "210c4924588f22adbcd98df06a94045498b94d4efc07dc44e412bfe027a2117c",
+      "bytes": 14982
+    },
+    {
+      "path": "build/test-runtime/performance-319/capture_mobile.gd",
+      "sha256": "856a71fce07d681b6d1ce2e754c7bba6fd2f78a1d084f6ac3373f106e703a069",
+      "bytes": 9071
+    },
+    {
+      "path": "build/test-runtime/pressure-ui-319/snapshot.json",
+      "sha256": "5bb95c2c676326a408f41b0d6c4dcbd57d1140f03ebb47d75ce2ed442eb28c3f",
+      "bytes": 16133
+    },
+    {
+      "path": "build/test-runtime/pressure-ui-319/mirror-duel-snapshot.json",
+      "sha256": "2242213b082bb5e49df714e8cbea0ff175fd259cf7c289e24acbc17bcfd269f2",
+      "bytes": 20036
+    },
+    {
+      "path": "build/test-runtime/pressure-ui-319/mobile-active-hunt-inversion-poison-overlap.png",
+      "sha256": "f1ed741ec59d2648707df4eec462e23661b1728aa357b3071751620ab86c896b",
+      "bytes": 484220,
+      "actual_image_size": [
+        1386,
+        780
+      ]
+    },
+    {
+      "path": "build/test-runtime/pressure-ui-319/mobile-hunt-inversion-poison-overlap.png",
+      "sha256": "05c1b1d29a202632e4f6512a3f724daf88c45ce43bb64735075f165ca8c8448a",
+      "bytes": 428644,
+      "actual_image_size": [
+        1386,
+        780
+      ]
+    },
+    {
+      "path": "build/test-runtime/pressure-ui-319/mobile-mirror-player-synchronized-fold.png",
+      "sha256": "8f53edc5aa452b70105e88ef3cc588a8cecedf3affb901d069bf6cdc5d0a7b6e",
+      "bytes": 318200,
+      "actual_image_size": [
+        1386,
+        780
+      ]
+    },
+    {
+      "path": "build/test-runtime/pressure-ui-319/mobile-mirror-return-warning.png",
+      "sha256": "ccb760d602e458739b674771698bc20aa5e0c1a7c82fdcf51d7b8e5dadbb757c",
+      "bytes": 299187,
+      "actual_image_size": [
+        1386,
+        780
+      ]
+    },
+    {
+      "path": "build/test-runtime/pressure-ui-319/mobile-six-bosses-real-combat.png",
+      "sha256": "82c5beeadcbb9da436ee8664936226fa8695cee4a3bf55ab363cc68e4c65a2a8",
+      "bytes": 640844,
+      "actual_image_size": [
+        1386,
+        780
+      ]
+    }
+  ]
+}

@@ -131,11 +131,16 @@ var future_profile_read_only: bool = false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	persistence_enabled = not OS.get_cmdline_user_args().has("--test-mode")
+	var web_race := get_node_or_null("/root/WebRaceBridge")
+	var isolated_web_session := web_race != null and bool(web_race.call("is_web_session"))
+	persistence_enabled = not OS.get_cmdline_user_args().has("--test-mode") and not isolated_web_session
 	if persistence_enabled:
 		load_settings()
 		load_profile()
 		_migrate_startup_display_mode()
+	if OS.has_feature("web"):
+		# Browsers require a fresh user gesture for fullscreen on every visit.
+		settings["fullscreen"] = false
 	apply_settings()
 
 
@@ -165,7 +170,7 @@ func apply_settings() -> void:
 	_set_bus_linear(&"Master", float(settings["master_volume"]))
 	_set_bus_linear(&"Music", float(settings["music_volume"]))
 	_set_bus_linear(&"SFX", float(settings["sfx_volume"]))
-	if DisplayServer.get_name().to_lower() != "headless":
+	if DisplayServer.get_name().to_lower() != "headless" and not OS.has_feature("web"):
 		# Defer the native window transition until the first frame has created a
 		# stable window. Applying it from an autoload's _ready() caused a startup
 		# access violation on one Windows machine in an older build.
@@ -199,6 +204,9 @@ func set_setting(key: StringName, value: Variant) -> void:
 		return
 	settings[text_key] = value
 	apply_settings()
+	if OS.has_feature("web") and text_key == "fullscreen":
+		# Keep the browser's input gesture alive; deferred calls are rejected.
+		_apply_display_mode_safely()
 	save_settings()
 
 
